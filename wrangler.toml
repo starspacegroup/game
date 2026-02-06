@@ -1,0 +1,6 @@
+name = "starspace-puzzle-wars"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[site]
+bucket = ".svelte-kit/cloudflare"

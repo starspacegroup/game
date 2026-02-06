@@ -1,0 +1,222 @@
+<script lang="ts">
+	import { gameState } from '$lib/stores/gameState.svelte';
+</script>
+
+<div class="hud">
+	<!-- Top bar -->
+	<div class="hud-top">
+		<div class="score">
+			<span class="label">SCORE</span>
+			<span class="value">{gameState.score.toLocaleString()}</span>
+		</div>
+
+		<div class="mode-badge" class:multiplayer={gameState.mode === 'multiplayer'}>
+			{gameState.mode === 'multiplayer' ? `${gameState.playerCount} PLAYERS` : 'SOLO'}
+		</div>
+
+		<div class="wave">
+			<span class="label">WAVE</span>
+			<span class="value">{gameState.wave}</span>
+		</div>
+	</div>
+
+	<!-- Health bar -->
+	<div class="health-container">
+		<div class="health-bar">
+			<div
+				class="health-fill"
+				class:danger={gameState.healthPercent < 25}
+				class:warning={gameState.healthPercent >= 25 && gameState.healthPercent < 50}
+				style="width: {gameState.healthPercent}%"
+			></div>
+		</div>
+		<span class="health-text">{Math.ceil(gameState.health)}/{gameState.maxHealth}</span>
+	</div>
+
+	<!-- Puzzle progress (only show when some progress exists) -->
+	{#if gameState.puzzleProgress > 0.01}
+		<div class="puzzle-progress">
+			<span class="label">KAL-TOH</span>
+			<div class="puzzle-bar">
+				<div
+					class="puzzle-fill"
+					style="width: {gameState.puzzleProgress * 100}%"
+				></div>
+			</div>
+			{#if gameState.puzzleSolved}
+				<span class="puzzle-complete">SOLVED</span>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Controls hint -->
+	{#if !gameState.isMobile}
+		<div class="controls-hint">
+			WASD move &bull; Mouse aim &bull; Click shoot &bull; E interact &bull; Shift boost
+		</div>
+	{/if}
+</div>
+
+<style>
+	.hud {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		pointer-events: none;
+		z-index: 10;
+		font-family: var(--hud-font, 'Courier New', monospace);
+		padding: env(safe-area-inset-top, 8px) 12px 0 12px;
+	}
+
+	.hud-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 0;
+	}
+
+	.score,
+	.wave {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.label {
+		font-size: 0.65rem;
+		color: #6688aa;
+		letter-spacing: 2px;
+	}
+
+	.value {
+		font-size: 1.4rem;
+		color: #00ff88;
+		font-weight: bold;
+		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+	}
+
+	.mode-badge {
+		padding: 3px 10px;
+		border: 1px solid #335;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		color: #8899aa;
+		letter-spacing: 1px;
+	}
+
+	.mode-badge.multiplayer {
+		border-color: #4488ff;
+		color: #4488ff;
+		background: rgba(68, 136, 255, 0.1);
+	}
+
+	.health-container {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 4px;
+	}
+
+	.health-bar {
+		flex: 1;
+		height: 6px;
+		background: rgba(255, 255, 255, 0.1);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.health-fill {
+		height: 100%;
+		background: #00ff88;
+		border-radius: 3px;
+		transition: width 0.2s ease;
+		box-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
+	}
+
+	.health-fill.warning {
+		background: #ffaa00;
+		box-shadow: 0 0 6px rgba(255, 170, 0, 0.4);
+	}
+
+	.health-fill.danger {
+		background: #ff4444;
+		box-shadow: 0 0 8px rgba(255, 68, 68, 0.6);
+		animation: pulse 0.5s ease-in-out infinite alternate;
+	}
+
+	@keyframes pulse {
+		from {
+			opacity: 0.7;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	.health-text {
+		font-size: 0.65rem;
+		color: #8899aa;
+		min-width: 55px;
+		text-align: right;
+	}
+
+	.puzzle-progress {
+		margin-top: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.puzzle-bar {
+		flex: 1;
+		height: 4px;
+		background: rgba(68, 136, 255, 0.15);
+		border-radius: 2px;
+		overflow: hidden;
+	}
+
+	.puzzle-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #4488ff, #88aaff);
+		border-radius: 2px;
+		transition: width 0.3s ease;
+	}
+
+	.puzzle-complete {
+		font-size: 0.7rem;
+		color: #ffdd00;
+		font-weight: bold;
+		text-shadow: 0 0 8px rgba(255, 221, 0, 0.6);
+		animation: glow 1s ease-in-out infinite alternate;
+	}
+
+	@keyframes glow {
+		from {
+			text-shadow: 0 0 8px rgba(255, 221, 0, 0.4);
+		}
+		to {
+			text-shadow: 0 0 16px rgba(255, 221, 0, 0.8);
+		}
+	}
+
+	.controls-hint {
+		position: fixed;
+		bottom: 12px;
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.6rem;
+		color: #445566;
+		letter-spacing: 1px;
+		white-space: nowrap;
+	}
+
+	@media (max-width: 480px) {
+		.hud-top {
+			padding: 4px 0;
+		}
+		.value {
+			font-size: 1.1rem;
+		}
+	}
+</style>
