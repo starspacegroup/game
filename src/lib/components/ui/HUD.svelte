@@ -1,8 +1,29 @@
 <script lang="ts">
 	import { gameState } from '$lib/stores/gameState.svelte';
+	import { authState } from '$lib/stores/authState.svelte';
 </script>
 
 <div class="hud">
+	<!-- User indicator -->
+	{#if authState.isLoggedIn}
+		<div class="user-indicator">
+			{#if authState.avatarUrl}
+				<img src={authState.avatarUrl} alt="Avatar" class="user-avatar" />
+			{:else}
+				<div class="user-avatar-placeholder">
+					{authState.username?.charAt(0).toUpperCase() || '?'}
+				</div>
+			{/if}
+			<div class="user-info">
+				<span class="user-name">{authState.username}</span>
+				<span class="user-status">
+					<span class="status-dot"></span>
+					ONLINE
+				</span>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Top bar -->
 	<div class="hud-top">
 		<div class="score">
@@ -217,6 +238,96 @@
 		}
 		.value {
 			font-size: 1.1rem;
+		}
+		.user-indicator {
+			top: 8px;
+			right: 8px;
+		}
+		.user-name {
+			max-width: 80px;
+		}
+	}
+
+	.user-indicator {
+		position: fixed;
+		top: 12px;
+		right: 12px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: rgba(0, 0, 0, 0.6);
+		border: 1px solid rgba(68, 136, 255, 0.4);
+		border-radius: 8px;
+		padding: 6px 12px 6px 6px;
+		pointer-events: auto;
+		backdrop-filter: blur(4px);
+	}
+
+	.user-avatar {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: 2px solid #4488ff;
+		box-shadow: 0 0 8px rgba(68, 136, 255, 0.5);
+	}
+
+	.user-avatar-placeholder {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: 2px solid #4488ff;
+		background: linear-gradient(135deg, #4488ff, #6644ff);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.9rem;
+		font-weight: bold;
+		color: white;
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.user-name {
+		font-size: 0.75rem;
+		color: #ffffff;
+		font-weight: 600;
+		letter-spacing: 0.5px;
+		max-width: 120px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.user-status {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.6rem;
+		color: #00ff88;
+		letter-spacing: 1px;
+	}
+
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #00ff88;
+		box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
+		animation: pulse-dot 1.5s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.6;
+			transform: scale(0.9);
 		}
 	}
 </style>
