@@ -1,6 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
 import { gameState } from './gameState.svelte';
+import { authState } from './authState.svelte';
 import { world } from '$lib/game/world';
+import * as THREE from 'three';
 
 let socket: Socket | null = null;
 
@@ -26,19 +28,21 @@ export function connectToServer(serverUrl: string = 'http://localhost:3001'): vo
 			gameState.mode = 'solo';
 		});
 
-		socket.on('player-joined', (data: { id: string; count: number }) => {
+		socket.on('player-joined', (data: { id: string; count: number; }) => {
 			gameState.playerCount = data.count;
 			gameState.npcCount = Math.max(0, 5 - (data.count - 1));
 		});
 
-		socket.on('player-left', (data: { id: string; count: number }) => {
+		socket.on('player-left', (data: { id: string; count: number; }) => {
 			gameState.playerCount = data.count;
 			gameState.npcCount = Math.max(0, 5 - (data.count - 1));
+			// Remove the player from otherPlayers
+			world.otherPlayers = world.otherPlayers.filter((p) => p.id !== data.id);
 		});
 
 		socket.on(
 			'game-state',
-			(data: { puzzleProgress?: number; wave?: number }) => {
+			(data: { puzzleProgress?: number; wave?: number; }) => {
 				if (data.puzzleProgress !== undefined) {
 					gameState.puzzleProgress = data.puzzleProgress;
 				}
@@ -50,8 +54,9 @@ export function connectToServer(serverUrl: string = 'http://localhost:3001'): vo
 
 		socket.on(
 			'player-position',
-			(_data: {
+			(data: {
 				id: string;
+				username: string;
 				x: number;
 				y: number;
 				z: number;
@@ -59,11 +64,26 @@ export function connectToServer(serverUrl: string = 'http://localhost:3001'): vo
 				ry: number;
 				rz: number;
 			}) => {
-				// TODO: update other player ship positions for rendering
+				// Update or add other player
+				const existing = world.otherPlayers.find((p) => p.id === data.id);
+				if (existing) {
+					existing.position.set(data.x, data.y, data.z);
+					existing.rotation.set(data.rx, data.ry, data.rz);
+					existing.username = data.username;
+					existing.lastUpdate = Date.now();
+				} else {
+					world.otherPlayers.push({
+						id: data.id,
+						username: data.username || 'Player',
+						position: new THREE.Vector3(data.x, data.y, data.z),
+						rotation: new THREE.Euler(data.rx, data.ry, data.rz),
+						lastUpdate: Date.now()
+					});
+				}
 			}
 		);
 
-		socket.on('chat', (data: { sender: string; text: string }) => {
+		socket.on('chat', (data: { sender: string; text: string; }) => {
 			gameState.messages = [...gameState.messages, { ...data, time: Date.now() }];
 		});
 
@@ -81,6 +101,7 @@ export function connectToServer(serverUrl: string = 'http://localhost:3001'): vo
 export function sendPosition(): void {
 	if (!socket?.connected) return;
 	socket.emit('position', {
+		username: authState.username || 'Player',
 		x: world.player.position.x,
 		y: world.player.position.y,
 		z: world.player.position.z,

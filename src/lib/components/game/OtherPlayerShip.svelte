@@ -2,11 +2,14 @@
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
 	import { world } from '$lib/game/world';
-	import { authState } from '$lib/stores/authState.svelte';
+
+	interface Props {
+		id: string;
+	}
+
+	let { id }: Props = $props();
 
 	let group: THREE.Group | undefined = $state();
-	let engineGlow = 0.5;
-	let engineMesh: THREE.Mesh | undefined = $state();
 	let nameSprite: THREE.Sprite | undefined = $state();
 	let currentUsername = $state('');
 	let nameTextureInitialized = false;
@@ -31,11 +34,11 @@
 		ctx.roundRect(0, 8, canvas.width, 48, 8);
 		ctx.fill();
 		
-		// Draw text - cyan color for local player
+		// Draw text
 		ctx.font = 'bold 28px Arial, sans-serif';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.fillStyle = '#00ffff';
+		ctx.fillStyle = '#ffffff';
 		ctx.strokeStyle = '#000000';
 		ctx.lineWidth = 3;
 		ctx.strokeText(username, canvas.width / 2, canvas.height / 2);
@@ -46,31 +49,24 @@
 		return texture;
 	}
 
-	useTask((delta) => {
+	useTask(() => {
 		if (!group) return;
 
-		group.position.copy(world.player.position);
-		group.rotation.copy(world.player.rotation);
+		const player = world.otherPlayers.find((p) => p.id === id);
+		if (!player) return;
 
-		// Engine effect
-		const speed = world.player.velocity.length();
-		const targetGlow = 0.3 + Math.min(speed / 20, 1) * 0.7;
-		engineGlow += (targetGlow - engineGlow) * 5 * delta;
+		group.position.copy(player.position);
+		group.rotation.copy(player.rotation);
 
-		if (engineMesh) {
-			(engineMesh.material as THREE.MeshBasicMaterial).opacity = engineGlow;
-		}
-
-		// Initialize or update username texture
-		const username = authState.username || 'Player';
+		// Initialize or update name sprite
 		if (nameSprite) {
 			if (!nameTextureInitialized) {
-				currentUsername = username;
-				(nameSprite.material as THREE.SpriteMaterial).map = createNameTexture(username);
+				currentUsername = player.username;
+				(nameSprite.material as THREE.SpriteMaterial).map = createNameTexture(player.username);
 				nameTextureInitialized = true;
-			} else if (username !== currentUsername) {
-				currentUsername = username;
-				const newTexture = createNameTexture(username);
+			} else if (player.username !== currentUsername) {
+				currentUsername = player.username;
+				const newTexture = createNameTexture(player.username);
 				(nameSprite.material as THREE.SpriteMaterial).map = newTexture;
 				(nameSprite.material as THREE.SpriteMaterial).needsUpdate = true;
 			}
@@ -91,10 +87,10 @@
 		/>
 	</T.Mesh>
 
-	<!-- Engine glow behind ship -->
-	<T.Mesh position.z={-0.5} scale={[0.4, 0.4, 1]} bind:ref={engineMesh}>
+	<!-- Engine glow behind ship (static for other players) -->
+	<T.Mesh position.z={-0.5} scale={[0.4, 0.4, 1]}>
 		<T.SphereGeometry args={[0.5, 6, 6]} />
-		<T.MeshBasicMaterial color="#44ffaa" transparent opacity={0.5} />
+		<T.MeshBasicMaterial color="#ff8844" transparent opacity={0.4} />
 	</T.Mesh>
 
 	<!-- Username label above ship -->

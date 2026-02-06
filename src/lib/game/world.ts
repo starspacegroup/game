@@ -53,6 +53,14 @@ export interface PowerUpData {
 	bobPhase: number;
 }
 
+export interface OtherPlayerData {
+	id: string;
+	username: string;
+	position: THREE.Vector3;
+	rotation: THREE.Euler;
+	lastUpdate: number;
+}
+
 export interface PlayerState {
 	position: THREE.Vector3;
 	velocity: THREE.Vector3;
@@ -82,6 +90,7 @@ export const world = {
 	lasers: [] as LaserData[],
 	puzzleNodes: [] as PuzzleNodeData[],
 	powerUps: [] as PowerUpData[],
+	otherPlayers: [] as OtherPlayerData[],
 	bounds: { x: 400, y: 300, z: 40 }
 };
 
@@ -110,4 +119,5 @@ export function resetWorld(): void {
 	world.lasers = [];
 	world.puzzleNodes = [];
 	world.powerUps = [];
+	world.otherPlayers = [];
 }

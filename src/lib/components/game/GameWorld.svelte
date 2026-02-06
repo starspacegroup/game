@@ -3,6 +3,7 @@
 	import * as THREE from 'three';
 	import FollowCamera from './FollowCamera.svelte';
 	import PlayerShip from './PlayerShip.svelte';
+	import OtherPlayerShip from './OtherPlayerShip.svelte';
 	import Asteroid from './Asteroid.svelte';
 	import NpcShip from './NpcShip.svelte';
 	import LaserBeam from './LaserBeam.svelte';
@@ -37,6 +38,7 @@
 	let npcIds = $state(world.npcs.map((n) => n.id));
 	let laserIds = $state<string[]>([]);
 	let powerUpIds = $state(world.powerUps.map((p) => p.id));
+	let otherPlayerIds = $state<string[]>([]);
 
 	let sendTimer = 0;
 	let spawnTimer = 0;
@@ -296,6 +298,11 @@
 		npcIds = world.npcs.filter((n) => !n.destroyed).map((n) => n.id);
 		laserIds = world.lasers.filter((l) => l.life > 0).map((l) => l.id);
 		powerUpIds = world.powerUps.filter((p) => !p.collected).map((p) => p.id);
+		
+		// Update other players and remove stale ones (no update in 5 seconds)
+		const now = Date.now();
+		world.otherPlayers = world.otherPlayers.filter((p) => now - p.lastUpdate < 5000);
+		otherPlayerIds = world.otherPlayers.map((p) => p.id);
 	}
 
 	function syncMultiplayer(dt: number): void {
@@ -373,6 +380,11 @@
 
 <!-- Player ship -->
 <PlayerShip />
+
+<!-- Other players -->
+{#each otherPlayerIds as id (id)}
+	<OtherPlayerShip {id} />
+{/each}
 
 <!-- Asteroids -->
 {#each asteroidIds as id (id)}

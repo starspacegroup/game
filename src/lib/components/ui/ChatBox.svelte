@@ -58,60 +58,76 @@
 {/if}
 
 <style>
+	/* ===== MOBILE-FIRST CHAT BOX STYLES ===== */
 	.chat-wrapper {
 		position: fixed;
-		bottom: 16px;
-		right: 16px;
+		/* Mobile: position at top to avoid joysticks */
+		top: calc(var(--safe-top, 0px) + 60px);
+		right: calc(var(--safe-right, 0px) + var(--spacing-sm, 8px));
 		z-index: 30;
 		pointer-events: all;
+		max-width: calc(100vw - var(--spacing-lg, 16px) * 2);
 	}
 
 	.chat-toggle {
-		display: block;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		margin-left: auto;
-		padding: 6px 14px;
+		/* Touch-friendly minimum size */
+		min-height: var(--touch-target-min, 44px);
+		min-width: var(--touch-target-min, 44px);
+		padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
 		font-family: var(--hud-font, monospace);
-		font-size: 0.65rem;
-		letter-spacing: 2px;
+		font-size: var(--font-xs, 0.6rem);
+		letter-spacing: 1px;
 		color: #8899aa;
-		background: rgba(0, 0, 17, 0.8);
+		background: rgba(0, 0, 17, 0.85);
 		border: 1px solid #335;
-		border-radius: 4px;
+		border-radius: 6px;
 		cursor: pointer;
-		margin-bottom: 4px;
+		margin-bottom: var(--spacing-xs, 4px);
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	.badge {
 		background: #4488ff;
 		color: #fff;
 		border-radius: 50%;
-		padding: 1px 5px;
-		font-size: 0.55rem;
-		margin-left: 4px;
+		padding: 2px 6px;
+		font-size: 0.5rem;
+		margin-left: var(--spacing-xs, 4px);
+		min-width: 18px;
+		text-align: center;
 	}
 
 	.chat-box {
-		width: 260px;
-		max-height: 200px;
-		background: rgba(0, 0, 17, 0.9);
+		/* Mobile-first: smaller chat box */
+		width: 220px;
+		max-height: 160px;
+		background: rgba(0, 0, 17, 0.92);
 		border: 1px solid #335;
-		border-radius: 6px;
+		border-radius: 8px;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
+		backdrop-filter: blur(4px);
 	}
 
 	.chat-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 8px;
-		max-height: 150px;
+		padding: var(--spacing-sm, 8px);
+		max-height: 110px;
+		/* Better touch scrolling */
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.chat-msg {
-		font-size: 0.7rem;
+		font-size: var(--font-xs, 0.6rem);
 		margin-bottom: 3px;
 		line-height: 1.3;
+		word-wrap: break-word;
 	}
 
 	.chat-sender {
@@ -133,20 +149,91 @@
 		background: rgba(255, 255, 255, 0.05);
 		border: none;
 		color: #fff;
-		padding: 6px 8px;
-		font-size: 0.7rem;
+		/* Touch-friendly input height */
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px);
+		font-size: var(--font-sm, 0.7rem);
 		font-family: var(--hud-font, monospace);
 		outline: none;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.chat-input::placeholder {
+		color: #556677;
 	}
 
 	.chat-send {
-		padding: 6px 10px;
+		/* Touch-friendly send button */
+		min-width: var(--touch-target-min, 44px);
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px);
 		background: #4488ff;
 		color: #fff;
 		border: none;
 		font-family: var(--hud-font, monospace);
-		font-size: 0.6rem;
+		font-size: var(--font-xs, 0.6rem);
 		cursor: pointer;
 		letter-spacing: 1px;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.chat-send:active {
+		background: #3366dd;
+	}
+
+	/* ===== LARGER PHONES (375px+) ===== */
+	@media (min-width: 375px) {
+		.chat-box {
+			width: 240px;
+			max-height: 180px;
+		}
+
+		.chat-messages {
+			max-height: 130px;
+		}
+	}
+
+	/* ===== TABLETS AND UP (768px+) ===== */
+	@media (min-width: 768px) {
+		.chat-wrapper {
+			/* Desktop: position at bottom right */
+			top: auto;
+			bottom: calc(var(--safe-bottom, 0px) + 16px);
+			right: 16px;
+		}
+
+		.chat-toggle {
+			min-height: auto;
+			min-width: auto;
+			padding: 6px 14px;
+			font-size: 0.65rem;
+			letter-spacing: 2px;
+		}
+
+		.chat-box {
+			width: 260px;
+			max-height: 200px;
+		}
+
+		.chat-messages {
+			max-height: 150px;
+		}
+
+		.chat-msg {
+			font-size: 0.7rem;
+		}
+
+		.chat-input {
+			min-height: auto;
+			padding: 6px 8px;
+			font-size: 0.7rem;
+		}
+
+		.chat-send {
+			min-width: auto;
+			min-height: auto;
+			padding: 6px 10px;
+		}
 	}
 </style>

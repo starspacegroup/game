@@ -157,6 +157,7 @@
 </div>
 
 <style>
+	/* ===== MOBILE-FIRST VIRTUAL JOYSTICK STYLES ===== */
 	.joystick-overlay {
 		position: fixed;
 		bottom: 0;
@@ -164,18 +165,19 @@
 		right: 0;
 		pointer-events: none;
 		z-index: 20;
-		padding-bottom: env(safe-area-inset-bottom, 16px);
+		padding-bottom: calc(var(--safe-bottom, 0px) + 12px);
 	}
 
 	.joystick {
 		position: fixed;
-		bottom: 80px;
+		/* Responsive bottom positioning based on screen height */
+		bottom: max(60px, 10vh);
 		pointer-events: all;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 6px;
-		opacity: 0.4;
+		gap: 4px;
+		opacity: 0.35;
 		transition: opacity 0.2s;
 	}
 
@@ -183,17 +185,20 @@
 		opacity: 0.7;
 	}
 
+	/* Mobile-first: smaller joysticks for small screens */
 	.joystick.left {
-		left: 40px;
+		left: max(var(--safe-left, 0px), 8px) + 20px;
+		left: calc(var(--safe-left, 0px) + 20px);
 	}
 
 	.joystick.right {
-		right: 40px;
+		right: calc(var(--safe-right, 0px) + 20px);
 	}
 
+	/* Responsive joystick base - smaller on mobile */
 	.joystick-base {
-		width: 120px;
-		height: 120px;
+		width: 90px;
+		height: 90px;
 		border-radius: 50%;
 		border: 2px solid rgba(255, 255, 255, 0.2);
 		background: rgba(255, 255, 255, 0.05);
@@ -203,9 +208,10 @@
 		position: relative;
 	}
 
+	/* Responsive joystick knob */
 	.joystick-knob {
-		width: 44px;
-		height: 44px;
+		width: 36px;
+		height: 36px;
 		border-radius: 50%;
 		background: rgba(0, 255, 136, 0.4);
 		border: 2px solid rgba(0, 255, 136, 0.6);
@@ -219,42 +225,190 @@
 
 	.joystick-label {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.55rem;
+		font-size: 0.5rem;
 		color: rgba(255, 255, 255, 0.3);
 		letter-spacing: 2px;
 	}
 
+	/* Action buttons - minimum touch target 44px */
 	.action-btn {
 		position: fixed;
 		pointer-events: all;
-		width: 48px;
-		height: 48px;
+		width: var(--touch-target-min, 44px);
+		height: var(--touch-target-min, 44px);
 		border-radius: 50%;
 		border: 2px solid rgba(255, 255, 255, 0.25);
 		background: rgba(255, 255, 255, 0.08);
 		color: rgba(255, 255, 255, 0.5);
 		font-family: var(--hud-font, monospace);
-		font-size: 0.65rem;
+		font-size: 0.6rem;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	.action-btn.interact {
-		right: 170px;
-		bottom: 100px;
+		right: calc(var(--safe-right, 0px) + 130px);
+		bottom: max(80px, 12vh);
 		border-color: rgba(68, 136, 255, 0.4);
 	}
 
 	.action-btn.boost {
-		right: 170px;
-		bottom: 170px;
+		right: calc(var(--safe-right, 0px) + 130px);
+		bottom: max(140px, 18vh);
 		border-color: rgba(255, 170, 0, 0.4);
-		font-size: 0.5rem;
+		font-size: 0.45rem;
 	}
 
 	.action-btn:active {
 		background: rgba(255, 255, 255, 0.2);
+		transform: scale(0.95);
+	}
+
+	/* ===== LARGER PHONES (375px+) ===== */
+	@media (min-width: 375px) {
+		.joystick.left {
+			left: calc(var(--safe-left, 0px) + 30px);
+		}
+
+		.joystick.right {
+			right: calc(var(--safe-right, 0px) + 30px);
+		}
+
+		.joystick-base {
+			width: 100px;
+			height: 100px;
+		}
+
+		.joystick-knob {
+			width: 40px;
+			height: 40px;
+		}
+
+		.action-btn {
+			width: 46px;
+			height: 46px;
+		}
+
+		.action-btn.interact {
+			right: calc(var(--safe-right, 0px) + 145px);
+		}
+
+		.action-btn.boost {
+			right: calc(var(--safe-right, 0px) + 145px);
+		}
+	}
+
+	/* ===== MEDIUM PHONES (414px+) ===== */
+	@media (min-width: 414px) {
+		.joystick {
+			bottom: max(70px, 11vh);
+		}
+
+		.joystick.left {
+			left: calc(var(--safe-left, 0px) + 35px);
+		}
+
+		.joystick.right {
+			right: calc(var(--safe-right, 0px) + 35px);
+		}
+
+		.joystick-base {
+			width: 110px;
+			height: 110px;
+		}
+
+		.joystick-knob {
+			width: 42px;
+			height: 42px;
+		}
+
+		.action-btn {
+			width: 48px;
+			height: 48px;
+			font-size: 0.65rem;
+		}
+
+		.action-btn.interact {
+			right: calc(var(--safe-right, 0px) + 160px);
+			bottom: max(90px, 13vh);
+		}
+
+		.action-btn.boost {
+			right: calc(var(--safe-right, 0px) + 160px);
+			bottom: max(155px, 20vh);
+			font-size: 0.5rem;
+		}
+	}
+
+	/* ===== LARGER PHONES (480px+) / LANDSCAPE ===== */
+	@media (min-width: 480px) {
+		.joystick {
+			bottom: max(80px, 12vh);
+		}
+
+		.joystick.left {
+			left: calc(var(--safe-left, 0px) + 40px);
+		}
+
+		.joystick.right {
+			right: calc(var(--safe-right, 0px) + 40px);
+		}
+
+		.joystick-base {
+			width: 120px;
+			height: 120px;
+		}
+
+		.joystick-knob {
+			width: 44px;
+			height: 44px;
+		}
+
+		.joystick-label {
+			font-size: 0.55rem;
+		}
+
+		.action-btn.interact {
+			right: calc(var(--safe-right, 0px) + 170px);
+			bottom: max(100px, 14vh);
+		}
+
+		.action-btn.boost {
+			right: calc(var(--safe-right, 0px) + 170px);
+			bottom: max(170px, 22vh);
+		}
+	}
+
+	/* ===== LANDSCAPE MODE ADJUSTMENTS ===== */
+	@media (orientation: landscape) and (max-height: 500px) {
+		.joystick {
+			bottom: max(40px, 8vh);
+		}
+
+		.joystick-base {
+			width: 80px;
+			height: 80px;
+		}
+
+		.joystick-knob {
+			width: 32px;
+			height: 32px;
+		}
+
+		.action-btn {
+			width: 40px;
+			height: 40px;
+		}
+
+		.action-btn.interact {
+			bottom: max(50px, 10vh);
+		}
+
+		.action-btn.boost {
+			bottom: max(100px, 18vh);
+		}
 	}
 </style>

@@ -79,6 +79,7 @@
 </div>
 
 <style>
+	/* ===== MOBILE-FIRST HUD STYLES ===== */
 	.hud {
 		position: fixed;
 		top: 0;
@@ -87,14 +88,15 @@
 		pointer-events: none;
 		z-index: 10;
 		font-family: var(--hud-font, 'Courier New', monospace);
-		padding: env(safe-area-inset-top, 8px) 12px 0 12px;
+		padding: calc(var(--safe-top, 0px) + var(--spacing-sm, 8px)) var(--spacing-sm, 8px) 0 var(--spacing-sm, 8px);
 	}
 
 	.hud-top {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 8px 0;
+		padding: var(--spacing-xs, 4px) 0;
+		gap: var(--spacing-xs, 4px);
 	}
 
 	.score,
@@ -102,28 +104,30 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		min-width: 60px;
 	}
 
 	.label {
-		font-size: 0.65rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #6688aa;
-		letter-spacing: 2px;
+		letter-spacing: 1px;
 	}
 
 	.value {
-		font-size: 1.4rem;
+		font-size: var(--font-lg, 1rem);
 		color: #00ff88;
 		font-weight: bold;
 		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 	}
 
 	.mode-badge {
-		padding: 3px 10px;
+		padding: 3px 8px;
 		border: 1px solid #335;
 		border-radius: 4px;
-		font-size: 0.7rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #8899aa;
 		letter-spacing: 1px;
+		white-space: nowrap;
 	}
 
 	.mode-badge.multiplayer {
@@ -135,8 +139,8 @@
 	.health-container {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin-top: 4px;
+		gap: var(--spacing-sm, 8px);
+		margin-top: var(--spacing-xs, 4px);
 	}
 
 	.health-bar {
@@ -176,17 +180,17 @@
 	}
 
 	.health-text {
-		font-size: 0.65rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #8899aa;
-		min-width: 55px;
+		min-width: 50px;
 		text-align: right;
 	}
 
 	.puzzle-progress {
-		margin-top: 8px;
+		margin-top: var(--spacing-sm, 8px);
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--spacing-sm, 8px);
 	}
 
 	.puzzle-bar {
@@ -205,7 +209,7 @@
 	}
 
 	.puzzle-complete {
-		font-size: 0.7rem;
+		font-size: var(--font-sm, 0.7rem);
 		color: #ffdd00;
 		font-weight: bold;
 		text-shadow: 0 0 8px rgba(255, 221, 0, 0.6);
@@ -223,80 +227,69 @@
 
 	.controls-hint {
 		position: fixed;
-		bottom: 12px;
+		bottom: var(--spacing-sm, 8px);
 		left: 50%;
 		transform: translateX(-50%);
-		font-size: 0.6rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #445566;
 		letter-spacing: 1px;
 		white-space: nowrap;
+		padding-bottom: var(--safe-bottom, 0px);
 	}
 
-	@media (max-width: 480px) {
-		.hud-top {
-			padding: 4px 0;
-		}
-		.value {
-			font-size: 1.1rem;
-		}
-		.user-indicator {
-			top: 8px;
-			right: 8px;
-		}
-		.user-name {
-			max-width: 80px;
-		}
-	}
-
+	/* User indicator - positioned top right, compact on mobile */
 	.user-indicator {
 		position: fixed;
-		top: 12px;
-		right: 12px;
+		top: calc(var(--safe-top, 0px) + var(--spacing-sm, 8px));
+		right: calc(var(--safe-right, 0px) + var(--spacing-sm, 8px));
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: var(--spacing-sm, 8px);
 		background: rgba(0, 0, 0, 0.6);
 		border: 1px solid rgba(68, 136, 255, 0.4);
 		border-radius: 8px;
-		padding: 6px 12px 6px 6px;
+		padding: 4px 8px 4px 4px;
 		pointer-events: auto;
 		backdrop-filter: blur(4px);
+		max-width: 140px;
 	}
 
 	.user-avatar {
-		width: 32px;
-		height: 32px;
+		width: 28px;
+		height: 28px;
 		border-radius: 50%;
 		border: 2px solid #4488ff;
 		box-shadow: 0 0 8px rgba(68, 136, 255, 0.5);
+		flex-shrink: 0;
 	}
 
 	.user-avatar-placeholder {
-		width: 32px;
-		height: 32px;
+		width: 28px;
+		height: 28px;
 		border-radius: 50%;
 		border: 2px solid #4488ff;
 		background: linear-gradient(135deg, #4488ff, #6644ff);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 0.9rem;
+		font-size: 0.8rem;
 		font-weight: bold;
 		color: white;
+		flex-shrink: 0;
 	}
 
 	.user-info {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 1px;
+		overflow: hidden;
 	}
 
 	.user-name {
-		font-size: 0.75rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #ffffff;
 		font-weight: 600;
 		letter-spacing: 0.5px;
-		max-width: 120px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -305,15 +298,15 @@
 	.user-status {
 		display: flex;
 		align-items: center;
-		gap: 4px;
-		font-size: 0.6rem;
+		gap: 3px;
+		font-size: 0.5rem;
 		color: #00ff88;
 		letter-spacing: 1px;
 	}
 
 	.status-dot {
-		width: 6px;
-		height: 6px;
+		width: 5px;
+		height: 5px;
 		border-radius: 50%;
 		background: #00ff88;
 		box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
@@ -328,6 +321,78 @@
 		50% {
 			opacity: 0.6;
 			transform: scale(0.9);
+		}
+	}
+
+	/* ===== TABLET AND UP (768px+) ===== */
+	@media (min-width: 768px) {
+		.hud {
+			padding: calc(var(--safe-top, 0px) + 12px) 16px 0 16px;
+		}
+
+		.hud-top {
+			padding: 8px 0;
+		}
+
+		.score,
+		.wave {
+			min-width: 80px;
+		}
+
+		.label {
+			font-size: 0.65rem;
+			letter-spacing: 2px;
+		}
+
+		.value {
+			font-size: 1.4rem;
+		}
+
+		.mode-badge {
+			padding: 3px 10px;
+			font-size: 0.7rem;
+		}
+
+		.health-text {
+			font-size: 0.65rem;
+			min-width: 55px;
+		}
+
+		.user-indicator {
+			top: 12px;
+			right: 12px;
+			gap: 10px;
+			padding: 6px 12px 6px 6px;
+			max-width: 180px;
+		}
+
+		.user-avatar,
+		.user-avatar-placeholder {
+			width: 32px;
+			height: 32px;
+		}
+
+		.user-avatar-placeholder {
+			font-size: 0.9rem;
+		}
+
+		.user-name {
+			font-size: 0.75rem;
+			max-width: 120px;
+		}
+
+		.user-status {
+			font-size: 0.6rem;
+			gap: 4px;
+		}
+
+		.status-dot {
+			width: 6px;
+			height: 6px;
+		}
+
+		.controls-hint {
+			bottom: 12px;
 		}
 	}
 </style>

@@ -1,4 +1,8 @@
+/* ===== MOBILE-FIRST CSS ===== */
+/* Base styles are for mobile, scale UP for larger screens */
+
 :root {
+	/* Colors */
 	--color-primary: #00ff88;
 	--color-secondary: #4488ff;
 	--color-danger: #ff4444;
@@ -8,10 +12,86 @@
 	--color-text: #ffffff;
 	--color-text-dim: #8899aa;
 	--hud-font: 'Courier New', monospace;
+	
+	/* Mobile-first spacing (smallest screens) */
+	--spacing-xs: 4px;
+	--spacing-sm: 8px;
+	--spacing-md: 12px;
+	--spacing-lg: 16px;
+	--spacing-xl: 24px;
+	
+	/* Mobile-first font sizes */
+	--font-xs: 0.6rem;
+	--font-sm: 0.7rem;
+	--font-md: 0.85rem;
+	--font-lg: 1rem;
+	--font-xl: 1.2rem;
+	--font-2xl: 1.6rem;
+	--font-3xl: 2rem;
+	
+	/* Touch target sizes (minimum 44px for accessibility) */
+	--touch-target-min: 44px;
+	--touch-target-comfortable: 48px;
+	
+	/* Safe areas for notched/rounded displays */
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	--safe-left: env(safe-area-inset-left, 0px);
+	--safe-right: env(safe-area-inset-right, 0px);
+	
+	/* Base font size for mobile */
+	font-size: 14px;
+}
+
+/* Small phones (375px+) */
+@media (min-width: 375px) {
+	:root {
+		--spacing-md: 14px;
+		--spacing-lg: 18px;
+	}
+}
+
+/* Large phones / small tablets (480px+) */
+@media (min-width: 480px) {
+	:root {
+		font-size: 15px;
+		--spacing-lg: 20px;
+		--spacing-xl: 28px;
+	}
+}
+
+/* Tablets (768px+) */
+@media (min-width: 768px) {
+	:root {
+		font-size: 16px;
+		--spacing-lg: 24px;
+		--spacing-xl: 32px;
+		--font-3xl: 2.5rem;
+	}
+}
+
+/* Desktop (1024px+) */
+@media (min-width: 1024px) {
+	:root {
+		--font-3xl: 3rem;
+	}
 }
 
 * {
 	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent text selection during gameplay */
+*:not(input):not(textarea) {
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/* Allow text selection in inputs */
+input, textarea {
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 #game-root {
@@ -20,10 +100,13 @@
 	left: 0;
 	width: 100vw;
 	height: 100vh;
+	/* Dynamic viewport for mobile browsers with address bar */
 	width: 100dvw;
 	height: 100dvh;
 	overflow: hidden;
 	background: var(--color-bg);
+	/* Prevent overscroll/bounce on iOS */
+	overscroll-behavior: none;
 }
 
 canvas {
@@ -33,14 +116,30 @@ canvas {
 	touch-action: none;
 }
 
-@media (max-width: 768px) {
-	:root {
-		font-size: 14px;
+/* Utility classes for touch targets */
+.touch-target {
+	min-width: var(--touch-target-min);
+	min-height: var(--touch-target-min);
+}
+
+/* Prevent iOS font size adjustment on orientation change */
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+/* Smooth scrolling when allowed */
+@media (prefers-reduced-motion: no-preference) {
+	html {
+		scroll-behavior: smooth;
 	}
 }
 
-@media (max-width: 480px) {
-	:root {
-		font-size: 12px;
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
 	}
 }

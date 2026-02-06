@@ -125,6 +125,7 @@
 {/if}
 
 <style>
+	/* ===== MOBILE-FIRST WELCOME SCREEN STYLES ===== */
 	.welcome-overlay {
 		position: fixed;
 		inset: 0;
@@ -133,41 +134,47 @@
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
-		padding: 20px;
+		/* Mobile-first padding with safe areas */
+		padding: calc(var(--safe-top, 0px) + 16px) calc(var(--safe-right, 0px) + 16px) calc(var(--safe-bottom, 0px) + 16px) calc(var(--safe-left, 0px) + 16px);
+		overflow-y: auto;
 	}
 
 	.welcome-content {
 		text-align: center;
-		max-width: 480px;
+		max-width: 100%;
+		width: 100%;
+		/* Ensure content doesn't touch edges on small screens */
+		padding: 0 var(--spacing-sm, 8px);
 	}
 
 	.gameover-badge {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.8rem;
+		font-size: var(--font-sm, 0.7rem);
 		color: #ff4444;
-		letter-spacing: 4px;
-		margin-bottom: 12px;
+		letter-spacing: 3px;
+		margin-bottom: var(--spacing-sm, 8px);
 		text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
 	}
 
 	.final-score {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.9rem;
+		font-size: var(--font-md, 0.85rem);
 		color: #8899aa;
-		margin-bottom: 20px;
+		margin-bottom: var(--spacing-md, 12px);
 	}
 
 	.score-value {
 		color: #00ff88;
-		font-size: 1.3rem;
+		font-size: var(--font-lg, 1rem);
 		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 	}
 
+	/* Mobile-first title sizing */
 	.title {
-		font-size: 3.5rem;
+		font-size: var(--font-2xl, 1.6rem);
 		font-weight: 900;
 		margin: 0 0 4px 0;
-		letter-spacing: 4px;
+		letter-spacing: 3px;
 		line-height: 1;
 	}
 
@@ -177,28 +184,29 @@
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 		text-shadow: none;
-		filter: drop-shadow(0 0 30px rgba(0, 255, 136, 0.4));
+		filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.4));
 	}
 
 	.subtitle {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.75rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #6688aa;
-		letter-spacing: 4px;
-		margin-bottom: 24px;
+		letter-spacing: 3px;
+		margin-bottom: var(--spacing-lg, 16px);
 	}
 
 	.user-info {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 12px;
-		margin-bottom: 20px;
+		gap: var(--spacing-sm, 8px);
+		margin-bottom: var(--spacing-md, 12px);
+		flex-wrap: wrap;
 	}
 
 	.avatar {
-		width: 40px;
-		height: 40px;
+		width: 36px;
+		height: 36px;
 		border-radius: 50%;
 		border: 2px solid #4488ff;
 	}
@@ -206,107 +214,124 @@
 	.username {
 		font-family: var(--hud-font, monospace);
 		color: #00ff88;
-		font-size: 0.9rem;
+		font-size: var(--font-md, 0.85rem);
 	}
 
 	.logout-btn {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.7rem;
-		padding: 4px 10px;
+		font-size: var(--font-xs, 0.6rem);
+		/* Ensure minimum touch target */
+		min-height: var(--touch-target-min, 44px);
+		min-width: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
 		background: transparent;
 		border: 1px solid #6688aa;
 		color: #6688aa;
 		border-radius: 4px;
 		cursor: pointer;
 		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
 	}
 
-	.logout-btn:hover {
+	.logout-btn:hover,
+	.logout-btn:active {
 		border-color: #ff4444;
 		color: #ff4444;
 	}
 
 	.login-prompt {
-		font-size: 0.85rem;
+		font-size: var(--font-md, 0.85rem);
 		color: #8899aa;
-		margin-bottom: 16px;
+		margin-bottom: var(--spacing-md, 12px);
 	}
 
+	/* Discord button - touch-friendly */
 	.discord-btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 10px;
-		padding: 14px 32px;
+		justify-content: center;
+		gap: var(--spacing-sm, 8px);
+		/* Touch-friendly sizing */
+		min-height: var(--touch-target-comfortable, 48px);
+		padding: var(--spacing-sm, 8px) var(--spacing-lg, 16px);
 		font-family: var(--hud-font, monospace);
-		font-size: 1rem;
-		letter-spacing: 2px;
+		font-size: var(--font-md, 0.85rem);
+		letter-spacing: 1px;
 		color: #fff;
 		background: #5865F2;
 		border: none;
-		border-radius: 4px;
+		border-radius: 6px;
 		cursor: pointer;
 		transition: all 0.2s;
 		box-shadow: 0 0 20px rgba(88, 101, 242, 0.3);
-		margin-bottom: 24px;
+		margin-bottom: var(--spacing-lg, 16px);
+		-webkit-tap-highlight-color: transparent;
+		width: 100%;
+		max-width: 280px;
 	}
 
-	.discord-btn:hover {
-		transform: scale(1.05);
-		box-shadow: 0 0 40px rgba(88, 101, 242, 0.5);
+	.discord-btn:hover,
+	.discord-btn:active {
+		transform: scale(1.02);
+		box-shadow: 0 0 30px rgba(88, 101, 242, 0.5);
 	}
 
 	.discord-icon {
-		width: 24px;
-		height: 24px;
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
 	}
 
 	.lore {
-		font-size: 0.85rem;
+		font-size: var(--font-sm, 0.7rem);
 		color: #8899aa;
-		line-height: 1.6;
-		margin-bottom: 28px;
+		line-height: 1.5;
+		margin-bottom: var(--spacing-lg, 16px);
 		font-style: italic;
+		padding: 0 var(--spacing-sm, 8px);
 	}
 
+	/* Start button - touch-friendly */
 	.start-btn {
 		display: inline-block;
-		padding: 14px 48px;
+		min-height: var(--touch-target-comfortable, 48px);
+		padding: var(--spacing-sm, 8px) var(--spacing-xl, 24px);
 		font-family: var(--hud-font, monospace);
-		font-size: 1.1rem;
-		letter-spacing: 4px;
+		font-size: var(--font-lg, 1rem);
+		letter-spacing: 3px;
 		color: #000;
 		background: linear-gradient(135deg, #00ff88, #44ffaa);
 		border: none;
-		border-radius: 4px;
+		border-radius: 6px;
 		cursor: pointer;
 		transition: all 0.2s;
-		box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
-		margin-bottom: 28px;
+		box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
+		margin-bottom: var(--spacing-lg, 16px);
+		-webkit-tap-highlight-color: transparent;
+		width: 100%;
+		max-width: 280px;
 	}
 
-	.start-btn:hover {
-		transform: scale(1.05);
-		box-shadow: 0 0 50px rgba(0, 255, 136, 0.5);
-	}
-
+	.start-btn:hover,
 	.start-btn:active {
-		transform: scale(0.97);
+		transform: scale(1.02);
+		box-shadow: 0 0 40px rgba(0, 255, 136, 0.5);
 	}
 
 	.features {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		margin-bottom: 24px;
+		gap: var(--spacing-sm, 8px);
+		margin-bottom: var(--spacing-lg, 16px);
 	}
 
 	.feature {
-		font-size: 0.75rem;
+		font-size: var(--font-xs, 0.6rem);
 		color: #6688aa;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 8px;
+		gap: var(--spacing-sm, 8px);
 	}
 
 	.feature-icon {
@@ -315,25 +340,157 @@
 
 	.domain {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.6rem;
+		font-size: 0.5rem;
 		color: #334455;
-		letter-spacing: 3px;
+		letter-spacing: 2px;
 	}
 
-	@media (max-width: 480px) {
+	/* ===== LARGER PHONES (375px+) ===== */
+	@media (min-width: 375px) {
 		.title {
-			font-size: 2.4rem;
+			font-size: 2rem;
+			letter-spacing: 3px;
 		}
+
+		.subtitle {
+			letter-spacing: 4px;
+		}
+
+		.discord-btn,
+		.start-btn {
+			max-width: 300px;
+		}
+	}
+
+	/* ===== MEDIUM SCREENS (480px+) ===== */
+	@media (min-width: 480px) {
+		.welcome-overlay {
+			padding: 20px;
+		}
+
+		.welcome-content {
+			max-width: 420px;
+		}
+
+		.title {
+			font-size: 2.5rem;
+		}
+
+		.gameover-badge {
+			font-size: 0.8rem;
+			letter-spacing: 4px;
+		}
+
+		.score-value {
+			font-size: 1.2rem;
+		}
+
 		.subtitle {
 			font-size: 0.7rem;
 			letter-spacing: 5px;
 		}
+
+		.avatar {
+			width: 40px;
+			height: 40px;
+		}
+
+		.discord-btn {
+			padding: 12px 24px;
+			font-size: 0.95rem;
+			letter-spacing: 2px;
+			max-width: 320px;
+		}
+
+		.discord-icon {
+			width: 24px;
+			height: 24px;
+		}
+
+		.start-btn {
+			padding: 12px 40px;
+			font-size: 1.05rem;
+			letter-spacing: 4px;
+			max-width: 320px;
+		}
+
 		.lore {
+			font-size: 0.8rem;
+		}
+
+		.feature {
+			font-size: 0.7rem;
+		}
+	}
+
+	/* ===== TABLETS AND UP (768px+) ===== */
+	@media (min-width: 768px) {
+		.welcome-content {
+			max-width: 480px;
+		}
+
+		.title {
+			font-size: 3.5rem;
+			letter-spacing: 4px;
+		}
+
+		.subtitle {
+			font-size: 0.75rem;
+			margin-bottom: 24px;
+		}
+
+		.final-score {
+			font-size: 0.9rem;
+			margin-bottom: 20px;
+		}
+
+		.score-value {
+			font-size: 1.3rem;
+		}
+
+		.user-info {
+			gap: 12px;
+			margin-bottom: 20px;
+		}
+
+		.username {
+			font-size: 0.9rem;
+		}
+
+		.logout-btn {
+			font-size: 0.7rem;
+			padding: 4px 10px;
+			min-height: auto;
+			min-width: auto;
+		}
+
+		.discord-btn {
+			padding: 14px 32px;
+			font-size: 1rem;
+			margin-bottom: 24px;
+			width: auto;
+		}
+
+		.start-btn {
+			padding: 14px 48px;
+			font-size: 1.1rem;
+			margin-bottom: 28px;
+			width: auto;
+		}
+
+		.lore {
+			font-size: 0.85rem;
+			line-height: 1.6;
+			margin-bottom: 28px;
+		}
+
+		.feature {
 			font-size: 0.75rem;
 		}
-		.start-btn {
-			padding: 12px 36px;
-			font-size: 0.95rem;
+
+		.domain {
+			font-size: 0.6rem;
+			letter-spacing: 3px;
 		}
 	}
 </style>
