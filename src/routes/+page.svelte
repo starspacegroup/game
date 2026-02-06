@@ -7,6 +7,7 @@
 	import VirtualJoystick from '$lib/components/ui/VirtualJoystick.svelte';
 	import WelcomeScreen from '$lib/components/ui/WelcomeScreen.svelte';
 	import ChatBox from '$lib/components/ui/ChatBox.svelte';
+	import PlayerIndicators from '$lib/components/ui/PlayerIndicators.svelte';
 
 	let gameContainer: HTMLDivElement | undefined = $state();
 	let cleanupKeyboard: (() => void) | undefined;
@@ -58,6 +59,7 @@
 	<!-- UI Overlays -->
 	{#if gameState.phase === 'playing'}
 		<HUD />
+		<PlayerIndicators />
 		{#if gameState.isMobile}
 			<VirtualJoystick />
 		{/if}
