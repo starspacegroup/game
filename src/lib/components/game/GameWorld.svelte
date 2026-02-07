@@ -22,7 +22,7 @@
 	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
-	import { sendPosition } from '$lib/stores/socketClient';
+	import { sendPosition, sendPuzzleAction } from '$lib/stores/socketClient';
 
 	// Initialize the game world (larger counts for bigger borderless world)
 	resetIdCounter();
@@ -366,8 +366,22 @@
 					const node = world.puzzleNodes.find((n) => n.id === event.entityB);
 					if (node && inputState.interact && !node.connected) {
 						node.position.lerp(node.targetPosition, 0.05);
+						// Sync puzzle node movement to server
+						sendPuzzleAction(
+							node.id,
+							'move',
+							{ x: node.position.x, y: node.position.y, z: node.position.z },
+							false
+						);
 						if (node.position.distanceTo(node.targetPosition) < 3) {
 							node.connected = true;
+							// Sync puzzle node connection to server
+							sendPuzzleAction(
+								node.id,
+								'connect',
+								{ x: node.position.x, y: node.position.y, z: node.position.z },
+								true
+							);
 						}
 					}
 					break;

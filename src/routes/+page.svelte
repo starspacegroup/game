@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { setupKeyboardControls, setupMouseControls } from '$lib/stores/inputState.svelte';
+	import { connectToServer, disconnect } from '$lib/stores/socketClient';
 	import GameScene from '$lib/components/game/GameScene.svelte';
 	import HUD from '$lib/components/ui/HUD.svelte';
 	import VirtualJoystick from '$lib/components/ui/VirtualJoystick.svelte';
@@ -26,6 +27,9 @@
 			cleanupMouse = setupMouseControls(gameContainer);
 		}
 
+		// Connect to multiplayer server
+		connectToServer();
+
 		// Request fullscreen on mobile after first interaction
 		if (gameState.isMobile) {
 			const requestFs = () => {
@@ -49,6 +53,7 @@
 	onDestroy(() => {
 		cleanupKeyboard?.();
 		cleanupMouse?.();
+		disconnect();
 	});
 </script>
 

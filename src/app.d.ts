@@ -6,8 +6,15 @@ declare global {
 		// interface Locals {}
 		// interface PageData {}
 		// interface PageState {}
-		// interface Platform {}
+		interface Platform {
+			env: {
+				GAME_ROOM: DurableObjectNamespace;
+				GAME_DATA: KVNamespace;
+			};
+			context: ExecutionContext;
+			caches: CacheStorage & { default: Cache; };
+		}
 	}
 }
 
-export {};
+export { };

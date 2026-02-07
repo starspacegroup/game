@@ -1,6 +1,27 @@
 name = "starspace-puzzle-wars"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
+main = "worker.ts"
+
+[build]
+command = "npm run build"
 
 [site]
 bucket = ".svelte-kit/cloudflare"
+
+# Durable Objects for real-time multiplayer
+[[durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["GameRoom"]
+
+# KV namespace for persistent game data (leaderboards, etc.)
+[[kv_namespaces]]
+binding = "GAME_DATA"
+id = "3d00d940ac8e470f9fb1ba5b34b2a2db"
+
+[vars]
+MULTIPLAYER_ENABLED = "true"
