@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getRelativeToPlayer } from '$lib/game/world';
 	import { getPuzzleConnections } from '$lib/game/puzzle';
 	import PuzzleNode from './PuzzleNode.svelte';
 
@@ -31,19 +31,24 @@
 		for (let i = 0; i < connections.length; i++) {
 			const [a, b] = connections[i];
 			const i6 = i * 6;
-			positions[i6] = nodes[a].position.x;
-			positions[i6 + 1] = nodes[a].position.y;
-			positions[i6 + 2] = nodes[a].position.z;
-			positions[i6 + 3] = nodes[b].position.x;
-			positions[i6 + 4] = nodes[b].position.y;
-			positions[i6 + 5] = nodes[b].position.z;
+			// Use wrapped positions for seamless infinite world
+			const posA = getRelativeToPlayer(nodes[a].position);
+			const posB = getRelativeToPlayer(nodes[b].position);
+			positions[i6] = posA.x;
+			positions[i6 + 1] = posA.y;
+			positions[i6 + 2] = posA.z;
+			positions[i6 + 3] = posB.x;
+			positions[i6 + 4] = posB.y;
+			positions[i6 + 5] = posB.z;
 
-			targetPositions[i6] = nodes[a].targetPosition.x;
-			targetPositions[i6 + 1] = nodes[a].targetPosition.y;
-			targetPositions[i6 + 2] = nodes[a].targetPosition.z;
-			targetPositions[i6 + 3] = nodes[b].targetPosition.x;
-			targetPositions[i6 + 4] = nodes[b].targetPosition.y;
-			targetPositions[i6 + 5] = nodes[b].targetPosition.z;
+			const targetA = getRelativeToPlayer(nodes[a].targetPosition);
+			const targetB = getRelativeToPlayer(nodes[b].targetPosition);
+			targetPositions[i6] = targetA.x;
+			targetPositions[i6 + 1] = targetA.y;
+			targetPositions[i6 + 2] = targetA.z;
+			targetPositions[i6 + 3] = targetB.x;
+			targetPositions[i6 + 4] = targetB.y;
+			targetPositions[i6 + 5] = targetB.z;
 		}
 
 		if (!lineGeometry) {

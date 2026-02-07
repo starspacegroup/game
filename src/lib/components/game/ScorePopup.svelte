@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
+	import { getRelativeToPlayer } from '$lib/game/world';
 
 	interface Props {
 		x: number;
@@ -17,6 +18,9 @@
 	let opacity = $state(1);
 	let scale = $state(0.5);
 	let lifetime = 0;
+
+	// Store original position for wrapped calculation
+	const originalPos = new THREE.Vector3(x, y, z);
 
 	const DURATION = 1.2;
 	const RISE_SPEED = 8;
@@ -79,12 +83,14 @@
 		}
 
 		if (group) {
-			group.position.set(x, y + offsetY, z);
+			// Use wrapped position relative to player
+			const relPos = getRelativeToPlayer(originalPos);
+			group.position.set(relPos.x, relPos.y + offsetY, relPos.z);
 		}
 	});
 </script>
 
-<T.Group bind:ref={group} position={[x, y, z]}>
+<T.Group bind:ref={group}>
 	<T.Sprite scale={[scale * 4, scale * 2, 1]}>
 		<T.SpriteMaterial map={texture} transparent={true} opacity={opacity} depthTest={false} />
 	</T.Sprite>

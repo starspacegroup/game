@@ -1,4 +1,4 @@
-import { world } from './world';
+import { world, wrappedDistance } from './world';
 
 export interface CollisionEvent {
 	type:
@@ -15,37 +15,37 @@ export function checkCollisions(): CollisionEvent[] {
 	const pp = world.player.position;
 	const pr = world.player.radius;
 
-	// Player vs NPCs (only hostile ones)
+	// Player vs NPCs (only hostile ones) - using wrapped distance for toroidal world
 	for (const npc of world.npcs) {
 		if (npc.destroyed || npc.converted) continue;
-		if (pp.distanceTo(npc.position) < pr + npc.radius + 0.5) {
+		if (wrappedDistance(pp, npc.position) < pr + npc.radius + 0.5) {
 			events.push({ type: 'player-npc', entityA: 'player', entityB: npc.id });
 		}
 	}
 
-	// Player vs PowerUps
+	// Player vs PowerUps - using wrapped distance
 	for (const pu of world.powerUps) {
 		if (pu.collected) continue;
-		if (pp.distanceTo(pu.position) < pr + pu.radius + 1.5) {
+		if (wrappedDistance(pp, pu.position) < pr + pu.radius + 1.5) {
 			events.push({ type: 'player-powerup', entityA: 'player', entityB: pu.id });
 		}
 	}
 
-	// Player vs Puzzle Nodes (proximity for interaction)
+	// Player vs Puzzle Nodes (proximity for interaction) - using wrapped distance
 	for (const node of world.puzzleNodes) {
-		if (pp.distanceTo(node.position) < pr + node.radius + 3) {
+		if (wrappedDistance(pp, node.position) < pr + node.radius + 3) {
 			events.push({ type: 'player-puzzlenode', entityA: 'player', entityB: node.id });
 		}
 	}
 
-	// Lasers vs NPCs
+	// Lasers vs NPCs - using wrapped distance
 	for (const laser of world.lasers) {
 		if (laser.life <= 0) continue;
 
 		if (laser.owner === 'player') {
 			for (const npc of world.npcs) {
 				if (npc.destroyed || npc.converted) continue;
-				if (laser.position.distanceTo(npc.position) < laser.radius + npc.radius) {
+				if (wrappedDistance(laser.position, npc.position) < laser.radius + npc.radius) {
 					events.push({ type: 'laser-npc', entityA: laser.id, entityB: npc.id });
 				}
 			}

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { PuzzleNodeData } from './world';
+import { wrappedDistance } from './world';
 
 /** Check overall puzzle progress (0 to 1) */
 export function checkPuzzleProgress(nodes: PuzzleNodeData[]): number {
@@ -56,7 +57,7 @@ export function generateHexGrid(
 	return positions;
 }
 
-/** Find the nearest puzzle node to a given position */
+/** Find the nearest puzzle node to a given position (using wrapped distance for toroidal world) */
 export function findNearestPuzzleNode(
 	position: THREE.Vector3,
 	nodes: PuzzleNodeData[]
@@ -67,7 +68,7 @@ export function findNearestPuzzleNode(
 	let minDist = Infinity;
 
 	for (const node of nodes) {
-		const dist = position.distanceTo(node.position);
+		const dist = wrappedDistance(position, node.position);
 		if (dist < minDist) {
 			minDist = dist;
 			nearest = node;

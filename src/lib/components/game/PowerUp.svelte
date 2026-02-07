@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getRelativeToPlayer } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -27,7 +27,9 @@
 		const d = world.powerUps[cachedIndex];
 		if (!group || !d || d.collected) return;
 
-		group.position.copy(d.position);
+		// Render at wrapped position relative to player for seamless infinite world
+		const renderPos = getRelativeToPlayer(d.position);
+		group.position.copy(renderPos);
 		group.position.z += Math.sin(d.bobPhase) * 0.5;
 		group.rotation.y += delta * 2;
 	});

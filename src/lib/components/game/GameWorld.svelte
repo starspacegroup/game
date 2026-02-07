@@ -10,7 +10,7 @@
 	import Starfield from './Starfield.svelte';
 	import PuzzleStructure from './PuzzleStructure.svelte';
 	import PowerUp from './PowerUp.svelte';
-	import HexGrid from './HexGrid.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, wrapPosition } from '$lib/game/world';
+	import HexGrid from './HexGrid.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, wrapPosition, wrappedDistance, wrappedDirection } from '$lib/game/world';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -23,16 +23,21 @@
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition, sendPuzzleAction } from '$lib/stores/socketClient';
+	import { VIEW_DISTANCE } from '$lib/game/chunk';
 
-	// Initialize the game world (larger counts for bigger borderless world)
+	// Render distance for entities - beyond this they're culled
+	const RENDER_DISTANCE = VIEW_DISTANCE;
+
+	// Initialize the game world (larger counts for 4232x4232 world)
 	resetIdCounter();
 	resetWorld();
-	world.asteroids = generateAsteroids(200, world.bounds);
+	world.asteroids = generateAsteroids(600, world.bounds);
 	world.npcs = generateNpcs(gameState.npcCount, world.bounds);
 	world.puzzleNodes = generatePuzzleNodes(12);
-	world.powerUps = generatePowerUps(30, world.bounds);
+	world.powerUps = generatePowerUps(100, world.bounds);
 
 	// Reactive entity lists (controls which components are rendered)
+	// Entities render at their wrapped position relative to player automatically
 	let asteroidIds = $state(world.asteroids.map((a) => a.id));
 	let npcIds = $state(world.npcs.map((n) => n.id));
 	let laserIds = $state<string[]>([]);
@@ -183,9 +188,8 @@
 				return;
 			}
 
-			const dx = world.player.position.x - npc.position.x;
-			const dy = world.player.position.y - npc.position.y;
-			const dist = Math.sqrt(dx * dx + dy * dy);
+			// Use wrapped direction for toroidal world (NPC chases via shortest path)
+			const { dx, dy, dist } = wrappedDirection(npc.position, world.player.position);
 
 			if (dist > 2.5) {
 				// Chase until very close
@@ -374,15 +378,26 @@
 		if (listUpdateTimer < 0.15) return; // Update lists ~7 times/sec
 		listUpdateTimer = 0;
 
-		asteroidIds = world.asteroids.filter((a) => !a.destroyed).map((a) => a.id);
-		npcIds = world.npcs.filter((n) => !n.destroyed).map((n) => n.id);
-		laserIds = world.lasers.filter((l) => l.life > 0).map((l) => l.id);
-		powerUpIds = world.powerUps.filter((p) => !p.collected).map((p) => p.id);
+		// Helper to check if entity is in view range using wrapped distance
+		const isVisible = (pos: THREE.Vector3): boolean => 
+			wrappedDistance(world.player.position, pos) <= RENDER_DISTANCE;
+
+		// Asteroids: filter by view distance
+		asteroidIds = world.asteroids.filter((a) => !a.destroyed && isVisible(a.position)).map((a) => a.id);
+
+		// NPCs: filter by view distance
+		npcIds = world.npcs.filter((n) => !n.destroyed && isVisible(n.position)).map((n) => n.id);
+
+		// Lasers: filter by view distance
+		laserIds = world.lasers.filter((l) => l.life > 0 && isVisible(l.position)).map((l) => l.id);
+
+		// Power-ups: filter by view distance
+		powerUpIds = world.powerUps.filter((p) => !p.collected && isVisible(p.position)).map((p) => p.id);
 		
 		// Update other players and remove stale ones (no update in 5 seconds)
 		const now = Date.now();
 		world.otherPlayers = world.otherPlayers.filter((p) => now - p.lastUpdate < 5000);
-		otherPlayerIds = world.otherPlayers.map((p) => p.id);
+		otherPlayerIds = world.otherPlayers.filter((p) => isVisible(p.position)).map((p) => p.id);
 	}
 
 	function syncMultiplayer(dt: number): void {
@@ -414,16 +429,21 @@
 		// (converted NPCs don't count as we want a steady stream of enemies)
 		const hostileNpcs = world.npcs.filter((n) => !n.destroyed && !n.converted && n.conversionProgress === 0);
 		if (hostileNpcs.length < 2) {
-			// Add a new hostile NPC from far away
+			// Add a new hostile NPC from a distance (spawn within view range)
 			const angle = Math.random() * Math.PI * 2;
-			const dist = 60 + Math.random() * 20;
+			const dist = 80 + Math.random() * 40;
+			let spawnX = world.player.position.x + Math.cos(angle) * dist;
+			let spawnY = world.player.position.y + Math.sin(angle) * dist;
+			// Wrap spawn position into world bounds
+			const bx = world.bounds.x;
+			const by = world.bounds.y;
+			if (spawnX > bx) spawnX -= bx * 2;
+			else if (spawnX < -bx) spawnX += bx * 2;
+			if (spawnY > by) spawnY -= by * 2;
+			else if (spawnY < -by) spawnY += by * 2;
 			world.npcs.push({
 				id: `npc_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-				position: new THREE.Vector3(
-					world.player.position.x + Math.cos(angle) * dist,
-					world.player.position.y + Math.sin(angle) * dist,
-					0
-				),
+				position: new THREE.Vector3(spawnX, spawnY, 0),
 				velocity: new THREE.Vector3(0, 0, 0),
 				rotation: new THREE.Euler(0, 0, 0),
 				radius: 1.2,
@@ -446,8 +466,8 @@
 		for (const pu of collected.slice(0, 2)) {
 			pu.collected = false;
 			pu.position.set(
-				(Math.random() - 0.5) * world.bounds.x * 1.5,
-				(Math.random() - 0.5) * world.bounds.y * 1.5,
+				(Math.random() - 0.5) * world.bounds.x * 2,
+				(Math.random() - 0.5) * world.bounds.y * 2,
 				(Math.random() - 0.5) * 3
 			);
 		}

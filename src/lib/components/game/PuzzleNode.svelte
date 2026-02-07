@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getRelativeToPlayer, wrappedDistance } from '$lib/game/world';
 
 	interface Props {
 		position: THREE.Vector3;
@@ -27,7 +27,9 @@
 
 	useTask((delta) => {
 		if (!group) return;
-		group.position.copy(position);
+		// Render at wrapped position relative to player for seamless infinite world
+		const renderPos = getRelativeToPlayer(position);
+		group.position.copy(renderPos);
 
 		// Initialize colors on first run (captures reactive color prop)
 		if (!colorsInitialized) {
@@ -37,8 +39,8 @@
 			colorsInitialized = true;
 		}
 
-		// Check if within interaction range
-		const distance = world.player.position.distanceTo(position);
+		// Check if within interaction range using wrapped distance
+		const distance = wrappedDistance(world.player.position, position);
 		canInteract = distance <= INTERACTION_RANGE;
 
 		if (canInteract) {

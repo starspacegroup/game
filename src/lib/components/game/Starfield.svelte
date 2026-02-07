@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { T } from '@threlte/core';
+	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
+	import { world } from '$lib/game/world';
 
 	interface Props {
 		count?: number;
@@ -9,7 +10,7 @@
 	let { count = 2000 }: Props = $props();
 
 	// Generate star positions (count is static — only set at mount time)
-	/* eslint-disable state_referenced_locally */
+	// svelte-ignore state_referenced_locally
 	const starCount: number = count;
 	const positions = new Float32Array(starCount * 3);
 	const colors = new Float32Array(starCount * 3);
@@ -48,9 +49,25 @@
 	geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 	geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 	geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+	// Reference to the points object for following player
+	let pointsRef: THREE.Points | undefined = $state();
+
+	// The starfield follows the player with a parallax effect
+	// This creates the illusion that stars are infinitely far away
+	const PARALLAX_FACTOR = 0.95; // Stars move 95% as fast as player (appear very distant)
+
+	useTask(() => {
+		if (!pointsRef) return;
+		// Position starfield centered on player with parallax offset
+		// Stars follow the player but lag slightly, creating depth
+		pointsRef.position.x = world.player.position.x * PARALLAX_FACTOR;
+		pointsRef.position.y = world.player.position.y * PARALLAX_FACTOR;
+		pointsRef.position.z = 0;
+	});
 </script>
 
-<T.Points>
+<T.Points bind:ref={pointsRef}>
 	<T is={geometry} />
 	<T.PointsMaterial
 		size={1.5}

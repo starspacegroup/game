@@ -99,7 +99,8 @@ export const world = {
 	puzzleNodes: [] as PuzzleNodeData[],
 	powerUps: [] as PowerUpData[],
 	otherPlayers: [] as OtherPlayerData[],
-	bounds: { x: 400, y: 300, z: 40 }
+	// World size: 4232 x 4232 (bounds are half-width/half-height from center)
+	bounds: { x: 2116, y: 2116, z: 40 }
 };
 
 // Wrap a position to create an infinite/borderless world
@@ -112,6 +113,63 @@ export function wrapPosition(position: THREE.Vector3): void {
 
 	if (position.y > by) position.y -= by * 2;
 	else if (position.y < -by) position.y += by * 2;
+}
+
+// Get wrapped (toroidal) distance between two points - shortest path considering wrapping
+export function wrappedDistance(a: THREE.Vector3, b: THREE.Vector3): number {
+	const worldW = world.bounds.x * 2;
+	const worldH = world.bounds.y * 2;
+
+	let dx = Math.abs(a.x - b.x);
+	let dy = Math.abs(a.y - b.y);
+
+	// Take shorter wrapped path
+	if (dx > worldW / 2) dx = worldW - dx;
+	if (dy > worldH / 2) dy = worldH - dy;
+
+	return Math.sqrt(dx * dx + dy * dy + (a.z - b.z) ** 2);
+}
+
+// Get wrapped direction from source to target (shortest path)
+export function wrappedDirection(from: THREE.Vector3, to: THREE.Vector3): { dx: number; dy: number; dz: number; dist: number; } {
+	const worldW = world.bounds.x * 2;
+	const worldH = world.bounds.y * 2;
+
+	let dx = to.x - from.x;
+	let dy = to.y - from.y;
+	const dz = to.z - from.z;
+
+	// Wrap to shortest path
+	if (dx > worldW / 2) dx -= worldW;
+	else if (dx < -worldW / 2) dx += worldW;
+
+	if (dy > worldH / 2) dy -= worldH;
+	else if (dy < -worldH / 2) dy += worldH;
+
+	const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+	return { dx, dy, dz, dist };
+}
+
+// Get relative position considering world wrapping (for rendering)
+export function getRelativeToPlayer(position: THREE.Vector3): THREE.Vector3 {
+	const worldW = world.bounds.x * 2;
+	const worldH = world.bounds.y * 2;
+
+	let dx = position.x - world.player.position.x;
+	let dy = position.y - world.player.position.y;
+
+	// Wrap to shortest path
+	if (dx > worldW / 2) dx -= worldW;
+	else if (dx < -worldW / 2) dx += worldW;
+
+	if (dy > worldH / 2) dy -= worldH;
+	else if (dy < -worldH / 2) dy += worldH;
+
+	return new THREE.Vector3(
+		world.player.position.x + dx,
+		world.player.position.y + dy,
+		position.z
+	);
 }
 
 export function resetWorld(): void {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getRelativeToPlayer } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -54,9 +54,10 @@
 		const player = world.otherPlayers.find((p) => p.id === id);
 		if (!player) return;
 
-		// Position the whole component at player location (no rotation on root)
+		// Position at wrapped position relative to local player for seamless infinite world
 		if (rootGroup) {
-			rootGroup.position.copy(player.position);
+			const renderPos = getRelativeToPlayer(player.position);
+			rootGroup.position.copy(renderPos);
 		}
 
 		// Rotate only the ship mesh

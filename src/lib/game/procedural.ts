@@ -132,8 +132,8 @@ export function generatePowerUps(
 		powerUps.push({
 			id: genId('pwr'),
 			position: new THREE.Vector3(
-				(Math.random() - 0.5) * bounds.x * 1.5,
-				(Math.random() - 0.5) * bounds.y * 1.5,
+				(Math.random() - 0.5) * bounds.x * 2,
+				(Math.random() - 0.5) * bounds.y * 2,
 				(Math.random() - 0.5) * 3
 			),
 			type: types[Math.floor(Math.random() * types.length)],

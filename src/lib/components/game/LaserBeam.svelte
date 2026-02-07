@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getRelativeToPlayer } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -23,7 +23,9 @@
 		if (cachedIndex < 0) cachedIndex = world.lasers.findIndex((l) => l.id === id);
 		const d = world.lasers[cachedIndex];
 		if (!group || !d) return;
-		group.position.copy(d.position);
+		// Render at wrapped position relative to player
+		const renderPos = getRelativeToPlayer(d.position);
+		group.position.copy(renderPos);
 		group.rotation.z = Math.atan2(d.direction.y, d.direction.x);
 		
 		// Pulse animation for data stream effect
