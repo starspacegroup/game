@@ -289,21 +289,6 @@
 		const events = checkCollisions();
 		for (const event of events) {
 			switch (event.type) {
-				case 'laser-asteroid': {
-					const laser = world.lasers.find((l) => l.id === event.entityA);
-					const ast = world.asteroids.find((a) => a.id === event.entityB);
-					if (laser && ast) {
-						laser.life = 0;
-						ast.health -= 15;
-						if (ast.health <= 0) {
-							ast.destroyed = true;
-							if (laser.owner === 'player') {
-								gameState.score += Math.round(ast.radius * 10);
-							}
-						}
-					}
-					break;
-				}
 				case 'laser-npc': {
 					const laser = world.lasers.find((l) => l.id === event.entityA);
 					const npc = world.npcs.find((n) => n.id === event.entityB);
@@ -316,20 +301,6 @@
 							gameState.score += points;
 							spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
 						}
-					}
-					break;
-				}
-				case 'player-asteroid': {
-					const ast = world.asteroids.find((a) => a.id === event.entityB);
-					if (ast && !ast.destroyed) {
-						gameState.health -= 3;
-						world.player.health = gameState.health;
-						// Bounce
-						const dx = world.player.position.x - ast.position.x;
-						const dy = world.player.position.y - ast.position.y;
-						const d = Math.sqrt(dx * dx + dy * dy) || 1;
-						world.player.position.x += (dx / d) * 2;
-						world.player.position.y += (dy / d) * 2;
 					}
 					break;
 				}

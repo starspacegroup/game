@@ -2,9 +2,7 @@ import { world } from './world';
 
 export interface CollisionEvent {
 	type:
-	| 'laser-asteroid'
 	| 'laser-npc'
-	| 'player-asteroid'
 	| 'player-npc'
 	| 'player-powerup'
 	| 'player-puzzlenode';
@@ -16,14 +14,6 @@ export function checkCollisions(): CollisionEvent[] {
 	const events: CollisionEvent[] = [];
 	const pp = world.player.position;
 	const pr = world.player.radius;
-
-	// Player vs Asteroids
-	for (const ast of world.asteroids) {
-		if (ast.destroyed) continue;
-		if (pp.distanceTo(ast.position) < pr + ast.radius) {
-			events.push({ type: 'player-asteroid', entityA: 'player', entityB: ast.id });
-		}
-	}
 
 	// Player vs NPCs (only hostile ones)
 	for (const npc of world.npcs) {
@@ -48,16 +38,9 @@ export function checkCollisions(): CollisionEvent[] {
 		}
 	}
 
-	// Lasers vs Asteroids & NPCs
+	// Lasers vs NPCs
 	for (const laser of world.lasers) {
 		if (laser.life <= 0) continue;
-
-		for (const ast of world.asteroids) {
-			if (ast.destroyed) continue;
-			if (laser.position.distanceTo(ast.position) < laser.radius + ast.radius) {
-				events.push({ type: 'laser-asteroid', entityA: laser.id, entityB: ast.id });
-			}
-		}
 
 		if (laser.owner === 'player') {
 			for (const npc of world.npcs) {
