@@ -19,7 +19,7 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { checkCollisions } from '$lib/game/collision';
-	import { checkPuzzleProgress, isPuzzleSolved } from '$lib/game/puzzle';
+	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition } from '$lib/stores/socketClient';
@@ -161,6 +161,28 @@
 		for (const npc of world.npcs) {
 			if (npc.destroyed) continue;
 
+			// Handle converted NPCs - they navigate to puzzle nodes and orbit
+			if (npc.converted) {
+				updateConvertedNpc(npc, dt);
+				continue;
+			}
+
+			// Handle conversion animation
+			if (npc.conversionProgress > 0 && npc.conversionProgress < 1) {
+				npc.conversionProgress += dt * 2; // 0.5 second conversion
+				if (npc.conversionProgress >= 1) {
+					npc.converted = true;
+					npc.conversionProgress = 1;
+					gameState.convertedNpcCount++;
+					// Find nearest puzzle node to orbit
+					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes);
+					npc.targetNodeId = nearestNode?.id || null;
+				}
+				// During conversion, spin in place
+				npc.rotation.z += dt * 10;
+				return;
+			}
+
 			const dx = world.player.position.x - npc.position.x;
 			const dy = world.player.position.y - npc.position.y;
 			const dist = Math.sqrt(dx * dx + dy * dy);
@@ -203,6 +225,59 @@
 		}
 	}
 
+	function updateConvertedNpc(npc: typeof world.npcs[0], dt: number): void {
+		// Find target puzzle node
+		let targetNode = world.puzzleNodes.find(n => n.id === npc.targetNodeId);
+		
+		// If no target or target node moved far, find a new one
+		if (!targetNode) {
+			const nearest = findNearestPuzzleNode(npc.position, world.puzzleNodes);
+			if (nearest) {
+				targetNode = nearest;
+				npc.targetNodeId = nearest.id;
+			}
+		}
+		
+		if (!targetNode) return;
+
+		const dx = targetNode.position.x - npc.position.x;
+		const dy = targetNode.position.y - npc.position.y;
+		const dist = Math.sqrt(dx * dx + dy * dy);
+
+		// Navigate to the puzzle node if far away
+		if (dist > npc.orbitDistance + 2) {
+			const navSpeed = NPC_SPEED * 1.2;
+			npc.velocity.x = (dx / dist) * navSpeed;
+			npc.velocity.y = (dy / dist) * navSpeed;
+			npc.position.addScaledVector(npc.velocity, dt);
+			npc.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
+		} else {
+			// Orbit the puzzle node
+			npc.orbitAngle += dt * 1.5; // Orbit speed
+			npc.position.x = targetNode.position.x + Math.cos(npc.orbitAngle) * npc.orbitDistance;
+			npc.position.y = targetNode.position.y + Math.sin(npc.orbitAngle) * npc.orbitDistance;
+			npc.rotation.z = npc.orbitAngle + Math.PI / 2;
+			
+			// Generate hints while orbiting
+			npc.hintTimer -= dt;
+			if (npc.hintTimer <= 0) {
+				npc.hintTimer = 4 + Math.random() * 3; // 4-7 seconds between hints
+				const hint = generateHint(targetNode, world.puzzleNodes);
+				npc.hintData = hint;
+				gameState.addHint(targetNode.id, hint);
+				gameState.score += 5; // Small score bonus for data collection
+				
+				// Help push the node toward its target (converted NPCs contribute to solving)
+				if (!targetNode.connected) {
+					targetNode.position.lerp(targetNode.targetPosition, 0.01);
+				}
+			}
+		}
+
+		// Wrap position
+		wrapPosition(npc.position);
+	}
+
 	function updatePowerUps(dt: number): void {
 		for (const pu of world.powerUps) {
 			if (pu.collected) continue;
@@ -232,12 +307,12 @@
 				case 'laser-npc': {
 					const laser = world.lasers.find((l) => l.id === event.entityA);
 					const npc = world.npcs.find((n) => n.id === event.entityB);
-					if (laser && npc) {
+					if (laser && npc && !npc.converted) {
 						laser.life = 0;
-						npc.health -= 20;
-						if (npc.health <= 0) {
-							npc.destroyed = true;
-							const points = 50;
+						// Start conversion process instead of destroying
+						if (npc.conversionProgress === 0) {
+							npc.conversionProgress = 0.01; // Start conversion
+							const points = 25;
 							gameState.score += points;
 							spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
 						}
@@ -350,14 +425,35 @@
 			);
 		}
 
-		// Respawn dead NPCs
-		const deadNpcs = world.npcs.filter((n) => n.destroyed);
-		for (const npc of deadNpcs) {
-			npc.destroyed = false;
-			npc.health = npc.maxHealth;
+		// Spawn new hostile NPCs if too few hostile ones remain
+		// (converted NPCs don't count as we want a steady stream of enemies)
+		const hostileNpcs = world.npcs.filter((n) => !n.destroyed && !n.converted && n.conversionProgress === 0);
+		if (hostileNpcs.length < 2) {
+			// Add a new hostile NPC from far away
 			const angle = Math.random() * Math.PI * 2;
-			npc.position.set(Math.cos(angle) * 50, Math.sin(angle) * 50, 0);
-			npc.shootCooldown = 2 + Math.random() * 2;
+			const dist = 60 + Math.random() * 20;
+			world.npcs.push({
+				id: `npc_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+				position: new THREE.Vector3(
+					world.player.position.x + Math.cos(angle) * dist,
+					world.player.position.y + Math.sin(angle) * dist,
+					0
+				),
+				velocity: new THREE.Vector3(0, 0, 0),
+				rotation: new THREE.Euler(0, 0, 0),
+				radius: 1.2,
+				health: 30,
+				maxHealth: 30,
+				shootCooldown: 2 + Math.random() * 2,
+				destroyed: false,
+				converted: false,
+				conversionProgress: 0,
+				targetNodeId: null,
+				orbitAngle: Math.random() * Math.PI * 2,
+				orbitDistance: 5 + Math.random() * 3,
+				hintTimer: 3 + Math.random() * 2,
+				hintData: null
+			});
 		}
 
 		// Respawn collected power-ups

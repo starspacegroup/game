@@ -16,12 +16,30 @@ class GameStore {
 	isMobile = $state(false);
 	isFullscreen = $state(false);
 
+	// Conversion system
+	convertedNpcCount = $state(0);
+	hints = $state<{ nodeId: string; hint: string; timestamp: number; }[]>([]);
+	latestHint = $state<string | null>(null);
+	dataCollected = $state(0); // Total data fragments collected from converted NPCs
+
 	get healthPercent(): number {
 		return (this.health / this.maxHealth) * 100;
 	}
 
 	get isAlive(): boolean {
 		return this.health > 0;
+	}
+
+	addHint(nodeId: string, hint: string): void {
+		this.hints.push({ nodeId, hint, timestamp: Date.now() });
+		this.latestHint = hint;
+		this.dataCollected += 1;
+		// Auto-clear latest hint after 5 seconds
+		setTimeout(() => {
+			if (this.latestHint === hint) {
+				this.latestHint = null;
+			}
+		}, 5000);
 	}
 
 	reset(): void {
@@ -33,6 +51,10 @@ class GameStore {
 		this.puzzleRevealed = false;
 		this.puzzleSolved = false;
 		this.messages = [];
+		this.convertedNpcCount = 0;
+		this.hints = [];
+		this.latestHint = null;
+		this.dataCollected = 0;
 	}
 }
 

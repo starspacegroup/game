@@ -12,7 +12,7 @@ export function resetIdCounter(): void {
 
 export function generateAsteroids(
 	count: number,
-	bounds: { x: number; y: number; z: number }
+	bounds: { x: number; y: number; z: number; }
 ): AsteroidData[] {
 	const asteroids: AsteroidData[] = [];
 	for (let i = 0; i < count; i++) {
@@ -51,7 +51,7 @@ export function generateAsteroids(
 
 export function generateNpcs(
 	count: number,
-	bounds: { x: number; y: number; z: number }
+	bounds: { x: number; y: number; z: number; }
 ): NpcData[] {
 	const npcs: NpcData[] = [];
 	for (let i = 0; i < count; i++) {
@@ -70,7 +70,15 @@ export function generateNpcs(
 			health: 30,
 			maxHealth: 30,
 			shootCooldown: Math.random() * 2 + 1,
-			destroyed: false
+			destroyed: false,
+			// Conversion system - starts unconverted
+			converted: false,
+			conversionProgress: 0,
+			targetNodeId: null,
+			orbitAngle: Math.random() * Math.PI * 2,
+			orbitDistance: 5 + Math.random() * 3,
+			hintTimer: 3 + Math.random() * 2,
+			hintData: null
 		});
 	}
 	return npcs;
@@ -116,7 +124,7 @@ export function generatePuzzleNodes(count = 12): PuzzleNodeData[] {
 
 export function generatePowerUps(
 	count: number,
-	bounds: { x: number; y: number; z: number }
+	bounds: { x: number; y: number; z: number; }
 ): PowerUpData[] {
 	const types: PowerUpData['type'][] = ['health', 'speed', 'multishot', 'shield'];
 	const powerUps: PowerUpData[] = [];

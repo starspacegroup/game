@@ -70,6 +70,27 @@
 		</div>
 	{/if}
 
+	<!-- Converted satellites counter -->
+	{#if gameState.convertedNpcCount > 0}
+		<div class="converted-counter">
+			<span class="converted-icon">◈</span>
+			<span class="converted-value">{gameState.convertedNpcCount}</span>
+			<span class="converted-label">SATELLITES CONVERTED</span>
+			<span class="data-collected">+{gameState.dataCollected} DATA</span>
+		</div>
+	{/if}
+
+	<!-- Latest hint display -->
+	{#if gameState.latestHint}
+		<div class="hint-display">
+			<div class="hint-header">
+				<span class="hint-icon">⟁</span>
+				<span>INCOMING DATA</span>
+			</div>
+			<div class="hint-text">{gameState.latestHint}</div>
+		</div>
+	{/if}
+
 	<!-- Controls hint -->
 	{#if !gameState.isMobile}
 		<div class="controls-hint">
@@ -393,6 +414,127 @@
 
 		.controls-hint {
 			bottom: 12px;
+		}
+	}
+
+	/* Converted satellites counter */
+	.converted-counter {
+		margin-top: var(--spacing-sm, 8px);
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs, 4px);
+		padding: 4px 8px;
+		background: rgba(0, 255, 170, 0.1);
+		border: 1px solid rgba(0, 255, 170, 0.3);
+		border-radius: 4px;
+	}
+
+	.converted-icon {
+		color: #00ffaa;
+		font-size: var(--font-sm, 0.8rem);
+		animation: orbit 2s linear infinite;
+	}
+
+	@keyframes orbit {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+
+	.converted-value {
+		color: #00ffaa;
+		font-size: var(--font-md, 0.9rem);
+		font-weight: bold;
+		text-shadow: 0 0 8px rgba(0, 255, 170, 0.6);
+	}
+
+	.converted-label {
+		color: #6699aa;
+		font-size: var(--font-xs, 0.6rem);
+		letter-spacing: 0.5px;
+	}
+
+	.data-collected {
+		color: #00ffcc;
+		font-size: var(--font-xs, 0.6rem);
+		padding: 1px 4px;
+		background: rgba(0, 255, 204, 0.15);
+		border-radius: 2px;
+		margin-left: auto;
+	}
+
+	/* Hint display */
+	.hint-display {
+		position: fixed;
+		bottom: calc(var(--safe-bottom, 0px) + 50px);
+		left: 50%;
+		transform: translateX(-50%);
+		background: rgba(0, 20, 40, 0.9);
+		border: 1px solid rgba(0, 255, 204, 0.5);
+		border-radius: 8px;
+		padding: 8px 16px;
+		max-width: 90%;
+		width: auto;
+		min-width: 200px;
+		animation: hint-appear 0.3s ease-out;
+		backdrop-filter: blur(4px);
+	}
+
+	@keyframes hint-appear {
+		from {
+			opacity: 0;
+			transform: translateX(-50%) translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(-50%) translateY(0);
+		}
+	}
+
+	.hint-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: #00ffcc;
+		font-size: var(--font-xs, 0.6rem);
+		letter-spacing: 2px;
+		margin-bottom: 4px;
+	}
+
+	.hint-icon {
+		font-size: var(--font-sm, 0.8rem);
+		animation: pulse-hint 1s ease-in-out infinite;
+	}
+
+	@keyframes pulse-hint {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
+	}
+
+	.hint-text {
+		color: #aaddff;
+		font-size: var(--font-sm, 0.75rem);
+		line-height: 1.4;
+		text-shadow: 0 0 4px rgba(170, 221, 255, 0.3);
+	}
+
+	@media (min-width: 768px) {
+		.hint-display {
+			bottom: 60px;
+			max-width: 400px;
+			padding: 10px 20px;
+		}
+
+		.hint-header {
+			font-size: 0.65rem;
+		}
+
+		.hint-text {
+			font-size: 0.85rem;
+		}
+
+		.converted-counter {
+			padding: 5px 12px;
+			gap: 8px;
 		}
 	}
 </style>

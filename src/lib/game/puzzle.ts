@@ -55,3 +55,79 @@ export function generateHexGrid(
 
 	return positions;
 }
+
+/** Find the nearest puzzle node to a given position */
+export function findNearestPuzzleNode(
+	position: THREE.Vector3,
+	nodes: PuzzleNodeData[]
+): PuzzleNodeData | null {
+	if (nodes.length === 0) return null;
+
+	let nearest: PuzzleNodeData | null = null;
+	let minDist = Infinity;
+
+	for (const node of nodes) {
+		const dist = position.distanceTo(node.position);
+		if (dist < minDist) {
+			minDist = dist;
+			nearest = node;
+		}
+	}
+
+	return nearest;
+}
+
+/** Generate a hint about the puzzle structure */
+const HINT_TEMPLATES = [
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const dx = node.targetPosition.x - node.position.x;
+		const dy = node.targetPosition.y - node.position.y;
+		const dir = Math.abs(dx) > Math.abs(dy)
+			? (dx > 0 ? 'east' : 'west')
+			: (dy > 0 ? 'north' : 'south');
+		return `Data suggests node should shift ${dir}...`;
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const dist = node.position.distanceTo(node.targetPosition);
+		if (dist < 10) return 'Node alignment nearly complete!';
+		if (dist < 20) return 'Node getting closer to target...';
+		return 'Node requires significant repositioning...';
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const connected = nodes.filter(n => n.connected).length;
+		return `${connected}/${nodes.length} nodes aligned. Structure emerging...`;
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const angle = Math.atan2(
+			node.targetPosition.y - node.position.y,
+			node.targetPosition.x - node.position.x
+		);
+		const degrees = Math.round((angle * 180) / Math.PI);
+		return `Vector correction: ${degrees}° from current position`;
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		return node.connected
+			? 'This node is locked in place. Well done!'
+			: 'Approaching node will enable alignment...';
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const targetDist = node.position.distanceTo(node.targetPosition);
+		return `Distance to target: ${targetDist.toFixed(1)} units`;
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		// Hint about the icosahedral structure
+		return 'Detecting geometric resonance... icosahedral symmetry?';
+	},
+	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
+		const nearbyNodes = nodes.filter(n =>
+			n.id !== node.id &&
+			node.targetPosition.distanceTo(n.targetPosition) < 35
+		);
+		return `This node connects to ${nearbyNodes.length} others in the structure`;
+	}
+];
+
+export function generateHint(node: PuzzleNodeData, allNodes: PuzzleNodeData[]): string {
+	const template = HINT_TEMPLATES[Math.floor(Math.random() * HINT_TEMPLATES.length)];
+	return template(node, allNodes);
+}

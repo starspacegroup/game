@@ -23,6 +23,14 @@ export interface NpcData {
 	maxHealth: number;
 	shootCooldown: number;
 	destroyed: boolean;
+	// Conversion system
+	converted: boolean;
+	conversionProgress: number; // 0-1, visual effect during conversion
+	targetNodeId: string | null; // Which puzzle node to orbit
+	orbitAngle: number; // Current angle around the puzzle node
+	orbitDistance: number; // Distance from puzzle node center
+	hintTimer: number; // Time until next hint is generated
+	hintData: string | null; // Current hint being transmitted
 }
 
 export interface LaserData {
