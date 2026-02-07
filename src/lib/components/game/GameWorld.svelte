@@ -10,8 +10,7 @@
 	import Starfield from './Starfield.svelte';
 	import PuzzleStructure from './PuzzleStructure.svelte';
 	import PowerUp from './PowerUp.svelte';
-	import HexGrid from './HexGrid.svelte';
-	import { world, resetWorld, wrapPosition } from '$lib/game/world';
+	import HexGrid from './HexGrid.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, wrapPosition } from '$lib/game/world';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -39,6 +38,25 @@
 	let laserIds = $state<string[]>([]);
 	let powerUpIds = $state(world.powerUps.map((p) => p.id));
 	let otherPlayerIds = $state<string[]>([]);
+
+	// Score popups for kill feedback
+	interface ScorePopupData {
+		id: number;
+		x: number;
+		y: number;
+		z: number;
+		points: number;
+	}
+	let scorePopups = $state<ScorePopupData[]>([]);
+	let nextPopupId = 0;
+
+	function spawnScorePopup(x: number, y: number, z: number, points: number): void {
+		scorePopups.push({ id: nextPopupId++, x, y, z, points });
+	}
+
+	function removeScorePopup(id: number): void {
+		scorePopups = scorePopups.filter((p) => p.id !== id);
+	}
 
 	let sendTimer = 0;
 	let spawnTimer = 0;
@@ -219,7 +237,9 @@
 						npc.health -= 20;
 						if (npc.health <= 0) {
 							npc.destroyed = true;
-							gameState.score += 50;
+							const points = 50;
+							gameState.score += points;
+							spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
 						}
 					}
 					break;
@@ -408,3 +428,14 @@
 
 <!-- Puzzle structure (Kal-Toh) -->
 <PuzzleStructure />
+
+<!-- Score popups -->
+{#each scorePopups as popup (popup.id)}
+	<ScorePopup
+		x={popup.x}
+		y={popup.y}
+		z={popup.z}
+		points={popup.points}
+		onComplete={() => removeScorePopup(popup.id)}
+	/>
+{/each}

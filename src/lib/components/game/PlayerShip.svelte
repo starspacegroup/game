@@ -4,7 +4,8 @@
 	import { world } from '$lib/game/world';
 	import { authState } from '$lib/stores/authState.svelte';
 
-	let group: THREE.Group | undefined = $state();
+	let rootGroup: THREE.Group | undefined = $state();
+	let shipMesh: THREE.Mesh | undefined = $state();
 	let engineGlow = 0.5;
 	let engineMesh: THREE.Mesh | undefined = $state();
 	let nameSprite: THREE.Sprite | undefined = $state();
@@ -47,10 +48,15 @@
 	}
 
 	useTask((delta) => {
-		if (!group) return;
+		if (!rootGroup) return;
 
-		group.position.copy(world.player.position);
-		group.rotation.copy(world.player.rotation);
+		// Position the root group (no rotation on root)
+		rootGroup.position.copy(world.player.position);
+
+		// Rotate only the ship mesh
+		if (shipMesh) {
+			shipMesh.rotation.z = world.player.rotation.z;
+		}
 
 		// Engine effect
 		const speed = world.player.velocity.length();
@@ -78,9 +84,10 @@
 	});
 </script>
 
-<T.Group bind:ref={group}>
-	<!-- Ship plane using logo image -->
-	<T.Mesh>
+<!-- Root group: positioned at player, NO rotation -->
+<T.Group bind:ref={rootGroup}>
+	<!-- Ship plane: rotates with player direction -->
+	<T.Mesh bind:ref={shipMesh}>
 		<T.PlaneGeometry args={[2.5, 2.5]} />
 		<T.MeshBasicMaterial 
 			map={shipTexture} 
@@ -97,7 +104,7 @@
 		<T.MeshBasicMaterial color="#44ffaa" transparent opacity={0.5} />
 	</T.Mesh>
 
-	<!-- Username label above ship -->
+	<!-- Username label: ALWAYS above ship, does NOT rotate -->
 	<T.Sprite 
 		position.y={2.5} 
 		position.z={0.5}

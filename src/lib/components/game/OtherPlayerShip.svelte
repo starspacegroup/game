@@ -9,7 +9,8 @@
 
 	let { id }: Props = $props();
 
-	let group: THREE.Group | undefined = $state();
+	let rootGroup: THREE.Group | undefined = $state();
+	let shipMesh: THREE.Mesh | undefined = $state();
 	let nameSprite: THREE.Sprite | undefined = $state();
 	let currentUsername = $state('');
 	let nameTextureInitialized = false;
@@ -50,16 +51,23 @@
 	}
 
 	useTask(() => {
-		if (!group) return;
-
 		const player = world.otherPlayers.find((p) => p.id === id);
 		if (!player) return;
 
-		group.position.copy(player.position);
-		group.rotation.copy(player.rotation);
+		// Position the whole component at player location (no rotation on root)
+		if (rootGroup) {
+			rootGroup.position.copy(player.position);
+		}
 
-		// Initialize or update name sprite
+		// Rotate only the ship mesh
+		if (shipMesh) {
+			shipMesh.rotation.z = player.rotation.z;
+		}
+
+		// Name sprite stays at fixed offset (no rotation)
 		if (nameSprite) {
+			nameSprite.position.set(0, 2.5, 1);
+			
 			if (!nameTextureInitialized) {
 				currentUsername = player.username;
 				(nameSprite.material as THREE.SpriteMaterial).map = createNameTexture(player.username);
@@ -74,9 +82,10 @@
 	});
 </script>
 
-<T.Group bind:ref={group}>
-	<!-- Ship plane using logo image -->
-	<T.Mesh>
+<!-- Root group: positioned at player, NO rotation -->
+<T.Group bind:ref={rootGroup}>
+	<!-- Ship plane: rotates with player direction -->
+	<T.Mesh bind:ref={shipMesh}>
 		<T.PlaneGeometry args={[2.5, 2.5]} />
 		<T.MeshBasicMaterial 
 			map={shipTexture} 
@@ -87,16 +96,14 @@
 		/>
 	</T.Mesh>
 
-	<!-- Engine glow behind ship (static for other players) -->
+	<!-- Engine glow: static behind ship -->
 	<T.Mesh position.z={-0.5} scale={[0.4, 0.4, 1]}>
 		<T.SphereGeometry args={[0.5, 6, 6]} />
 		<T.MeshBasicMaterial color="#ff8844" transparent opacity={0.4} />
 	</T.Mesh>
 
-	<!-- Username label above ship -->
+	<!-- Username label: fixed relative position, does NOT rotate -->
 	<T.Sprite 
-		position.y={2.5} 
-		position.z={0.5}
 		scale={[4, 1, 1]}
 		bind:ref={nameSprite}
 	>
