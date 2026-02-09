@@ -12,6 +12,20 @@
 	import { connectToServer } from '$lib/stores/socketClient';
 	import { onMount } from 'svelte';
 
+	interface RoomInfo {
+		id: string;
+		name: string;
+		playerCount: number;
+		createdAt: number;
+		createdBy: string;
+		puzzleProgress?: number;
+		wave?: number;
+	}
+
+	let availableRooms = $state<RoomInfo[]>([]);
+	let loadingRooms = $state(false);
+	let creatingRoom = $state(false);
+
 	onMount(() => {
 		// Load auth from storage
 		authState.loadFromStorage();
@@ -29,7 +43,46 @@
 				console.error('Failed to parse auth data');
 			}
 		}
+
+		// Fetch available multiplayer rooms
+		fetchRooms();
 	});
+
+	async function fetchRooms(): Promise<void> {
+		loadingRooms = true;
+		try {
+			const response = await fetch('/api/game/rooms');
+			const data = await response.json() as { rooms?: RoomInfo[] };
+			availableRooms = data.rooms || [];
+		} catch {
+			console.error('Failed to fetch rooms');
+			availableRooms = [];
+		} finally {
+			loadingRooms = false;
+		}
+	}
+
+	async function createMultiplayerRoom(): Promise<void> {
+		creatingRoom = true;
+		try {
+			const response = await fetch('/api/game/rooms', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: `${authState.username}'s Game`,
+					createdBy: authState.username || 'Anonymous'
+				})
+			});
+			const data = await response.json() as { success?: boolean; room?: RoomInfo };
+			if (data.success && data.room) {
+				startGame('multiplayer', data.room.id);
+			}
+		} catch {
+			console.error('Failed to create room');
+		} finally {
+			creatingRoom = false;
+		}
+	}
 
 	function loginWithDiscord(): void {
 		window.location.href = '/api/auth/discord';
@@ -39,7 +92,7 @@
 		authState.logout();
 	}
 
-	function startGame(): void {
+	function startGame(mode: 'solo' | 'multiplayer' = 'solo', roomId?: string): void {
 		// Reset everything
 		resetIdCounter();
 		resetWorld();
@@ -51,13 +104,21 @@
 		gameState.reset();
 		gameState.phase = 'playing';
 
-		// Try multiplayer connection
-		connectToServer();
+		// Connect to multiplayer if requested
+		if (mode === 'multiplayer') {
+			connectToServer(roomId || 'default');
+		} else {
+			gameState.mode = 'solo';
+		}
 
 		// Request fullscreen on mobile
 		if (gameState.isMobile) {
 			document.documentElement.requestFullscreen?.().catch(() => {});
 		}
+	}
+
+	function joinRoom(roomId: string): void {
+		startGame('multiplayer', roomId);
 	}
 </script>
 
@@ -85,9 +146,36 @@
 					<button class="logout-btn" onclick={logout}>Logout</button>
 				</div>
 
-				<button class="start-btn" onclick={startGame}>
-					{gameState.phase === 'gameover' ? 'PLAY AGAIN' : 'LAUNCH'}
-				</button>
+				<div class="game-modes">
+					<button class="start-btn solo-btn" onclick={() => startGame('solo')}>
+						{gameState.phase === 'gameover' ? 'SOLO AGAIN' : 'SOLO GAME'}
+					</button>
+
+					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
+						{creatingRoom ? 'CREATING...' : 'CREATE MULTIPLAYER'}
+					</button>
+				</div>
+
+				{#if availableRooms.length > 0}
+					<div class="rooms-section">
+						<h3 class="rooms-header">JOIN ACTIVE GAMES</h3>
+						<div class="rooms-list">
+							{#each availableRooms as room (room.id)}
+								<button class="room-btn" onclick={() => joinRoom(room.id)}>
+									<span class="room-name">{room.name}</span>
+									<span class="room-info">
+										<span class="room-players">{room.playerCount} player{room.playerCount !== 1 ? 's' : ''}</span>
+										{#if room.wave && room.wave > 1}
+											<span class="room-wave">Wave {room.wave}</span>
+										{/if}
+									</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				{:else if loadingRooms}
+					<div class="rooms-loading">Loading games...</div>
+				{/if}
 			{:else}
 				<p class="login-prompt">Login with Discord to play</p>
 				<button class="discord-btn" onclick={loginWithDiscord}>
@@ -306,7 +394,7 @@
 		cursor: pointer;
 		transition: all 0.2s;
 		box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
-		margin-bottom: var(--spacing-lg, 16px);
+		margin-bottom: var(--spacing-sm, 8px);
 		-webkit-tap-highlight-color: transparent;
 		width: 100%;
 		max-width: 280px;
@@ -316,6 +404,112 @@
 	.start-btn:active {
 		transform: scale(1.02);
 		box-shadow: 0 0 40px rgba(0, 255, 136, 0.5);
+	}
+
+	.start-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	/* Game modes container */
+	.game-modes {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+		margin-bottom: var(--spacing-md, 12px);
+	}
+
+	.solo-btn {
+		background: linear-gradient(135deg, #00ff88, #44ffaa);
+	}
+
+	.multiplayer-btn {
+		background: linear-gradient(135deg, #4488ff, #66aaff);
+		box-shadow: 0 0 25px rgba(68, 136, 255, 0.3);
+	}
+
+	.multiplayer-btn:hover,
+	.multiplayer-btn:active {
+		box-shadow: 0 0 40px rgba(68, 136, 255, 0.5);
+	}
+
+	/* Rooms section */
+	.rooms-section {
+		width: 100%;
+		max-width: 320px;
+		margin: 0 auto var(--spacing-lg, 16px);
+	}
+
+	.rooms-header {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.6rem);
+		color: #6688aa;
+		letter-spacing: 2px;
+		margin: 0 0 var(--spacing-sm, 8px) 0;
+		text-align: center;
+	}
+
+	.rooms-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs, 4px);
+	}
+
+	.room-btn {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.7rem);
+		background: rgba(68, 136, 255, 0.1);
+		border: 1px solid rgba(68, 136, 255, 0.3);
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
+		text-align: left;
+	}
+
+	.room-btn:hover,
+	.room-btn:active {
+		background: rgba(68, 136, 255, 0.2);
+		border-color: rgba(68, 136, 255, 0.6);
+		transform: scale(1.01);
+	}
+
+	.room-name {
+		color: #00ff88;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.room-info {
+		display: flex;
+		gap: var(--spacing-sm, 8px);
+		color: #6688aa;
+		font-size: var(--font-xs, 0.6rem);
+	}
+
+	.room-players {
+		color: #4488ff;
+	}
+
+	.room-wave {
+		color: #ff8844;
+	}
+
+	.rooms-loading {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.6rem);
+		color: #6688aa;
+		text-align: center;
+		margin-bottom: var(--spacing-lg, 16px);
 	}
 
 	.features {
@@ -474,8 +668,26 @@
 		.start-btn {
 			padding: 14px 48px;
 			font-size: 1.1rem;
-			margin-bottom: 28px;
+			margin-bottom: 12px;
 			width: auto;
+		}
+
+		.game-modes {
+			flex-direction: row;
+			justify-content: center;
+			gap: var(--spacing-md, 12px);
+		}
+
+		.rooms-section {
+			max-width: 400px;
+		}
+
+		.rooms-header {
+			font-size: 0.7rem;
+		}
+
+		.room-btn {
+			font-size: 0.8rem;
 		}
 
 		.lore {

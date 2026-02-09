@@ -32,7 +32,12 @@
 		</div>
 
 		<div class="mode-badge" class:multiplayer={gameState.mode === 'multiplayer'}>
-			{gameState.mode === 'multiplayer' ? `${gameState.playerCount} PLAYERS` : 'SOLO'}
+			{#if gameState.mode === 'multiplayer'}
+				<span class="mode-label">MULTIPLAYER</span>
+				<span class="player-count">{gameState.playerCount} online</span>
+			{:else}
+				SOLO
+			{/if}
 		</div>
 
 		<div class="wave">
@@ -155,6 +160,22 @@
 		border-color: #4488ff;
 		color: #4488ff;
 		background: rgba(68, 136, 255, 0.1);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		padding: 4px 10px;
+	}
+
+	.mode-label {
+		font-weight: bold;
+		letter-spacing: 1px;
+	}
+
+	.player-count {
+		font-size: 0.5rem;
+		color: #66aaff;
+		letter-spacing: 0;
 	}
 
 	.health-container {

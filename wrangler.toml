@@ -3,11 +3,15 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 main = "worker.ts"
 
-[build]
-command = "npm run build"
+[dev]
+port = 4201
 
-[site]
-bucket = ".svelte-kit/cloudflare"
+# Build is handled separately via "npm run build"
+# Run "npm run build" before "npx wrangler dev" or "npx wrangler deploy"
+
+[assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"
 
 # Durable Objects for real-time multiplayer
 [[durable_objects.bindings]]
