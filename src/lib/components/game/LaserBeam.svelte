@@ -11,17 +11,16 @@
 	let group: THREE.Group | undefined = $state();
 	let pulsePhase = $state(Math.random() * Math.PI * 2);
 
-	let cachedIndex = world.lasers.findIndex((l) => l.id === id);
-
-	const data = world.lasers[cachedIndex];
-	const isPlayer = data?.owner === 'player';
+	// Determine if this is a player laser for coloring (check once at creation)
+	const initialData = world.lasers.find((l) => l.id === id);
+	const isPlayer = initialData?.owner === 'player';
 	// Player shoots cyan "data beam", enemies shoot red
 	const coreColor = isPlayer ? '#00ffcc' : '#ff4444';
 	const glowColor = isPlayer ? '#00ff88' : '#ff2222';
 
 	useTask((delta) => {
-		if (cachedIndex < 0) cachedIndex = world.lasers.findIndex((l) => l.id === id);
-		const d = world.lasers[cachedIndex];
+		// Always find by ID to avoid stale index after array modifications
+		const d = world.lasers.find((l) => l.id === id);
 		if (!group || !d) return;
 		// Render at wrapped position relative to player
 		const renderPos = getRelativeToPlayer(d.position);

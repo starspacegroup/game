@@ -22,7 +22,7 @@
 	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
-	import { sendPosition, sendPuzzleAction } from '$lib/stores/socketClient';
+	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
 	import { VIEW_DISTANCE } from '$lib/game/chunk';
 
 	// Render distance for entities - beyond this they're culled
@@ -89,9 +89,12 @@
 		updateNpcs(dt);
 		updatePowerUps(dt);
 
+		// Check laser collisions every frame (lasers move fast and can skip through targets)
+		handleLaserCollisions();
+
 		collisionCooldown -= dt;
 		if (collisionCooldown <= 0) {
-			collisionCooldown = 0.05; // Check collisions ~20fps
+			collisionCooldown = 0.05; // Check entity collisions ~20fps
 			handleCollisions();
 		}
 
@@ -103,18 +106,49 @@
 	});
 
 	function updatePlayer(dt: number): void {
-		const speed = world.player.speed * (inputState.boost ? 1.8 : 1);
-		world.player.velocity.x = inputState.moveX * speed;
-		world.player.velocity.y = inputState.moveY * speed;
-		world.player.position.x += world.player.velocity.x * dt;
-		world.player.position.y += world.player.velocity.y * dt;
+		// In multiplayer, server is authoritative - client only sends inputs
+		// and interpolates to server position (no local prediction)
+		const isMultiplayer = gameState.mode === 'multiplayer' && isConnected();
 
-		// Wrap around for borderless world
-		wrapPosition(world.player.position);
+		if (!isMultiplayer) {
+			// Solo mode: full client-side physics
+			const speed = world.player.speed * (inputState.boost ? 1.8 : 1);
+			let mx = inputState.moveX;
+			let my = inputState.moveY;
+			// Normalize diagonal movement so it's not faster than cardinal
+			const moveMag = Math.sqrt(mx * mx + my * my);
+			if (moveMag > 1) {
+				mx /= moveMag;
+				my /= moveMag;
+			}
+			world.player.velocity.x = mx * speed;
+			world.player.velocity.y = my * speed;
+			world.player.position.x += world.player.velocity.x * dt;
+			world.player.position.y += world.player.velocity.y * dt;
 
-		// Aim rotation
-		if (inputState.aimX !== 0 || inputState.aimY !== 0) {
+			// Wrap around for borderless world
+			wrapPosition(world.player.position);
+		}
+
+		// Aim rotation (always local for responsiveness)
+		// Dead zone: ignore mouse aim near screen center to prevent jittery rotation
+		const aimMag = Math.sqrt(inputState.aimX * inputState.aimX + inputState.aimY * inputState.aimY);
+		if (aimMag > 0.1) {
 			world.player.rotation.z = Math.atan2(inputState.aimY, inputState.aimX) - Math.PI / 2;
+		} else if (inputState.moveX !== 0 || inputState.moveY !== 0) {
+			// Fall back to movement direction when mouse is near center
+			world.player.rotation.z = Math.atan2(inputState.moveY, inputState.moveX) - Math.PI / 2;
+		}
+		
+		// Send inputs to server in multiplayer mode
+		if (isMultiplayer) {
+			setInput({
+				thrust: inputState.moveX !== 0 || inputState.moveY !== 0,
+				brake: inputState.boost,
+				rotateX: inputState.moveX,  // Send movement direction
+				rotateY: inputState.moveY,  // Send movement direction
+				rotateZ: world.player.rotation.z
+			});
 		}
 	}
 
@@ -122,11 +156,27 @@
 		world.player.shootCooldown -= dt;
 		if (inputState.shooting && world.player.shootCooldown <= 0) {
 			world.player.shootCooldown = SHOOT_COOLDOWN;
+			// Ship sprite default "up" is +Y, rotation.z already subtracts PI/2, so add PI/2 to fire forward
 			const angle = world.player.rotation.z + Math.PI / 2;
+			const dirX = Math.cos(angle);
+			const dirY = Math.sin(angle);
+			
+			// Spawn laser from the front of the ship (offset by ~1.5 units in firing direction)
+			const spawnOffset = 1.5;
+			const spawnPos = world.player.position.clone();
+			spawnPos.x += dirX * spawnOffset;
+			spawnPos.y += dirY * spawnOffset;
+			
+			// In multiplayer, send fire event to server which creates authoritative laser
+			if (gameState.mode === 'multiplayer' && isConnected()) {
+				sendFire();
+			}
+			
+			// Create local laser for immediate feedback (client prediction)
 			world.lasers.push({
 				id: `laser_${nextLaserId++}`,
-				position: world.player.position.clone(),
-				direction: new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0),
+				position: spawnPos,
+				direction: new THREE.Vector3(dirX, dirY, 0),
 				speed: LASER_SPEED,
 				life: LASER_LIFE,
 				owner: 'player',
@@ -185,7 +235,7 @@
 				}
 				// During conversion, spin in place
 				npc.rotation.z += dt * 10;
-				return;
+				continue;
 			}
 
 			// Use wrapped direction for toroidal world (NPC chases via shortest path)
@@ -289,25 +339,33 @@
 		}
 	}
 
+	function handleLaserCollisions(): void {
+		// Runs every frame to prevent fast lasers passing through NPCs
+		for (const laser of world.lasers) {
+			if (laser.life <= 0 || laser.owner !== 'player') continue;
+			for (const npc of world.npcs) {
+				// Skip destroyed, converted, or already-converting NPCs (don't waste lasers)
+				if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
+				// Use generous hit radius: sum of radii + extra tolerance for fast projectiles
+				if (wrappedDistance(laser.position, npc.position) < laser.radius + npc.radius + 1.0) {
+					laser.life = 0;
+					npc.conversionProgress = 0.01;
+					const points = 25;
+					gameState.score += points;
+					spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
+					break; // This laser is consumed, move to next
+				}
+			}
+		}
+	}
+
 	function handleCollisions(): void {
 		const events = checkCollisions();
 		for (const event of events) {
 			switch (event.type) {
-				case 'laser-npc': {
-					const laser = world.lasers.find((l) => l.id === event.entityA);
-					const npc = world.npcs.find((n) => n.id === event.entityB);
-					if (laser && npc && !npc.converted) {
-						laser.life = 0;
-						// Start conversion process instead of destroying
-						if (npc.conversionProgress === 0) {
-							npc.conversionProgress = 0.01; // Start conversion
-							const points = 25;
-							gameState.score += points;
-							spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
-						}
-					}
+				case 'laser-npc':
+					// Handled every frame in handleLaserCollisions
 					break;
-				}
 				case 'player-npc': {
 					gameState.health = 0;
 					world.player.health = 0;

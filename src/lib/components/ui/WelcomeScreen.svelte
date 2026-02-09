@@ -9,7 +9,7 @@
 		generatePowerUps,
 		resetIdCounter
 	} from '$lib/game/procedural';
-	import { connectToServer } from '$lib/stores/socketClient';
+	import { connectToServer, disconnect } from '$lib/stores/socketClient';
 	import { onMount } from 'svelte';
 
 	interface RoomInfo {
@@ -25,6 +25,8 @@
 	let availableRooms = $state<RoomInfo[]>([]);
 	let loadingRooms = $state(false);
 	let creatingRoom = $state(false);
+	let roomCodeInput = $state('');
+	let joiningByCode = $state(false);
 
 	onMount(() => {
 		// Load auth from storage
@@ -93,13 +95,23 @@
 	}
 
 	function startGame(mode: 'solo' | 'multiplayer' = 'solo', roomId?: string): void {
+		// Disconnect any existing multiplayer connection before resetting
+		disconnect();
+
 		// Reset everything
 		resetIdCounter();
 		resetWorld();
-		world.asteroids = generateAsteroids(50, world.bounds);
-		world.npcs = generateNpcs(gameState.npcCount, world.bounds);
-		world.puzzleNodes = generatePuzzleNodes(12);
-		world.powerUps = generatePowerUps(8, world.bounds);
+
+		// Only generate world locally for solo mode
+		// For multiplayer, server will send full world state
+		if (mode === 'solo') {
+			// Spawn enough entities to feel populated (view distance ~200 in a 4232x4232 world)
+			world.asteroids = generateAsteroids(400, world.bounds);
+			world.npcs = generateNpcs(gameState.npcCount, world.bounds);
+			world.puzzleNodes = generatePuzzleNodes(12);
+			world.powerUps = generatePowerUps(80, world.bounds);
+			gameState.mode = 'solo';
+		}
 
 		gameState.reset();
 		gameState.phase = 'playing';
@@ -107,8 +119,6 @@
 		// Connect to multiplayer if requested
 		if (mode === 'multiplayer') {
 			connectToServer(roomId || 'default');
-		} else {
-			gameState.mode = 'solo';
 		}
 
 		// Request fullscreen on mobile
@@ -119,6 +129,14 @@
 
 	function joinRoom(roomId: string): void {
 		startGame('multiplayer', roomId);
+	}
+
+	function joinByCode(): void {
+		const code = roomCodeInput.trim();
+		if (!code) return;
+		joiningByCode = true;
+		startGame('multiplayer', code);
+		joiningByCode = false;
 	}
 </script>
 
@@ -154,6 +172,21 @@
 					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
 						{creatingRoom ? 'CREATING...' : 'CREATE MULTIPLAYER'}
 					</button>
+				</div>
+
+				<div class="join-code-section">
+					<div class="join-code-row">
+						<input
+							type="text"
+							class="room-code-input"
+							placeholder="Enter room code..."
+							bind:value={roomCodeInput}
+							onkeydown={(e) => e.key === 'Enter' && joinByCode()}
+						/>
+						<button class="join-code-btn" onclick={joinByCode} disabled={!roomCodeInput.trim() || joiningByCode}>
+							{joiningByCode ? '...' : 'JOIN'}
+						</button>
+					</div>
 				</div>
 
 				{#if availableRooms.length > 0}
@@ -433,6 +466,70 @@
 	.multiplayer-btn:hover,
 	.multiplayer-btn:active {
 		box-shadow: 0 0 40px rgba(68, 136, 255, 0.5);
+	}
+
+	/* Join by code section */
+	.join-code-section {
+		width: 100%;
+		max-width: 320px;
+		margin: 0 auto var(--spacing-md, 12px);
+	}
+
+	.join-code-row {
+		display: flex;
+		gap: var(--spacing-xs, 4px);
+	}
+
+	.room-code-input {
+		flex: 1;
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.7rem);
+		letter-spacing: 2px;
+		text-transform: uppercase;
+		color: #00ff88;
+		background: rgba(0, 20, 40, 0.8);
+		border: 1px solid rgba(68, 136, 255, 0.3);
+		border-radius: 4px;
+		outline: none;
+		transition: border-color 0.2s;
+	}
+
+	.room-code-input::placeholder {
+		color: #446688;
+		text-transform: none;
+		letter-spacing: 1px;
+	}
+
+	.room-code-input:focus {
+		border-color: #4488ff;
+		box-shadow: 0 0 10px rgba(68, 136, 255, 0.3);
+	}
+
+	.join-code-btn {
+		min-height: var(--touch-target-min, 44px);
+		min-width: 70px;
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.7rem);
+		letter-spacing: 2px;
+		color: #00ff88;
+		background: rgba(0, 40, 60, 0.8);
+		border: 1px solid rgba(0, 255, 136, 0.4);
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.join-code-btn:hover:not(:disabled) {
+		background: rgba(0, 255, 136, 0.2);
+		box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+	}
+
+	.join-code-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	/* Rooms section */

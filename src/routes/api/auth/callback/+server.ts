@@ -2,6 +2,22 @@ import { redirect } from '@sveltejs/kit';
 import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI } from '$env/static/private';
 import type { RequestHandler } from './$types';
 
+interface DiscordTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token: string;
+  scope: string;
+}
+
+interface DiscordUserResponse {
+  id: string;
+  username: string;
+  avatar: string | null;
+  discriminator: string;
+  email?: string;
+}
+
 export const GET: RequestHandler = async ({ url }) => {
   const code = url.searchParams.get('code');
 
@@ -29,7 +45,7 @@ export const GET: RequestHandler = async ({ url }) => {
       throw redirect(302, '/?error=token_failed');
     }
 
-    const tokenData = await tokenResponse.json();
+    const tokenData = await tokenResponse.json() as DiscordTokenResponse;
 
     // Get user info
     const userResponse = await fetch('https://discord.com/api/users/@me', {
@@ -42,7 +58,7 @@ export const GET: RequestHandler = async ({ url }) => {
       throw redirect(302, '/?error=user_failed');
     }
 
-    const userData = await userResponse.json();
+    const userData = await userResponse.json() as DiscordUserResponse;
 
     // Redirect back with user data encoded in URL (client will store it)
     const authData = encodeURIComponent(

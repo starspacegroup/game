@@ -15,7 +15,45 @@ export function generateAsteroids(
 	bounds: { x: number; y: number; z: number; }
 ): AsteroidData[] {
 	const asteroids: AsteroidData[] = [];
-	for (let i = 0; i < count; i++) {
+
+	// Spawn some asteroids near the origin (player start) for immediate visibility
+	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 60);
+	for (let i = 0; i < nearPlayerCount; i++) {
+		const radius = 0.5 + Math.random() * 3;
+		const angle = Math.random() * Math.PI * 2;
+		const dist = 20 + Math.random() * 150; // Within view distance (~200)
+		asteroids.push({
+			id: genId('ast'),
+			position: new THREE.Vector3(
+				Math.cos(angle) * dist,
+				Math.sin(angle) * dist,
+				(Math.random() - 0.5) * bounds.z * 0.3
+			),
+			velocity: new THREE.Vector3(
+				(Math.random() - 0.5) * 2,
+				(Math.random() - 0.5) * 2,
+				(Math.random() - 0.5) * 0.5
+			),
+			rotation: new THREE.Euler(
+				Math.random() * Math.PI * 2,
+				Math.random() * Math.PI * 2,
+				0
+			),
+			rotationSpeed: new THREE.Vector3(
+				(Math.random() - 0.5) * 2,
+				(Math.random() - 0.5) * 2,
+				(Math.random() - 0.5) * 2
+			),
+			radius,
+			health: radius * 10,
+			maxHealth: radius * 10,
+			puzzleIndex: Math.random() < 0.15 ? i : null,
+			destroyed: false
+		});
+	}
+
+	// Spawn remaining asteroids across the world
+	for (let i = nearPlayerCount; i < count; i++) {
 		const radius = 0.5 + Math.random() * 3;
 		asteroids.push({
 			id: genId('ast'),
@@ -128,7 +166,28 @@ export function generatePowerUps(
 ): PowerUpData[] {
 	const types: PowerUpData['type'][] = ['health', 'speed', 'multishot', 'shield'];
 	const powerUps: PowerUpData[] = [];
-	for (let i = 0; i < count; i++) {
+
+	// Spawn some power-ups near the origin for immediate visibility
+	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 12);
+	for (let i = 0; i < nearPlayerCount; i++) {
+		const angle = Math.random() * Math.PI * 2;
+		const dist = 30 + Math.random() * 120;
+		powerUps.push({
+			id: genId('pwr'),
+			position: new THREE.Vector3(
+				Math.cos(angle) * dist,
+				Math.sin(angle) * dist,
+				(Math.random() - 0.5) * 3
+			),
+			type: types[Math.floor(Math.random() * types.length)],
+			radius: 0.8,
+			collected: false,
+			bobPhase: Math.random() * Math.PI * 2
+		});
+	}
+
+	// Spawn remaining power-ups across the world
+	for (let i = nearPlayerCount; i < count; i++) {
 		powerUps.push({
 			id: genId('pwr'),
 			position: new THREE.Vector3(

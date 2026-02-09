@@ -4,14 +4,13 @@
 	import { world } from '$lib/game/world';
 
 	let camera: THREE.PerspectiveCamera | undefined = $state();
-	const offset = new THREE.Vector3(0, -5, 40);
+	const offset = new THREE.Vector3(0, 0, 40);
 	const smoothTarget = new THREE.Vector3(0, 0, 0);
-	const lookTarget = new THREE.Vector3(0, 0, 0);
 
 	useTask((delta) => {
 		if (!camera) return;
 
-		// Smoothly follow player
+		// Smoothly follow player (directly overhead)
 		smoothTarget.set(
 			world.player.position.x,
 			world.player.position.y,
@@ -19,10 +18,8 @@
 		);
 
 		const desired = smoothTarget.clone().add(offset);
-		camera.position.lerp(desired, Math.min(1, 4 * delta));
-
-		lookTarget.lerp(smoothTarget, Math.min(1, 6 * delta));
-		camera.lookAt(lookTarget);
+		camera.position.lerp(desired, Math.min(1, 6 * delta));
+		camera.lookAt(smoothTarget);
 	});
 </script>
 
@@ -32,5 +29,5 @@
 	fov={70}
 	near={0.1}
 	far={2000}
-	position={[0, -5, 40]}
+	position={[0, 0, 40]}
 />

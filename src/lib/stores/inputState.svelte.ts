@@ -24,6 +24,15 @@ function updateFromKeys(): void {
 	inputState.moveY = my;
 }
 
+function clearAllInputs(): void {
+	keys.clear();
+	inputState.moveX = 0;
+	inputState.moveY = 0;
+	inputState.shooting = false;
+	inputState.boost = false;
+	inputState.interact = false;
+}
+
 export function setupKeyboardControls(): () => void {
 	function onKeyDown(e: KeyboardEvent): void {
 		const key = e.key.toLowerCase();
@@ -46,12 +55,18 @@ export function setupKeyboardControls(): () => void {
 		if (key === 'shift') inputState.boost = false;
 	}
 
+	function onBlur(): void {
+		clearAllInputs();
+	}
+
 	window.addEventListener('keydown', onKeyDown);
 	window.addEventListener('keyup', onKeyUp);
+	window.addEventListener('blur', onBlur);
 
 	return () => {
 		window.removeEventListener('keydown', onKeyDown);
 		window.removeEventListener('keyup', onKeyUp);
+		window.removeEventListener('blur', onBlur);
 		keys.clear();
 	};
 }

@@ -91,11 +91,8 @@ export const POST: RequestHandler = async ({ platform, request }) => {
       createdBy: body.createdBy || 'Anonymous'
     };
 
-    // Store room info in KV
-    await platform.env.GAME_DATA.put(`room:${roomId}`, JSON.stringify(roomInfo), {
-      // Auto-expire after 24 hours if not updated
-      expirationTtl: 24 * 60 * 60
-    });
+    // Store room info in KV (no TTL - rooms persist indefinitely)
+    await platform.env.GAME_DATA.put(`room:${roomId}`, JSON.stringify(roomInfo));
 
     return json({ success: true, room: roomInfo });
   } catch (error) {
