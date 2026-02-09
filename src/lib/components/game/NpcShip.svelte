@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -24,10 +24,12 @@
 		const data = world.npcs[cachedIndex];
 		if (!group || !data || data.destroyed) return;
 
-		// Render at wrapped position relative to player for seamless infinite world
-		const renderPos = getRelativeToPlayer(data.position);
-		group.position.copy(renderPos);
-		group.rotation.copy(data.rotation);
+		// Position on sphere surface and orient tangent to sphere
+		group.position.copy(data.position);
+		group.quaternion.copy(getSphereOrientation(data.position));
+		// Apply facing rotation in tangent plane
+		const facingQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), data.rotation.z);
+		group.quaternion.multiply(facingQ);
 
 		// Update conversion state
 		isConverted = data.converted;

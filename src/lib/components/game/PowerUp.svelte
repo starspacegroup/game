@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -27,11 +27,13 @@
 		const d = world.powerUps[cachedIndex];
 		if (!group || !d || d.collected) return;
 
-		// Render at wrapped position relative to player for seamless infinite world
-		const renderPos = getRelativeToPlayer(d.position);
-		group.position.copy(renderPos);
-		group.position.z += Math.sin(d.bobPhase) * 0.5;
-		group.rotation.y += delta * 2;
+		// Position on sphere surface
+		group.position.copy(d.position);
+		group.quaternion.copy(getSphereOrientation(d.position));
+		// Bob effect: offset along sphere normal
+		const normal = d.position.clone().normalize();
+		group.position.addScaledVector(normal, Math.sin(d.bobPhase) * 0.5);
+		group.rotateZ(delta * 2);
 	});
 </script>
 

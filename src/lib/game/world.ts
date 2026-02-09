@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+export const SPHERE_RADIUS = 500;
+
+/** Puzzle nodes live inside the sphere at this fraction of the radius */
+export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
+
 export interface AsteroidData {
 	id: string;
 	position: THREE.Vector3;
@@ -23,14 +28,13 @@ export interface NpcData {
 	maxHealth: number;
 	shootCooldown: number;
 	destroyed: boolean;
-	// Conversion system
 	converted: boolean;
-	conversionProgress: number; // 0-1, visual effect during conversion
-	targetNodeId: string | null; // Which puzzle node to orbit
-	orbitAngle: number; // Current angle around the puzzle node
-	orbitDistance: number; // Distance from puzzle node center
-	hintTimer: number; // Time until next hint is generated
-	hintData: string | null; // Current hint being transmitted
+	conversionProgress: number;
+	targetNodeId: string | null;
+	orbitAngle: number;
+	orbitDistance: number;
+	hintTimer: number;
+	hintData: string | null;
 }
 
 export interface LaserData {
@@ -83,7 +87,7 @@ export interface PlayerState {
 
 export const world = {
 	player: {
-		position: new THREE.Vector3(0, 0, 0),
+		position: new THREE.Vector3(0, 0, SPHERE_RADIUS),
 		velocity: new THREE.Vector3(0, 0, 0),
 		rotation: new THREE.Euler(0, 0, 0),
 		radius: 1,
@@ -99,81 +103,152 @@ export const world = {
 	puzzleNodes: [] as PuzzleNodeData[],
 	powerUps: [] as PowerUpData[],
 	otherPlayers: [] as OtherPlayerData[],
-	// World size: 4232 x 4232 (bounds are half-width/half-height from center)
-	bounds: { x: 2116, y: 2116, z: 40 }
+	bounds: { x: SPHERE_RADIUS, y: SPHERE_RADIUS, z: SPHERE_RADIUS }
 };
 
-// Wrap a position to create an infinite/borderless world
-export function wrapPosition(position: THREE.Vector3): void {
-	const bx = world.bounds.x;
-	const by = world.bounds.y;
+// ==========================================
+// Sphere utility functions
+// ==========================================
 
-	if (position.x > bx) position.x -= bx * 2;
-	else if (position.x < -bx) position.x += bx * 2;
-
-	if (position.y > by) position.y -= by * 2;
-	else if (position.y < -by) position.y += by * 2;
+/** Project a position onto the sphere surface */
+export function projectToSphere(position: THREE.Vector3): void {
+	const len = position.length();
+	if (len > 0.0001) {
+		position.multiplyScalar(SPHERE_RADIUS / len);
+	} else {
+		position.set(0, 0, SPHERE_RADIUS);
+	}
 }
 
-// Get wrapped (toroidal) distance between two points - shortest path considering wrapping
-export function wrappedDistance(a: THREE.Vector3, b: THREE.Vector3): number {
-	const worldW = world.bounds.x * 2;
-	const worldH = world.bounds.y * 2;
-
-	let dx = Math.abs(a.x - b.x);
-	let dy = Math.abs(a.y - b.y);
-
-	// Take shorter wrapped path
-	if (dx > worldW / 2) dx = worldW - dx;
-	if (dy > worldH / 2) dy = worldH - dy;
-
-	return Math.sqrt(dx * dx + dy * dy + (a.z - b.z) ** 2);
-}
-
-// Get wrapped direction from source to target (shortest path)
-export function wrappedDirection(from: THREE.Vector3, to: THREE.Vector3): { dx: number; dy: number; dz: number; dist: number; } {
-	const worldW = world.bounds.x * 2;
-	const worldH = world.bounds.y * 2;
-
-	let dx = to.x - from.x;
-	let dy = to.y - from.y;
-	const dz = to.z - from.z;
-
-	// Wrap to shortest path
-	if (dx > worldW / 2) dx -= worldW;
-	else if (dx < -worldW / 2) dx += worldW;
-
-	if (dy > worldH / 2) dy -= worldH;
-	else if (dy < -worldH / 2) dy += worldH;
-
-	const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-	return { dx, dy, dz, dist };
-}
-
-// Get relative position considering world wrapping (for rendering)
-export function getRelativeToPlayer(position: THREE.Vector3): THREE.Vector3 {
-	const worldW = world.bounds.x * 2;
-	const worldH = world.bounds.y * 2;
-
-	let dx = position.x - world.player.position.x;
-	let dy = position.y - world.player.position.y;
-
-	// Wrap to shortest path
-	if (dx > worldW / 2) dx -= worldW;
-	else if (dx < -worldW / 2) dx += worldW;
-
-	if (dy > worldH / 2) dy -= worldH;
-	else if (dy < -worldH / 2) dy += worldH;
-
+/** Generate a random position on the sphere surface */
+export function randomSpherePosition(): THREE.Vector3 {
+	const u = Math.random() * 2 - 1;
+	const theta = Math.random() * Math.PI * 2;
+	const r = Math.sqrt(1 - u * u);
 	return new THREE.Vector3(
-		world.player.position.x + dx,
-		world.player.position.y + dy,
-		position.z
+		r * Math.cos(theta) * SPHERE_RADIUS,
+		r * Math.sin(theta) * SPHERE_RADIUS,
+		u * SPHERE_RADIUS
 	);
 }
 
+/** Generate a random position on the sphere near a given point */
+export function randomSpherePositionNear(center: THREE.Vector3, minDist: number, maxDist: number): THREE.Vector3 {
+	const { east, north } = getTangentFrame(center);
+	const angle = Math.random() * Math.PI * 2;
+	const dist = minDist + Math.random() * (maxDist - minDist);
+	const pos = center.clone();
+	pos.addScaledVector(east, Math.cos(angle) * dist);
+	pos.addScaledVector(north, Math.sin(angle) * dist);
+	projectToSphere(pos);
+	return pos;
+}
+
+/**
+ * Get tangent frame at a point on the sphere.
+ * Returns orthonormal {normal, east, north} where normal points outward.
+ * Uses smooth blending near poles to prevent "stuck on seam" artifacts.
+ */
+export function getTangentFrame(position: THREE.Vector3): { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } {
+	const normal = position.clone().normalize();
+	const absZ = Math.abs(normal.z);
+
+	// Two candidate reference vectors
+	const refZ = new THREE.Vector3(0, 0, 1);
+	const refX = new THREE.Vector3(1, 0, 0);
+
+	// Smooth blend in the transition zone (0.7 – 0.95) to avoid seam discontinuity
+	let ref: THREE.Vector3;
+	if (absZ < 0.7) {
+		ref = refZ;
+	} else if (absZ > 0.95) {
+		ref = refX;
+	} else {
+		// Blend factor: 0 at absZ=0.7, 1 at absZ=0.95
+		const t = (absZ - 0.7) / 0.25;
+		ref = refZ.clone().lerp(refX, t).normalize();
+	}
+
+	const east = new THREE.Vector3().crossVectors(ref, normal).normalize();
+	const north = new THREE.Vector3().crossVectors(normal, east).normalize();
+	return { normal, east, north };
+}
+
+/**
+ * Build a quaternion that orients an object tangent to the sphere,
+ * with local Z pointing along the sphere outward normal.
+ */
+export function getSphereOrientation(position: THREE.Vector3): THREE.Quaternion {
+	const { normal, east, north } = getTangentFrame(position);
+	const m = new THREE.Matrix4();
+	m.makeBasis(east, north, normal);
+	return new THREE.Quaternion().setFromRotationMatrix(m);
+}
+
+/** Chord distance between two points (works for collision detection) */
+export function sphereDistance(a: THREE.Vector3, b: THREE.Vector3): number {
+	return a.distanceTo(b);
+}
+
+/**
+ * Angular proximity between a point on the sphere surface and a point inside.
+ * Projects the interior point outward to the surface, then measures chord distance.
+ * Used for puzzle node interaction — player on surface interacts with nodes inside.
+ */
+export function surfaceProximity(surfacePoint: THREE.Vector3, interiorPoint: THREE.Vector3): number {
+	const projected = interiorPoint.clone();
+	projectToSphere(projected); // project interior point to surface
+	return surfacePoint.distanceTo(projected);
+}
+
+/**
+ * Project a position to the interior puzzle radius.
+ * Used for placing puzzle nodes inside the sphere.
+ */
+export function projectToInterior(position: THREE.Vector3): void {
+	const len = position.length();
+	if (len > 0.0001) {
+		position.multiplyScalar(PUZZLE_INTERIOR_RADIUS / len);
+	} else {
+		position.set(0, 0, PUZZLE_INTERIOR_RADIUS);
+	}
+}
+
+/** Direction from one point to another, projected onto tangent plane at 'from' */
+export function sphereDirection(from: THREE.Vector3, to: THREE.Vector3): { dx: number; dy: number; dz: number; dist: number; } {
+	const normal = from.clone().normalize();
+	const d = new THREE.Vector3().subVectors(to, from);
+	const normalComp = d.dot(normal);
+	d.addScaledVector(normal, -normalComp);
+	const dist = d.length();
+	return { dx: d.x, dy: d.y, dz: d.z, dist };
+}
+
+/** Move a position along the sphere surface */
+export function moveSphere(position: THREE.Vector3, velocity: THREE.Vector3, dt: number): void {
+	position.addScaledVector(velocity, dt);
+	projectToSphere(position);
+}
+
+// ==========================================
+// Legacy aliases (used throughout codebase)
+// ==========================================
+
+export const wrappedDistance = sphereDistance;
+
+export const wrappedDirection = sphereDirection;
+
+export function wrapPosition(position: THREE.Vector3): void {
+	projectToSphere(position);
+}
+
+/** No-op on sphere — all positions are already in 3D */
+export function getRelativeToPlayer(position: THREE.Vector3): THREE.Vector3 {
+	return position;
+}
+
 export function resetWorld(): void {
-	world.player.position.set(0, 0, 0);
+	world.player.position.set(0, 0, SPHERE_RADIUS);
 	world.player.velocity.set(0, 0, 0);
 	world.player.rotation.set(0, 0, 0);
 	world.player.health = 100;

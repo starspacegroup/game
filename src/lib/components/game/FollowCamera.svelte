@@ -1,33 +1,35 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getTangentFrame, SPHERE_RADIUS } from '$lib/game/world';
 
 	let camera: THREE.PerspectiveCamera | undefined = $state();
-	const offset = new THREE.Vector3(0, 0, 40);
-	const smoothTarget = new THREE.Vector3(0, 0, 0);
+
+	// Camera height above the sphere surface — higher gives better orbiting feel
+	const CAMERA_HEIGHT = 60;
 
 	useTask((delta) => {
 		if (!camera) return;
 
-		// Smoothly follow player (directly overhead)
-		smoothTarget.set(
-			world.player.position.x,
-			world.player.position.y,
-			world.player.position.z
-		);
+		// Camera sits above the player along the sphere normal
+		const normal = world.player.position.clone().normalize();
+		const { north } = getTangentFrame(world.player.position);
+		const desired = world.player.position.clone().addScaledVector(normal, CAMERA_HEIGHT);
 
-		const desired = smoothTarget.clone().add(offset);
+		// Smooth follow
 		camera.position.lerp(desired, Math.min(1, 6 * delta));
-		camera.lookAt(smoothTarget);
+
+		// Look at the player on the sphere surface
+		camera.up.copy(north);
+		camera.lookAt(world.player.position);
 	});
 </script>
 
 <T.PerspectiveCamera
 	bind:ref={camera}
 	makeDefault
-	fov={70}
+	fov={65}
 	near={0.1}
-	far={2000}
-	position={[0, 0, 40]}
+	far={3000}
+	position={[0, 0, SPHERE_RADIUS + CAMERA_HEIGHT]}
 />

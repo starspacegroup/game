@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -23,11 +23,14 @@
 		const data = world.asteroids[cachedIndex];
 		if (!group || !data || data.destroyed) return;
 
-		// Render at wrapped position relative to player for seamless infinite world
-		const renderPos = getRelativeToPlayer(data.position);
-		group.position.copy(renderPos);
-		group.rotation.x = data.rotation.x;
-		group.rotation.y = data.rotation.y;
+		// Position on sphere surface and orient tangent to sphere
+		group.position.copy(data.position);
+		group.quaternion.copy(getSphereOrientation(data.position));
+		// Add spin rotation on top of sphere orientation
+		const spin = new THREE.Quaternion().setFromEuler(
+			new THREE.Euler(data.rotation.x, data.rotation.y, 0)
+		);
+		group.quaternion.multiply(spin);
 	});
 
 	const data = world.asteroids[cachedIndex];

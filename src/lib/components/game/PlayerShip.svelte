@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 	import { authState } from '$lib/stores/authState.svelte';
 
 	let rootGroup: THREE.Group | undefined = $state();
@@ -50,10 +50,11 @@
 	useTask((delta) => {
 		if (!rootGroup) return;
 
-		// Position the root group (no rotation on root)
+		// Position on sphere surface and orient tangent to sphere
 		rootGroup.position.copy(world.player.position);
+		rootGroup.quaternion.copy(getSphereOrientation(world.player.position));
 
-		// Rotate only the ship mesh
+		// Rotate only the ship mesh within the tangent plane
 		if (shipMesh) {
 			shipMesh.rotation.z = world.player.rotation.z;
 		}

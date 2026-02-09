@@ -114,7 +114,7 @@ export interface WorldState {
   puzzleProgress: number;
   puzzleSolved: boolean;
   wave: number;
-  bounds: Vector3;
+  bounds?: Vector3; // @deprecated - sphere world has no bounds
 }
 
 // ============================================
@@ -279,11 +279,18 @@ export interface WorldBounds {
   z: number;
 }
 
+/** @deprecated Use SPHERE_RADIUS instead. Kept for compatibility. */
 export const DEFAULT_BOUNDS: WorldBounds = {
   x: 2116,
   y: 2116,
   z: 40
 };
+
+/** Radius of the sphere world. All entities live on this surface. */
+export const SPHERE_RADIUS = 500;
+
+/** Interior radius where puzzle nodes live inside the sphere */
+export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
 
 export const TICK_RATE = 30; // ticks per second
 export const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms

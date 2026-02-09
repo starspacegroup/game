@@ -12,22 +12,25 @@ export function checkPuzzleProgress(nodes: PuzzleNodeData[]): number {
 	}
 
 	const avgDist = totalDist / nodes.length;
-	const threshold = 35;
+	const threshold = 200; // scaled for interior sphere positions
 	return Math.max(0, Math.min(1, 1 - avgDist / threshold));
 }
 
 /** Check if the puzzle is fully solved */
 export function isPuzzleSolved(nodes: PuzzleNodeData[]): boolean {
-	return nodes.length > 0 && nodes.every((n) => n.position.distanceTo(n.targetPosition) < 3);
+	return nodes.length > 0 && nodes.every((n) => n.position.distanceTo(n.targetPosition) < 8);
 }
 
-/** Get edges for the Kal-Toh structure (connects nearby target positions) */
+/** Get edges for the interior icosahedral structure (connects nearby target positions) */
 export function getPuzzleConnections(nodes: PuzzleNodeData[]): [number, number][] {
 	const connections: [number, number][] = [];
+	// With nodes inside the sphere at PUZZLE_INTERIOR_RADIUS * 0.65,
+	// icosahedron edge length ≈ radius * 1.05, so threshold must be higher
+	const maxEdgeLength = 250;
 	for (let i = 0; i < nodes.length; i++) {
 		for (let j = i + 1; j < nodes.length; j++) {
 			const dist = nodes[i].targetPosition.distanceTo(nodes[j].targetPosition);
-			if (dist < 35) {
+			if (dist < maxEdgeLength) {
 				connections.push([i, j]);
 			}
 		}
@@ -83,9 +86,12 @@ const HINT_TEMPLATES = [
 	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
 		const dx = node.targetPosition.x - node.position.x;
 		const dy = node.targetPosition.y - node.position.y;
-		const dir = Math.abs(dx) > Math.abs(dy)
-			? (dx > 0 ? 'east' : 'west')
-			: (dy > 0 ? 'north' : 'south');
+		const dz = node.targetPosition.z - node.position.z;
+		const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+		let dir: string;
+		if (ax >= ay && ax >= az) dir = dx > 0 ? 'starboard' : 'port';
+		else if (ay >= az) dir = dy > 0 ? 'skyward' : 'coreward';
+		else dir = dz > 0 ? 'forward' : 'aft';
 		return `Data suggests node should shift ${dir}...`;
 	},
 	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
@@ -99,12 +105,9 @@ const HINT_TEMPLATES = [
 		return `${connected}/${nodes.length} nodes aligned. Structure emerging...`;
 	},
 	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
-		const angle = Math.atan2(
-			node.targetPosition.y - node.position.y,
-			node.targetPosition.x - node.position.x
-		);
-		const degrees = Math.round((angle * 180) / Math.PI);
-		return `Vector correction: ${degrees}° from current position`;
+		const dist = node.position.distanceTo(node.targetPosition);
+		const pct = Math.max(0, 100 - (dist / 2));
+		return `Alignment: ${pct.toFixed(0)}% — vector correction needed`;
 	},
 	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
 		return node.connected
@@ -122,7 +125,7 @@ const HINT_TEMPLATES = [
 	(node: PuzzleNodeData, nodes: PuzzleNodeData[]) => {
 		const nearbyNodes = nodes.filter(n =>
 			n.id !== node.id &&
-			node.targetPosition.distanceTo(n.targetPosition) < 35
+			node.targetPosition.distanceTo(n.targetPosition) < 250
 		);
 		return `This node connects to ${nearbyNodes.length} others in the structure`;
 	}

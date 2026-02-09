@@ -19,7 +19,7 @@ import type {
 } from '../shared/protocol';
 
 import {
-  DEFAULT_BOUNDS,
+  SPHERE_RADIUS,
   TICK_RATE,
   TICK_INTERVAL,
   MAX_PLAYERS,
@@ -53,6 +53,105 @@ interface StoredState {
   tick: number;
 }
 
+// ==========================================
+// Sphere math helpers (plain objects, no THREE.js)
+// ==========================================
+
+/** Project position onto sphere surface (mutating) */
+function projectToSphereM(pos: Vector3): void {
+  const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+  if (len < 0.001) { pos.x = 0; pos.y = 0; pos.z = SPHERE_RADIUS; return; }
+  const scale = SPHERE_RADIUS / len;
+  pos.x *= scale; pos.y *= scale; pos.z *= scale;
+}
+
+/** Chord distance between two 3D points */
+function sphereDistance(a: Vector3, b: Vector3): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/** Get tangent frame (east, north, normal) at a position on the sphere.
+ *  Uses smooth blending near poles to prevent "stuck on seam" artifacts. */
+function getTangentFrame(pos: Vector3): { east: Vector3; north: Vector3; normal: Vector3; } {
+  const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+  const normal = len > 0.001
+    ? { x: pos.x / len, y: pos.y / len, z: pos.z / len }
+    : { x: 0, y: 0, z: 1 };
+
+  const absZ = Math.abs(normal.z);
+
+  // Smoothly blend reference vector in transition zone (0.7 – 0.95)
+  let ux: number, uy: number, uz: number;
+  if (absZ < 0.7) {
+    ux = 0; uy = 0; uz = 1;
+  } else if (absZ > 0.95) {
+    ux = 1; uy = 0; uz = 0;
+  } else {
+    const t = (absZ - 0.7) / 0.25;
+    ux = t; uy = 0; uz = 1 - t;
+    const ulen = Math.sqrt(ux * ux + uz * uz);
+    ux /= ulen; uz /= ulen;
+  }
+
+  // east = cross(up, normal)
+  let ex = uy * normal.z - uz * normal.y;
+  let ey = uz * normal.x - ux * normal.z;
+  let ez = ux * normal.y - uy * normal.x;
+  const elen = Math.sqrt(ex * ex + ey * ey + ez * ez);
+  if (elen > 0) { ex /= elen; ey /= elen; ez /= elen; }
+
+  // north = cross(normal, east)
+  const nx = normal.y * ez - normal.z * ey;
+  const ny = normal.z * ex - normal.x * ez;
+  const nz = normal.x * ey - normal.y * ex;
+
+  return {
+    east: { x: ex, y: ey, z: ez },
+    north: { x: nx, y: ny, z: nz },
+    normal
+  };
+}
+
+/** Move a position on the sphere by dx (east) and dy (north) in tangent frame */
+function moveSphere(pos: Vector3, dx: number, dy: number): void {
+  const frame = getTangentFrame(pos);
+  pos.x += frame.east.x * dx + frame.north.x * dy;
+  pos.y += frame.east.y * dx + frame.north.y * dy;
+  pos.z += frame.east.z * dx + frame.north.z * dy;
+  projectToSphereM(pos);
+}
+
+/** Get direction vector from one sphere position to another */
+function sphereDirection(from: Vector3, to: Vector3): { dx: number; dy: number; dz: number; dist: number; } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  return { dx, dy, dz, dist };
+}
+
+/** Move position toward target on sphere surface by a given speed and deltaTime */
+function moveToward(pos: Vector3, target: Vector3, speed: number, dt: number): void {
+  const dir = sphereDirection(pos, target);
+  if (dir.dist < 0.01) return;
+  const step = Math.min(speed * dt, dir.dist);
+  pos.x += (dir.dx / dir.dist) * step;
+  pos.y += (dir.dy / dir.dist) * step;
+  pos.z += (dir.dz / dir.dist) * step;
+  projectToSphereM(pos);
+}
+
+/** Project an interior point to the sphere surface (returns new object) */
+function projectToSurfaceV(pos: Vector3): Vector3 {
+  const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+  if (len < 0.001) return { x: 0, y: 0, z: SPHERE_RADIUS };
+  const scale = SPHERE_RADIUS / len;
+  return { x: pos.x * scale, y: pos.y * scale, z: pos.z * scale };
+}
+
 export class GameRoom implements DurableObject {
   private state: DurableObjectState;
   private sessions: Map<WebSocket, PlayerSession> = new Map();
@@ -68,7 +167,6 @@ export class GameRoom implements DurableObject {
   private puzzleProgress: number = 0;
   private puzzleSolved: boolean = false;
   private wave: number = 1;
-  private bounds = DEFAULT_BOUNDS;
 
   // Game loop
   private tickInterval: ReturnType<typeof setInterval> | null = null;
@@ -246,7 +344,7 @@ export class GameRoom implements DurableObject {
   }
 
   /**
-   * Update player positions based on inputs
+   * Update player positions based on inputs (sphere tangent-frame movement)
    */
   private updatePlayers(deltaTime: number): void {
     for (const [ws, session] of this.sessions) {
@@ -254,30 +352,42 @@ export class GameRoom implements DurableObject {
       if (!player || player.health <= 0) continue;
 
       const input = session.lastInput;
-      if (!input) continue;
+      if (!input) {
+        player.velocity.x = 0;
+        player.velocity.y = 0;
+        player.velocity.z = 0;
+        if (player.shootCooldown > 0) player.shootCooldown -= deltaTime;
+        continue;
+      }
 
-      // Direct rotation from client (client computes exact rotation)
+      // Direct rotation from client
       player.rotation.z = input.rotateZ;
 
-      // Direct velocity mapping to match client physics
-      // Client uses: velocity = moveInput * speed * (boost ? 1.8 : 1)
       const speed = player.speed * (input.brake ? 1.8 : 1);
 
-      // Calculate direction from input
-      // Client sends rotateX/rotateY as normalized move direction
-      const moveX = input.rotateX;
-      const moveY = input.rotateY;
+      let moveX = input.rotateX;
+      let moveY = input.rotateY;
 
-      // Set velocity directly (matching client's immediate velocity model)
+      // Safety: normalize diagonal movement
+      const moveMag = Math.sqrt(moveX * moveX + moveY * moveY);
+      if (moveMag > 1) {
+        moveX /= moveMag;
+        moveY /= moveMag;
+      }
+
+      // Move on sphere surface using tangent frame
+      const dx = moveX * speed * deltaTime;
+      const dy = moveY * speed * deltaTime;
+
+      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+        moveSphere(player.position, dx, dy);
+      }
+
+      // Store velocity for client prediction (tangent frame components)
+      const frame = getTangentFrame(player.position);
       player.velocity.x = moveX * speed;
       player.velocity.y = moveY * speed;
-
-      // Update position
-      player.position.x += player.velocity.x * deltaTime;
-      player.position.y += player.velocity.y * deltaTime;
-
-      // Wrap position
-      this.wrapPosition(player.position);
+      player.velocity.z = 0;
 
       // Update shoot cooldown
       if (player.shootCooldown > 0) {
@@ -287,29 +397,24 @@ export class GameRoom implements DurableObject {
   }
 
   /**
-   * Update asteroid positions and rotations
+   * Update asteroid positions and rotations (drift on sphere surface)
    */
   private updateAsteroids(deltaTime: number): void {
     for (const asteroid of this.asteroids) {
       if (asteroid.destroyed) continue;
 
-      // Update position
-      asteroid.position.x += asteroid.velocity.x * deltaTime;
-      asteroid.position.y += asteroid.velocity.y * deltaTime;
-      asteroid.position.z += asteroid.velocity.z * deltaTime;
+      // Drift on sphere surface using velocity as tangent-plane components
+      moveSphere(asteroid.position, asteroid.velocity.x * deltaTime, asteroid.velocity.y * deltaTime);
 
       // Update rotation
       asteroid.rotation.x += asteroid.rotationSpeed.x * deltaTime;
       asteroid.rotation.y += asteroid.rotationSpeed.y * deltaTime;
       asteroid.rotation.z += asteroid.rotationSpeed.z * deltaTime;
-
-      // Wrap position
-      this.wrapPosition(asteroid.position);
     }
   }
 
   /**
-   * Update NPC AI and positions
+   * Update NPC AI and positions (sphere movement)
    */
   private updateNpcs(deltaTime: number): void {
     const playerArray = Array.from(this.players.values()).filter(p => p.health > 0);
@@ -318,23 +423,21 @@ export class GameRoom implements DurableObject {
       if (npc.destroyed) continue;
 
       if (npc.converted) {
-        // Converted NPCs orbit their target puzzle node and generate hints
         this.updateConvertedNpc(npc, deltaTime);
         continue;
       }
 
-      // Handle conversion animation (matches solo: 0.5 second conversion)
+      // Handle conversion animation
       if (npc.conversionProgress > 0 && npc.conversionProgress < 1) {
         npc.conversionProgress += deltaTime * 2;
         if (npc.conversionProgress >= 1) {
           npc.converted = true;
           npc.conversionProgress = 1;
-          // Find nearest unconnected puzzle node to orbit
           let nearestNode: PuzzleNodeState | null = null;
           let nearestDist = Infinity;
           for (const node of this.puzzleNodes) {
             if (node.connected) continue;
-            const dist = this.wrappedDistance(npc.position, node.position);
+            const dist = sphereDistance(npc.position, node.position);
             if (dist < nearestDist) {
               nearestDist = dist;
               nearestNode = node;
@@ -342,7 +445,6 @@ export class GameRoom implements DurableObject {
           }
           npc.targetNodeId = nearestNode?.id || null;
 
-          // Broadcast conversion event
           this.broadcast({
             type: 'npc-converted',
             npcId: npc.id,
@@ -350,7 +452,6 @@ export class GameRoom implements DurableObject {
             targetNodeId: npc.targetNodeId || ''
           });
         }
-        // Spin in place during conversion
         npc.rotation.z += deltaTime * 10;
         continue;
       }
@@ -358,17 +459,15 @@ export class GameRoom implements DurableObject {
       // Hostile NPCs chase nearest player
       this.updateHostileNpc(npc, playerArray, deltaTime);
 
-      // Update position
-      npc.position.x += npc.velocity.x * deltaTime;
-      npc.position.y += npc.velocity.y * deltaTime;
-      npc.position.z += npc.velocity.z * deltaTime;
+      // Move NPC on sphere surface
+      if (Math.abs(npc.velocity.x) > 0.01 || Math.abs(npc.velocity.y) > 0.01) {
+        moveSphere(npc.position, npc.velocity.x * deltaTime, npc.velocity.y * deltaTime);
+      }
 
       // Update shoot cooldown
       if (npc.shootCooldown > 0) {
         npc.shootCooldown -= deltaTime;
       }
-
-      this.wrapPosition(npc.position);
     }
   }
 
@@ -378,37 +477,42 @@ export class GameRoom implements DurableObject {
     const targetNode = this.puzzleNodes.find(n => n.id === npc.targetNodeId);
     if (!targetNode) return;
 
-    const dx = targetNode.position.x - npc.position.x;
-    const dy = targetNode.position.y - npc.position.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Project node position to sphere surface — NPC orbits on surface above the interior node
+    const surfaceTarget = projectToSurfaceV(targetNode.position);
+    const dist = sphereDistance(npc.position, surfaceTarget);
 
-    // Navigate to the puzzle node if far away (matching solo behavior)
+    // Navigate to the surface point above the puzzle node
     if (dist > npc.orbitDistance + 2) {
       const navSpeed = 6 * 1.2;
-      npc.velocity.x = (dx / dist) * navSpeed;
-      npc.velocity.y = (dy / dist) * navSpeed;
-      npc.position.x += npc.velocity.x * deltaTime;
-      npc.position.y += npc.velocity.y * deltaTime;
-      npc.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
+      moveToward(npc.position, surfaceTarget, navSpeed, deltaTime);
+
+      // Face toward target
+      const dir = sphereDirection(npc.position, surfaceTarget);
+      const frame = getTangentFrame(npc.position);
+      const localX = dir.dx * frame.east.x + dir.dy * frame.east.y + dir.dz * frame.east.z;
+      const localY = dir.dx * frame.north.x + dir.dy * frame.north.y + dir.dz * frame.north.z;
+      npc.rotation.z = Math.atan2(localX, localY);
     } else {
-      // Orbit the puzzle node (matching solo orbit speed of 1.5)
+      // Orbit on the sphere surface above the interior node
       npc.orbitAngle += deltaTime * 1.5;
-      npc.position.x = targetNode.position.x + Math.cos(npc.orbitAngle) * npc.orbitDistance;
-      npc.position.y = targetNode.position.y + Math.sin(npc.orbitAngle) * npc.orbitDistance;
+      const frame = getTangentFrame(surfaceTarget);
+      const ox = Math.cos(npc.orbitAngle) * npc.orbitDistance;
+      const oy = Math.sin(npc.orbitAngle) * npc.orbitDistance;
+      npc.position.x = surfaceTarget.x + frame.east.x * ox + frame.north.x * oy;
+      npc.position.y = surfaceTarget.y + frame.east.y * ox + frame.north.y * oy;
+      npc.position.z = surfaceTarget.z + frame.east.z * ox + frame.north.z * oy;
+      projectToSphereM(npc.position);
+
       npc.rotation.z = npc.orbitAngle + Math.PI / 2;
       npc.velocity.x = 0;
       npc.velocity.y = 0;
 
-      // Generate hints while orbiting (matching solo: 4-7 seconds between hints)
-      // Use shootCooldown as hint timer since converted NPCs don't shoot
+      // Generate hints while orbiting
       npc.shootCooldown -= deltaTime;
       if (npc.shootCooldown <= 0) {
         npc.shootCooldown = 4 + Math.random() * 3;
 
-        // Generate a hint about this puzzle node
         const hint = this.generateHint(targetNode);
-
-        // Broadcast hint to all players
         this.broadcast({
           type: 'hint',
           nodeId: targetNode.id,
@@ -416,7 +520,7 @@ export class GameRoom implements DurableObject {
           fromNpcId: npc.id
         });
 
-        // Help push the node toward its target (converted NPCs contribute to solving)
+        // Help push node toward target (inside sphere, no surface projection)
         if (!targetNode.connected) {
           const tdx = targetNode.targetPosition.x - targetNode.position.x;
           const tdy = targetNode.targetPosition.y - targetNode.position.y;
@@ -428,8 +532,6 @@ export class GameRoom implements DurableObject {
         }
       }
     }
-
-    this.wrapPosition(npc.position);
   }
 
   private updateHostileNpc(npc: NpcState, players: PlayerState[], deltaTime: number): void {
@@ -440,7 +542,7 @@ export class GameRoom implements DurableObject {
     let nearestDist = Infinity;
 
     for (const player of players) {
-      const dist = this.wrappedDistance(npc.position, player.position);
+      const dist = sphereDistance(npc.position, player.position);
       if (dist < nearestDist) {
         nearestDist = dist;
         nearestPlayer = player;
@@ -449,32 +551,43 @@ export class GameRoom implements DurableObject {
 
     if (!nearestPlayer) return;
 
-    // Chase the player (matching solo NPC_SPEED = 6)
-    const dir = this.wrappedDirection(npc.position, nearestPlayer.position);
+    const dir = sphereDirection(npc.position, nearestPlayer.position);
     const speed = 6;
 
-    if (dir.dist > 2.5) {
-      // Chase until very close
-      npc.velocity.x = (dir.dx / dir.dist) * speed;
-      npc.velocity.y = (dir.dy / dir.dist) * speed;
-    } else {
-      // Circle tightly when close (matching solo behavior)
-      npc.velocity.x = (-dir.dy / dir.dist) * speed * 0.8;
-      npc.velocity.y = (dir.dx / dir.dist) * speed * 0.8;
+    // Project direction into tangent plane for movement
+    const frame = getTangentFrame(npc.position);
+    const localDx = dir.dx * frame.east.x + dir.dy * frame.east.y + dir.dz * frame.east.z;
+    const localDy = dir.dx * frame.north.x + dir.dy * frame.north.y + dir.dz * frame.north.z;
+    const localDist = Math.sqrt(localDx * localDx + localDy * localDy);
+
+    if (localDist > 0.01) {
+      if (dir.dist > 2.5) {
+        // Chase
+        npc.velocity.x = (localDx / localDist) * speed;
+        npc.velocity.y = (localDy / localDist) * speed;
+      } else {
+        // Circle tightly when close
+        npc.velocity.x = (-localDy / localDist) * speed * 0.8;
+        npc.velocity.y = (localDx / localDist) * speed * 0.8;
+      }
     }
 
     // Point towards player
-    npc.rotation.z = Math.atan2(dir.dy, dir.dx) - Math.PI / 2;
+    npc.rotation.z = Math.atan2(localDx, localDy);
 
-    // Shoot at player if in range and cooldown ready (matching solo: range 40, rate 2.5)
+    // Shoot at player if in range
     if (nearestDist < 40 && npc.shootCooldown <= 0) {
-      this.createNpcLaser(npc.id, npc.position, { x: dir.dx / dir.dist, y: dir.dy / dir.dist, z: 0 });
+      // Fire direction: 3D vector toward player
+      const fireDir = dir.dist > 0
+        ? { x: dir.dx / dir.dist, y: dir.dy / dir.dist, z: dir.dz / dir.dist }
+        : { x: 0, y: 0, z: 1 };
+      this.createNpcLaser(npc.id, npc.position, fireDir);
       npc.shootCooldown = 2.5 + Math.random();
     }
   }
 
   /**
-   * Update laser positions and lifetime
+   * Update laser positions and lifetime (move along direction, project to sphere)
    */
   private updateLasers(deltaTime: number): void {
     for (let i = this.lasers.length - 1; i >= 0; i--) {
@@ -484,9 +597,10 @@ export class GameRoom implements DurableObject {
       laser.position.y += laser.direction.y * laser.speed * deltaTime;
       laser.position.z += laser.direction.z * laser.speed * deltaTime;
 
-      laser.life -= deltaTime;
+      // Project back to sphere surface
+      projectToSphereM(laser.position);
 
-      this.wrapPosition(laser.position);
+      laser.life -= deltaTime;
 
       if (laser.life <= 0) {
         this.lasers.splice(i, 1);
@@ -495,40 +609,41 @@ export class GameRoom implements DurableObject {
   }
 
   /**
-   * Handle all collision detection
+   * Handle all collision detection (using chord distance on sphere)
    */
   private handleCollisions(): void {
-    // Player vs Power-ups (use wrappedDistance for toroidal world)
+    // Player vs Power-ups
     for (const player of this.players.values()) {
       if (player.health <= 0) continue;
 
       for (const powerUp of this.powerUps) {
         if (powerUp.collected) continue;
 
-        const dist = this.wrappedDistance(player.position, powerUp.position);
+        const dist = sphereDistance(player.position, powerUp.position);
         if (dist < 1 + powerUp.radius) {
           this.collectPowerUp(player, powerUp);
         }
       }
 
-      // Player vs Puzzle Nodes
+      // Player vs Puzzle Nodes (angular proximity — player on surface, nodes inside)
       for (const node of this.puzzleNodes) {
         if (node.connected) continue;
 
-        const dist = this.wrappedDistance(player.position, node.position);
-        if (dist < 1 + node.radius + 3) {
-          // Interact with puzzle node - snap it closer to target
+        // Project node to surface, then check distance from player
+        const surfaceNode = projectToSurfaceV(node.position);
+        const dist = sphereDistance(player.position, surfaceNode);
+        if (dist < 1 + node.radius + 20) {
           this.interactPuzzleNode(node);
         }
       }
 
-      // Player vs hostile NPCs - instant death (matches solo mode)
+      // Player vs hostile NPCs - instant death
       for (const npc of this.npcs) {
         if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
 
-        const dist = this.wrappedDistance(player.position, npc.position);
+        const dist = sphereDistance(player.position, npc.position);
         if (dist < 1 + npc.radius + 0.5) {
-          this.damagePlayer(player.id, player.health); // Instant death like solo
+          this.damagePlayer(player.id, player.health);
         }
       }
     }
@@ -538,17 +653,14 @@ export class GameRoom implements DurableObject {
       const laser = this.lasers[i];
       let hit = false;
 
-      // Player lasers vs NPCs → conversion (not damage, matching solo mechanic)
+      // Player lasers vs NPCs → conversion
       if (this.players.has(laser.ownerId)) {
         for (const npc of this.npcs) {
-          // Skip destroyed, converted, or already-converting NPCs
           if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
 
-          const dist = this.wrappedDistance(laser.position, npc.position);
+          const dist = sphereDistance(laser.position, npc.position);
           if (dist < laser.radius + npc.radius + 1.0) {
-            // Start conversion instead of dealing damage (matches solo)
             npc.conversionProgress = 0.01;
-            // Award score to owner
             const owner = this.players.get(laser.ownerId);
             if (owner) owner.score += 25;
             hit = true;
@@ -562,7 +674,7 @@ export class GameRoom implements DurableObject {
         for (const player of this.players.values()) {
           if (player.health <= 0) continue;
 
-          const dist = this.wrappedDistance(laser.position, player.position);
+          const dist = sphereDistance(laser.position, player.position);
           if (dist < laser.radius + 1) {
             this.damagePlayer(player.id, 15);
             hit = true;
@@ -586,7 +698,7 @@ export class GameRoom implements DurableObject {
     if (activeAsteroids.length < ASTEROID_COUNT * 0.8) {
       const toRespawn = ASTEROID_COUNT - activeAsteroids.length;
       for (let i = 0; i < Math.min(toRespawn, 5); i++) {
-        const newAsteroid = respawnAsteroid(this.bounds);
+        const newAsteroid = respawnAsteroid();
         const destroyedIdx = this.asteroids.findIndex(a => a.destroyed);
         if (destroyedIdx >= 0) {
           this.asteroids[destroyedIdx] = newAsteroid;
@@ -599,7 +711,7 @@ export class GameRoom implements DurableObject {
     // Respawn power-ups
     const activePowerUps = this.powerUps.filter(p => !p.collected);
     if (activePowerUps.length < 50) {
-      const newPowerUp = respawnPowerUp(this.bounds);
+      const newPowerUp = respawnPowerUp();
       const collectedIdx = this.powerUps.findIndex(p => p.collected);
       if (collectedIdx >= 0) {
         this.powerUps[collectedIdx] = newPowerUp;
@@ -709,8 +821,7 @@ export class GameRoom implements DurableObject {
           powerUps: this.powerUps,
           puzzleProgress: this.puzzleProgress,
           puzzleSolved: this.puzzleSolved,
-          wave: this.wave,
-          bounds: this.bounds
+          wave: this.wave
         };
 
         this.send(ws, {
@@ -745,11 +856,16 @@ export class GameRoom implements DurableObject {
         const player = this.players.get(session.id);
         if (!player || player.health <= 0 || player.shootCooldown > 0) return;
 
-        // Create laser
+        // Create laser — direction in tangent plane based on player facing
+        const frame = getTangentFrame(player.position);
+        const angle = player.rotation.z;
+        // Firing direction: combine east and north based on rotation
+        const sinA = Math.sin(angle);
+        const cosA = Math.cos(angle);
         const direction = {
-          x: -Math.sin(player.rotation.z) * Math.cos(player.rotation.x),
-          y: Math.cos(player.rotation.z) * Math.cos(player.rotation.x),
-          z: Math.sin(player.rotation.x)
+          x: -sinA * frame.east.x + cosA * frame.north.x,
+          y: -sinA * frame.east.y + cosA * frame.north.y,
+          z: -sinA * frame.east.z + cosA * frame.north.z
         };
 
         this.createLaser(player.id, player.position, direction);
@@ -851,7 +967,7 @@ export class GameRoom implements DurableObject {
       setTimeout(() => {
         if (this.sessions.size > 0) {
           player.health = player.maxHealth;
-          player.position = { x: 0, y: 0, z: 0 };
+          player.position = { x: 0, y: 0, z: SPHERE_RADIUS };
           player.velocity = { x: 0, y: 0, z: 0 };
 
           this.broadcast({
@@ -892,19 +1008,17 @@ export class GameRoom implements DurableObject {
   }
 
   private interactPuzzleNode(node: PuzzleNodeState): void {
-    // Move node closer to its target position (matching solo's lerp behavior)
     const dx = node.targetPosition.x - node.position.x;
     const dy = node.targetPosition.y - node.position.y;
     const dz = node.targetPosition.z - node.position.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    // Lerp toward target (matching solo's 0.05 factor)
+    // Lerp toward target (inside sphere, no surface projection)
     node.position.x += dx * 0.05;
     node.position.y += dy * 0.05;
     node.position.z += dz * 0.05;
 
-    if (dist < 3) {
-      // Close enough - snap to target and mark as connected (matching solo threshold of 3)
+    if (dist < 8) {
       node.position = { ...node.targetPosition };
       node.connected = true;
       this.checkPuzzleProgress();
@@ -921,7 +1035,7 @@ export class GameRoom implements DurableObject {
 
     for (const node of this.puzzleNodes) {
       if (node.connected) continue;
-      const dist = this.wrappedDistance(npc.position, node.position);
+      const dist = sphereDistance(npc.position, node.position);
       if (dist < nearestDist) {
         nearestDist = dist;
         nearestNode = node;
@@ -965,18 +1079,18 @@ export class GameRoom implements DurableObject {
         tick: this.tick,
         players: activePlayers,
         lasers: this.lasers.filter(l =>
-          this.wrappedDistance(l.position, player.position) < ENTITY_SYNC_RADIUS
+          sphereDistance(l.position, player.position) < ENTITY_SYNC_RADIUS
         ),
         // Send entity snapshots every 3 ticks (~100ms) — only nearby ones
         ...(this.tick % 3 === 0 && {
           asteroids: this.asteroids.filter(a =>
-            !a.destroyed && this.wrappedDistance(a.position, player.position) < ENTITY_SYNC_RADIUS
+            !a.destroyed && sphereDistance(a.position, player.position) < ENTITY_SYNC_RADIUS
           ),
           npcs: this.npcs.filter(n =>
-            !n.destroyed && this.wrappedDistance(n.position, player.position) < ENTITY_SYNC_RADIUS
+            !n.destroyed && sphereDistance(n.position, player.position) < ENTITY_SYNC_RADIUS
           ),
           powerUps: this.powerUps.filter(p =>
-            !p.collected && this.wrappedDistance(p.position, player.position) < ENTITY_SYNC_RADIUS
+            !p.collected && sphereDistance(p.position, player.position) < ENTITY_SYNC_RADIUS
           ),
           puzzleNodes: this.puzzleNodes
         }),
@@ -1008,22 +1122,17 @@ export class GameRoom implements DurableObject {
   // Utility Methods
   // ==========================================
 
-  private wrapPosition(pos: Vector3): void {
-    if (pos.x > this.bounds.x) pos.x -= this.bounds.x * 2;
-    else if (pos.x < -this.bounds.x) pos.x += this.bounds.x * 2;
-
-    if (pos.y > this.bounds.y) pos.y -= this.bounds.y * 2;
-    else if (pos.y < -this.bounds.y) pos.y += this.bounds.y * 2;
-  }
-
   private generateHint(node: PuzzleNodeState): string {
     const hints = [
       () => {
         const dx = node.targetPosition.x - node.position.x;
         const dy = node.targetPosition.y - node.position.y;
-        const dir = Math.abs(dx) > Math.abs(dy)
-          ? (dx > 0 ? 'east' : 'west')
-          : (dy > 0 ? 'north' : 'south');
+        const dz = node.targetPosition.z - node.position.z;
+        const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+        let dir: string;
+        if (ax >= ay && ax >= az) dir = dx > 0 ? 'starboard' : 'port';
+        else if (ay >= az) dir = dy > 0 ? 'skyward' : 'coreward';
+        else dir = dz > 0 ? 'forward' : 'aft';
         return `Data suggests node should shift ${dir}...`;
       },
       () => {
@@ -1040,12 +1149,12 @@ export class GameRoom implements DurableObject {
         return `${connected}/${this.puzzleNodes.length} nodes aligned. Structure emerging...`;
       },
       () => {
-        const angle = Math.atan2(
-          node.targetPosition.y - node.position.y,
-          node.targetPosition.x - node.position.x
-        );
-        const degrees = Math.round((angle * 180) / Math.PI);
-        return `Vector correction: ${degrees}° from current position`;
+        const dx = node.targetPosition.x - node.position.x;
+        const dy = node.targetPosition.y - node.position.y;
+        const dz = node.targetPosition.z - node.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const pct = Math.max(0, 100 - (dist / 2));
+        return `Alignment: ${pct.toFixed(0)}% — vector correction needed`;
       },
       () => {
         return node.connected
@@ -1066,51 +1175,13 @@ export class GameRoom implements DurableObject {
           const dx = node.targetPosition.x - n.targetPosition.x;
           const dy = node.targetPosition.y - n.targetPosition.y;
           const dz = node.targetPosition.z - n.targetPosition.z;
-          return Math.sqrt(dx * dx + dy * dy + dz * dz) < 35;
+          return Math.sqrt(dx * dx + dy * dy + dz * dz) < 250;
         });
         return `This node connects to ${nearbyNodes.length} others in the structure`;
       }
     ];
 
     return hints[Math.floor(Math.random() * hints.length)]();
-  }
-
-  private distance(a: Vector3, b: Vector3): number {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    const dz = a.z - b.z;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-  }
-
-  private wrappedDistance(a: Vector3, b: Vector3): number {
-    const worldW = this.bounds.x * 2;
-    const worldH = this.bounds.y * 2;
-
-    let dx = Math.abs(a.x - b.x);
-    let dy = Math.abs(a.y - b.y);
-
-    if (dx > worldW / 2) dx = worldW - dx;
-    if (dy > worldH / 2) dy = worldH - dy;
-
-    return Math.sqrt(dx * dx + dy * dy + (a.z - b.z) ** 2);
-  }
-
-  private wrappedDirection(from: Vector3, to: Vector3): { dx: number; dy: number; dz: number; dist: number; } {
-    const worldW = this.bounds.x * 2;
-    const worldH = this.bounds.y * 2;
-
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-    const dz = to.z - from.z;
-
-    if (dx > worldW / 2) dx -= worldW;
-    else if (dx < -worldW / 2) dx += worldW;
-
-    if (dy > worldH / 2) dy -= worldH;
-    else if (dy < -worldH / 2) dy += worldH;
-
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    return { dx, dy, dz, dist };
   }
 
   /**

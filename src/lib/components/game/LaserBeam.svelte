@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world, getSphereOrientation, getTangentFrame } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -22,10 +22,15 @@
 		// Always find by ID to avoid stale index after array modifications
 		const d = world.lasers.find((l) => l.id === id);
 		if (!group || !d) return;
-		// Render at wrapped position relative to player
-		const renderPos = getRelativeToPlayer(d.position);
-		group.position.copy(renderPos);
-		group.rotation.z = Math.atan2(d.direction.y, d.direction.x);
+		// Position on sphere and orient tangent
+		group.position.copy(d.position);
+		group.quaternion.copy(getSphereOrientation(d.position));
+		// Rotate to point in direction of travel within tangent plane
+		const { east, north } = getTangentFrame(d.position);
+		const localDirX = d.direction.dot(east);
+		const localDirY = d.direction.dot(north);
+		const facingQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan2(localDirY, localDirX));
+		group.quaternion.multiply(facingQ);
 		
 		// Pulse animation for data stream effect
 		pulsePhase += delta * 20;

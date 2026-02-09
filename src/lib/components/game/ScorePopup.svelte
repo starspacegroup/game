@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { getRelativeToPlayer } from '$lib/game/world';
+	import { getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		x: number;
@@ -83,9 +83,9 @@
 		}
 
 		if (group) {
-			// Use wrapped position relative to player
-			const relPos = getRelativeToPlayer(originalPos);
-			group.position.set(relPos.x, relPos.y + offsetY, relPos.z);
+			// Position on sphere surface, rising along normal
+			const normal = originalPos.clone().normalize();
+			group.position.copy(originalPos).addScaledVector(normal, offsetY);
 		}
 	});
 </script>

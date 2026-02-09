@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world } from '$lib/game/world';
 	import { getPuzzleConnections } from '$lib/game/puzzle';
 	import PuzzleNode from './PuzzleNode.svelte';
 
@@ -31,9 +31,9 @@
 		for (let i = 0; i < connections.length; i++) {
 			const [a, b] = connections[i];
 			const i6 = i * 6;
-			// Use wrapped positions for seamless infinite world
-			const posA = getRelativeToPlayer(nodes[a].position);
-			const posB = getRelativeToPlayer(nodes[b].position);
+			// Direct 3D positions on sphere surface
+			const posA = nodes[a].position;
+			const posB = nodes[b].position;
 			positions[i6] = posA.x;
 			positions[i6 + 1] = posA.y;
 			positions[i6 + 2] = posA.z;
@@ -41,8 +41,8 @@
 			positions[i6 + 4] = posB.y;
 			positions[i6 + 5] = posB.z;
 
-			const targetA = getRelativeToPlayer(nodes[a].targetPosition);
-			const targetB = getRelativeToPlayer(nodes[b].targetPosition);
+			const targetA = nodes[a].targetPosition;
+			const targetB = nodes[b].targetPosition;
 			targetPositions[i6] = targetA.x;
 			targetPositions[i6 + 1] = targetA.y;
 			targetPositions[i6 + 2] = targetA.z;
@@ -79,13 +79,13 @@
 {#if lineGeometry}
 	<T.LineSegments>
 		<T is={lineGeometry} />
-		<T.LineBasicMaterial color="#ffffff" transparent opacity={0.15} />
+		<T.LineBasicMaterial color="#ffffff" transparent opacity={0.3} />
 	</T.LineSegments>
 {/if}
 
 {#if targetLineGeometry}
 	<T.LineSegments>
 		<T is={targetLineGeometry} />
-		<T.LineBasicMaterial color="#4488ff" transparent opacity={0.06} />
+		<T.LineBasicMaterial color="#4488ff" transparent opacity={0.12} />
 	</T.LineSegments>
 {/if}

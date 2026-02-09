@@ -1,6 +1,7 @@
 /**
  * Server-side world generation
  * No THREE.js dependency - uses plain objects for Cloudflare Workers compatibility
+ * All entities placed on the surface of a sphere with radius SPHERE_RADIUS
  */
 
 import type {
@@ -15,11 +16,11 @@ import type {
 } from '../shared/protocol';
 
 import {
-  DEFAULT_BOUNDS,
   ASTEROID_COUNT,
   POWER_UP_COUNT,
   PUZZLE_NODE_COUNT,
-  BASE_NPC_COUNT
+  BASE_NPC_COUNT,
+  SPHERE_RADIUS
 } from '../shared/protocol';
 
 let nextId = 0;
@@ -40,34 +41,93 @@ function euler3(x: number, y: number, z: number): Euler3 {
   return { x, y, z };
 }
 
+/** Normalize a plain vector and scale to sphere surface */
+function projectToSphereV(pos: Vector3): Vector3 {
+  const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+  if (len < 0.001) return { x: 0, y: 0, z: SPHERE_RADIUS };
+  const scale = SPHERE_RADIUS / len;
+  return { x: pos.x * scale, y: pos.y * scale, z: pos.z * scale };
+}
+
+/** Random position on the sphere surface */
+function randomSpherePos(): Vector3 {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  return {
+    x: SPHERE_RADIUS * Math.sin(phi) * Math.cos(theta),
+    y: SPHERE_RADIUS * Math.sin(phi) * Math.sin(theta),
+    z: SPHERE_RADIUS * Math.cos(phi)
+  };
+}
+
+/** Random position on the sphere near a given point, between minDist and maxDist (chord) */
+function randomSphereNear(center: Vector3, minDist: number, maxDist: number): Vector3 {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const pos = randomSpherePos();
+    const dx = pos.x - center.x;
+    const dy = pos.y - center.y;
+    const dz = pos.z - center.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist >= minDist && dist <= maxDist) return pos;
+  }
+  // Fallback: offset from center and re-project
+  const angle = Math.random() * Math.PI * 2;
+  const tangentDist = minDist + Math.random() * (maxDist - minDist);
+  const pos = {
+    x: center.x + Math.cos(angle) * tangentDist,
+    y: center.y + Math.sin(angle) * tangentDist * 0.5,
+    z: center.z + Math.sin(angle) * tangentDist * 0.5
+  };
+  return projectToSphereV(pos);
+}
+
 /**
- * Generate asteroids for the world
+ * Generate asteroids on the sphere surface
  */
 export function generateAsteroids(
   count: number = ASTEROID_COUNT,
-  bounds: WorldBounds = DEFAULT_BOUNDS
+  _bounds?: WorldBounds
 ): AsteroidState[] {
   const asteroids: AsteroidState[] = [];
+  const playerStart = vec3(0, 0, SPHERE_RADIUS);
 
-  for (let i = 0; i < count; i++) {
+  // Some near the player start
+  const nearCount = Math.min(Math.floor(count * 0.15), 60);
+  for (let i = 0; i < nearCount; i++) {
     const radius = 0.5 + Math.random() * 3;
     asteroids.push({
       id: genId('ast'),
-      position: vec3(
-        (Math.random() - 0.5) * bounds.x * 2,
-        (Math.random() - 0.5) * bounds.y * 2,
-        (Math.random() - 0.5) * bounds.z * 0.3
-      ),
+      position: randomSphereNear(playerStart, 20, 150),
       velocity: vec3(
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 0.5
       ),
-      rotation: euler3(
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-        0
+      rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
+      rotationSpeed: vec3(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2
       ),
+      radius,
+      health: radius * 10,
+      maxHealth: radius * 10,
+      destroyed: false
+    });
+  }
+
+  // Rest across the sphere
+  for (let i = nearCount; i < count; i++) {
+    const radius = 0.5 + Math.random() * 3;
+    asteroids.push({
+      id: genId('ast'),
+      position: randomSpherePos(),
+      velocity: vec3(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 0.5
+      ),
+      rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
       rotationSpeed: vec3(
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 2,
@@ -84,25 +144,19 @@ export function generateAsteroids(
 }
 
 /**
- * Generate NPCs (hostile ships) for the world
+ * Generate NPCs on sphere surface near player start
  */
 export function generateNpcs(
   count: number = BASE_NPC_COUNT,
-  bounds: WorldBounds = DEFAULT_BOUNDS
+  _bounds?: WorldBounds
 ): NpcState[] {
   const npcs: NpcState[] = [];
+  const playerStart = vec3(0, 0, SPHERE_RADIUS);
 
   for (let i = 0; i < count; i++) {
-    const angle = (i / count) * Math.PI * 2;
-    const dist = 30 + Math.random() * 20;
-
     npcs.push({
       id: genId('npc'),
-      position: vec3(
-        Math.cos(angle) * dist,
-        Math.sin(angle) * dist,
-        0
-      ),
+      position: randomSphereNear(playerStart, 30, 50),
       velocity: vec3(0, 0, 0),
       rotation: euler3(0, 0, 0),
       radius: 1.2,
@@ -121,68 +175,81 @@ export function generateNpcs(
   return npcs;
 }
 
+/** Interior radius for puzzle nodes (inside the sphere) */
+const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
+
 /**
- * Generate puzzle nodes (hidden structure)
- * Uses icosahedron vertices as base positions
+ * Generate puzzle nodes INSIDE the sphere
+ * The icosahedral structure is visible through the semi-transparent shell
  */
 export function generatePuzzleNodes(
   count: number = PUZZLE_NODE_COUNT
 ): PuzzleNodeState[] {
-  // Icosahedron vertices — the hidden structure players must reconstruct
   const phi = (1 + Math.sqrt(5)) / 2;
-  const scale = 25;
+  const scale = PUZZLE_INTERIOR_RADIUS * 0.65;
 
   const basePositions: [number, number, number][] = [
-    [0, 1, phi],
-    [0, -1, phi],
-    [0, 1, -phi],
-    [0, -1, -phi],
-    [1, phi, 0],
-    [-1, phi, 0],
-    [1, -phi, 0],
-    [-1, -phi, 0],
-    [phi, 0, 1],
-    [-phi, 0, 1],
-    [phi, 0, -1],
-    [-phi, 0, -1]
+    [0, 1, phi], [0, -1, phi], [0, 1, -phi], [0, -1, -phi],
+    [1, phi, 0], [-1, phi, 0], [1, -phi, 0], [-1, -phi, 0],
+    [phi, 0, 1], [-phi, 0, 1], [phi, 0, -1], [-phi, 0, -1]
   ];
 
-  return basePositions.slice(0, count).map((pos, i) => ({
-    id: genId('pzl'),
-    position: vec3(
-      pos[0] * scale + (Math.random() - 0.5) * 30,
-      pos[1] * scale + (Math.random() - 0.5) * 30,
-      pos[2] * scale * 0.2 + (Math.random() - 0.5) * 5
-    ),
-    targetPosition: vec3(
-      pos[0] * scale,
-      pos[1] * scale,
-      pos[2] * scale * 0.2
-    ),
-    radius: 1.5,
-    connected: false,
-    color: `hsl(${(i / count) * 360}, 70%, 60%)`
-  }));
+  return basePositions.slice(0, count).map((pos, i) => {
+    // Normalize icosahedron vertex and scale to interior radius
+    const len = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
+    const target = vec3(
+      (pos[0] / len) * scale,
+      (pos[1] / len) * scale,
+      (pos[2] / len) * scale
+    );
+
+    // Current position: scattered from target, still inside sphere
+    let cx = target.x + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
+    let cy = target.y + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
+    let cz = target.z + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
+    const clen = Math.sqrt(cx * cx + cy * cy + cz * cz);
+    if (clen > PUZZLE_INTERIOR_RADIUS) {
+      const clamp = (PUZZLE_INTERIOR_RADIUS * 0.9) / clen;
+      cx *= clamp; cy *= clamp; cz *= clamp;
+    }
+
+    return {
+      id: genId('pzl'),
+      position: vec3(cx, cy, cz),
+      targetPosition: target,
+      radius: 2.5,
+      connected: false,
+      color: `hsl(${(i / count) * 360}, 70%, 60%)`
+    };
+  });
 }
 
 /**
- * Generate power-ups for the world
+ * Generate power-ups on the sphere surface
  */
 export function generatePowerUps(
   count: number = POWER_UP_COUNT,
-  bounds: WorldBounds = DEFAULT_BOUNDS
+  _bounds?: WorldBounds
 ): PowerUpState[] {
   const types: PowerUpType[] = ['health', 'speed', 'multishot', 'shield'];
   const powerUps: PowerUpState[] = [];
+  const playerStart = vec3(0, 0, SPHERE_RADIUS);
 
-  for (let i = 0; i < count; i++) {
+  const nearCount = Math.min(Math.floor(count * 0.15), 12);
+  for (let i = 0; i < nearCount; i++) {
     powerUps.push({
       id: genId('pwr'),
-      position: vec3(
-        (Math.random() - 0.5) * bounds.x * 2,
-        (Math.random() - 0.5) * bounds.y * 2,
-        (Math.random() - 0.5) * 3
-      ),
+      position: randomSphereNear(playerStart, 30, 120),
+      type: types[Math.floor(Math.random() * types.length)],
+      radius: 0.8,
+      collected: false
+    });
+  }
+
+  for (let i = nearCount; i < count; i++) {
+    powerUps.push({
+      id: genId('pwr'),
+      position: randomSpherePos(),
       type: types[Math.floor(Math.random() * types.length)],
       radius: 0.8,
       collected: false
@@ -202,8 +269,6 @@ export function generateWorld(playerCount: number = 1): {
   powerUps: PowerUpState[];
 } {
   resetIdCounter();
-
-  // Reduce NPCs as more players join
   const npcCount = Math.max(0, BASE_NPC_COUNT - (playerCount - 1));
 
   return {
@@ -215,13 +280,13 @@ export function generateWorld(playerCount: number = 1): {
 }
 
 /**
- * Create initial player state at spawn point
+ * Create initial player state at spawn point on the sphere
  */
 export function createPlayerState(id: string, username: string): import('../shared/protocol').PlayerState {
   return {
     id,
     username,
-    position: vec3(0, 0, 0),
+    position: vec3(0, 0, SPHERE_RADIUS), // "North pole" of the sphere
     velocity: vec3(0, 0, 0),
     rotation: euler3(0, 0, 0),
     health: 100,
@@ -233,27 +298,19 @@ export function createPlayerState(id: string, username: string): import('../shar
 }
 
 /**
- * Respawn an asteroid at a new position
+ * Respawn an asteroid at a random sphere position
  */
-export function respawnAsteroid(bounds: WorldBounds = DEFAULT_BOUNDS): AsteroidState {
+export function respawnAsteroid(_bounds?: WorldBounds): AsteroidState {
   const radius = 0.5 + Math.random() * 3;
   return {
     id: genId('ast'),
-    position: vec3(
-      (Math.random() - 0.5) * bounds.x * 2,
-      (Math.random() - 0.5) * bounds.y * 2,
-      (Math.random() - 0.5) * bounds.z * 0.3
-    ),
+    position: randomSpherePos(),
     velocity: vec3(
       (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 0.5
     ),
-    rotation: euler3(
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-      0
-    ),
+    rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
     rotationSpeed: vec3(
       (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 2,
@@ -267,17 +324,13 @@ export function respawnAsteroid(bounds: WorldBounds = DEFAULT_BOUNDS): AsteroidS
 }
 
 /**
- * Respawn a power-up at a new position
+ * Respawn a power-up at a random sphere position
  */
-export function respawnPowerUp(bounds: WorldBounds = DEFAULT_BOUNDS): PowerUpState {
+export function respawnPowerUp(_bounds?: WorldBounds): PowerUpState {
   const types: PowerUpType[] = ['health', 'speed', 'multishot', 'shield'];
   return {
     id: genId('pwr'),
-    position: vec3(
-      (Math.random() - 0.5) * bounds.x * 2,
-      (Math.random() - 0.5) * bounds.y * 2,
-      (Math.random() - 0.5) * 3
-    ),
+    position: randomSpherePos(),
     type: types[Math.floor(Math.random() * types.length)],
     radius: 0.8,
     collected: false
@@ -285,19 +338,12 @@ export function respawnPowerUp(bounds: WorldBounds = DEFAULT_BOUNDS): PowerUpSta
 }
 
 /**
- * Respawn an NPC near a specific position (for wave spawning)
+ * Respawn an NPC near a specific position on the sphere
  */
 export function respawnNpc(nearPosition: Vector3): NpcState {
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 30 + Math.random() * 20;
-
   return {
     id: genId('npc'),
-    position: vec3(
-      nearPosition.x + Math.cos(angle) * dist,
-      nearPosition.y + Math.sin(angle) * dist,
-      0
-    ),
+    position: randomSphereNear(nearPosition, 30, 80),
     velocity: vec3(0, 0, 0),
     rotation: euler3(0, 0, 0),
     radius: 1.2,

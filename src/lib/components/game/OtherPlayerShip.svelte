@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getRelativeToPlayer } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -54,10 +54,10 @@
 		const player = world.otherPlayers.find((p) => p.id === id);
 		if (!player) return;
 
-		// Position at wrapped position relative to local player for seamless infinite world
+		// Position on sphere surface and orient tangent
 		if (rootGroup) {
-			const renderPos = getRelativeToPlayer(player.position);
-			rootGroup.position.copy(renderPos);
+			rootGroup.position.copy(player.position);
+			rootGroup.quaternion.copy(getSphereOrientation(player.position));
 		}
 
 		// Rotate only the ship mesh

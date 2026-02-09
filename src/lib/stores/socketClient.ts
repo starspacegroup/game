@@ -1,6 +1,6 @@
 import { gameState } from './gameState.svelte';
 import { authState } from './authState.svelte';
-import { world } from '$lib/game/world';
+import { world, projectToSphere, sphereDistance, SPHERE_RADIUS } from '$lib/game/world';
 import * as THREE from 'three';
 import type {
   ClientMessage,
@@ -37,6 +37,15 @@ let currentInput: Omit<InputMessage, 'type' | 'tick'> = {
 
 function generatePlayerId(): string {
   return `player_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Lerp a THREE.Vector3 toward a target on the sphere surface.
+ * After lerping, re-projects to the sphere surface.
+ */
+function sphereLerp(local: THREE.Vector3, target: THREE.Vector3, factor: number): void {
+  local.lerp(target, factor);
+  projectToSphere(local);
 }
 
 export function connectToServer(room: string = 'default'): void {
@@ -235,15 +244,13 @@ function handleMessage(data: ServerMessage): void {
  * Apply full world state from server (on join)
  */
 function applyFullState(state: import('$lib/shared/protocol').WorldState): void {
-  // Reset world bounds
-  world.bounds = state.bounds;
-
   // Apply players
   world.otherPlayers = [];
   for (const p of state.players) {
     if (p.id === playerId) {
       // This is us
       world.player.position.set(p.position.x, p.position.y, p.position.z);
+      projectToSphere(world.player.position);
       world.player.velocity.set(p.velocity.x, p.velocity.y, p.velocity.z);
       world.player.rotation.set(p.rotation.x, p.rotation.y, p.rotation.z);
       world.player.health = p.health;
@@ -251,10 +258,12 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
       world.player.score = p.score;
       world.player.speed = p.speed;
     } else {
+      const pos = new THREE.Vector3(p.position.x, p.position.y, p.position.z);
+      projectToSphere(pos);
       world.otherPlayers.push({
         id: p.id,
         username: p.username,
-        position: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
+        position: pos,
         rotation: new THREE.Euler(p.rotation.x, p.rotation.y, p.rotation.z),
         lastUpdate: Date.now()
       });
@@ -339,23 +348,30 @@ function applyStateUpdate(data: StateMessage): void {
   // Update players
   for (const serverPlayer of data.players) {
     if (serverPlayer.id === playerId) {
-      // Client-side prediction: client simulates movement locally.
-      // Server corrections nudge the local position to stay in sync.
-      const dx = serverPlayer.position.x - world.player.position.x;
-      const dy = serverPlayer.position.y - world.player.position.y;
-      const dz = serverPlayer.position.z - world.player.position.z;
-      const errorDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // Client-side prediction: use chord distance for error detection on sphere
+      const serverPos = new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
+      projectToSphere(serverPos);
+      const errorDist = sphereDistance(world.player.position, serverPos);
 
       if (errorDist > SNAP_THRESHOLD) {
         // Large desync — hard snap (respawn, teleport, etc.)
-        world.player.position.set(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
-      } else if (errorDist > 0.5) {
-        // Small desync — gently correct
-        world.player.position.x += dx * SERVER_CORRECTION;
-        world.player.position.y += dy * SERVER_CORRECTION;
-        world.player.position.z += dz * SERVER_CORRECTION;
+        world.player.position.copy(serverPos);
+      } else if (errorDist > 1.0) {
+        // Moderate desync — correct proportionally
+        const correctionStrength = Math.min(SERVER_CORRECTION * (errorDist / 5), 0.5);
+        sphereLerp(world.player.position, serverPos, correctionStrength);
       }
-      // else: close enough, let client prediction ride
+      // else: close enough (<1 unit), let client prediction ride
+
+      // Sync velocity to prevent drift when idle
+      const serverSpeed = Math.sqrt(
+        serverPlayer.velocity.x * serverPlayer.velocity.x +
+        serverPlayer.velocity.y * serverPlayer.velocity.y +
+        serverPlayer.velocity.z * serverPlayer.velocity.z
+      );
+      if (serverSpeed < 0.1) {
+        world.player.velocity.set(0, 0, 0);
+      }
 
       // Authoritative values from server
       world.player.health = serverPlayer.health;
@@ -367,8 +383,9 @@ function applyStateUpdate(data: StateMessage): void {
       // Other players — interpolate position for smooth movement
       const existing = world.otherPlayers.find(p => p.id === serverPlayer.id);
       if (existing) {
-        // Store target for interpolation
-        existing.position.lerp(
+        // Interpolate on sphere surface
+        sphereLerp(
+          existing.position,
           new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z),
           0.4
         );
@@ -396,8 +413,9 @@ function applyStateUpdate(data: StateMessage): void {
     for (const sl of data.lasers) {
       const local = world.lasers.find(l => l.id === sl.id);
       if (local) {
-        // Gently correct position
-        local.position.lerp(
+        // Gently correct position on sphere
+        sphereLerp(
+          local.position,
           new THREE.Vector3(sl.position.x, sl.position.y, sl.position.z),
           0.5
         );
@@ -451,8 +469,9 @@ function syncAsteroids(serverAsteroids: AsteroidState[]): void {
   for (const sa of serverAsteroids) {
     const local = world.asteroids.find(a => a.id === sa.id);
     if (local) {
-      // Smoothly correct position and velocity
-      local.position.lerp(
+      // Smoothly correct position on sphere
+      sphereLerp(
+        local.position,
         new THREE.Vector3(sa.position.x, sa.position.y, sa.position.z),
         LERP
       );
@@ -479,10 +498,15 @@ function syncAsteroids(serverAsteroids: AsteroidState[]): void {
     }
   }
 
-  // Mark asteroids destroyed that the server doesn't report anymore
+  // Only mark nearby asteroids as destroyed if the server doesn't include them.
+  // The server only sends entities within ~250 units, so distant entities
+  // missing from the list are simply out of sync range, NOT destroyed.
   for (const local of world.asteroids) {
     if (!local.destroyed && !serverIds.has(local.id)) {
-      local.destroyed = true;
+      // Only mark destroyed if it's close enough that the server SHOULD have included it
+      if (sphereDistance(world.player.position, local.position) < 200) {
+        local.destroyed = true;
+      }
     }
   }
 }
@@ -494,8 +518,9 @@ function syncNpcs(serverNpcs: NpcState[]): void {
   for (const sn of serverNpcs) {
     const local = world.npcs.find(n => n.id === sn.id);
     if (local) {
-      // Smoothly correct position
-      local.position.lerp(
+      // Smoothly correct position on sphere
+      sphereLerp(
+        local.position,
         new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
         LERP
       );
@@ -529,10 +554,14 @@ function syncNpcs(serverNpcs: NpcState[]): void {
     }
   }
 
-  // Mark NPCs destroyed that the server doesn't report
+  // Only mark nearby NPCs as destroyed if the server doesn't include them.
+  // The server only sends entities within ~250 units, so distant entities
+  // missing from the list are simply out of sync range, NOT destroyed.
   for (const local of world.npcs) {
     if (!local.destroyed && !serverIds.has(local.id)) {
-      local.destroyed = true;
+      if (sphereDistance(world.player.position, local.position) < 200) {
+        local.destroyed = true;
+      }
     }
   }
 }
@@ -541,7 +570,8 @@ function syncPowerUps(serverPowerUps: PowerUpState[]): void {
   for (const sp of serverPowerUps) {
     const local = world.powerUps.find(p => p.id === sp.id);
     if (local) {
-      local.position.lerp(
+      sphereLerp(
+        local.position,
         new THREE.Vector3(sp.position.x, sp.position.y, sp.position.z),
         0.3
       );
@@ -564,10 +594,9 @@ function syncPuzzleNodes(serverNodes: PuzzleNodeState[]): void {
   for (const sn of serverNodes) {
     const local = world.puzzleNodes.find(n => n.id === sn.id);
     if (local) {
-      local.position.lerp(
-        new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
-        0.3
-      );
+      // Puzzle nodes are inside the sphere — use plain lerp, NOT sphereLerp
+      const target = new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z);
+      local.position.lerp(target, 0.3);
       local.connected = sn.connected;
     }
   }
