@@ -285,8 +285,8 @@ export const DEFAULT_BOUNDS: WorldBounds = {
   z: 40
 };
 
-export const TICK_RATE = 20; // ticks per second
-export const TICK_INTERVAL = 1000 / TICK_RATE; // 50ms
+export const TICK_RATE = 30; // ticks per second
+export const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 export const MAX_PLAYERS = 8;
 
 // Entity counts
@@ -294,3 +294,8 @@ export const ASTEROID_COUNT = 600;
 export const POWER_UP_COUNT = 100;
 export const PUZZLE_NODE_COUNT = 12;
 export const BASE_NPC_COUNT = 5;
+
+// Super admin Discord user IDs (can delete rooms, etc.)
+export const SUPER_ADMIN_IDS: ReadonlyArray<string> = [
+  '293484886726279168'
+];

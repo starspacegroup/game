@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { SUPER_ADMIN_IDS } from '$lib/shared/protocol';
 
 interface RoomInfo {
   id: string;
@@ -98,5 +99,43 @@ export const POST: RequestHandler = async ({ platform, request }) => {
   } catch (error) {
     console.error('Failed to create room:', error);
     return json({ error: 'Failed to create room' }, { status: 500 });
+  }
+};
+
+// DELETE: Delete a game room (super admin only)
+export const DELETE: RequestHandler = async ({ platform, request }) => {
+  if (!platform?.env?.GAME_DATA || !platform?.env?.GAME_ROOM) {
+    return json({ error: 'Server not configured for multiplayer' }, { status: 503 });
+  }
+
+  try {
+    const body = await request.json() as { roomId?: string; userId?: string };
+    const { roomId, userId } = body;
+
+    if (!roomId || !userId) {
+      return json({ error: 'Missing roomId or userId' }, { status: 400 });
+    }
+
+    // Server-side super admin check
+    if (!SUPER_ADMIN_IDS.includes(userId)) {
+      return json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    // Delete the KV entry
+    await platform.env.GAME_DATA.delete(`room:${roomId}`);
+
+    // Notify the Durable Object to terminate (best-effort)
+    try {
+      const id = platform.env.GAME_ROOM.idFromName(roomId);
+      const room = platform.env.GAME_ROOM.get(id);
+      await room.fetch(new Request('https://internal/terminate', { method: 'POST' }));
+    } catch {
+      // Room might already be inactive
+    }
+
+    return json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete room:', error);
+    return json({ error: 'Failed to delete room' }, { status: 500 });
   }
 };

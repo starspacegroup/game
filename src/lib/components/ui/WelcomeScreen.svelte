@@ -27,6 +27,7 @@
 	let creatingRoom = $state(false);
 	let roomCodeInput = $state('');
 	let joiningByCode = $state(false);
+	let deletingRoomId = $state<string | null>(null);
 
 	onMount(() => {
 		// Load auth from storage
@@ -127,6 +128,32 @@
 		}
 	}
 
+	async function deleteRoom(roomId: string): Promise<void> {
+		if (!confirm('Delete this room? All players will be disconnected.')) return;
+
+		deletingRoomId = roomId;
+		try {
+			const response = await fetch('/api/game/rooms', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					roomId,
+					userId: authState.userId
+				})
+			});
+			const data = await response.json() as { success?: boolean; error?: string };
+			if (data.success) {
+				availableRooms = availableRooms.filter(r => r.id !== roomId);
+			} else {
+				console.error('Failed to delete room:', data.error);
+			}
+		} catch {
+			console.error('Failed to delete room');
+		} finally {
+			deletingRoomId = null;
+		}
+	}
+
 	function joinRoom(roomId: string): void {
 		startGame('multiplayer', roomId);
 	}
@@ -194,15 +221,27 @@
 						<h3 class="rooms-header">JOIN ACTIVE GAMES</h3>
 						<div class="rooms-list">
 							{#each availableRooms as room (room.id)}
-								<button class="room-btn" onclick={() => joinRoom(room.id)}>
-									<span class="room-name">{room.name}</span>
-									<span class="room-info">
-										<span class="room-players">{room.playerCount} player{room.playerCount !== 1 ? 's' : ''}</span>
-										{#if room.wave && room.wave > 1}
-											<span class="room-wave">Wave {room.wave}</span>
-										{/if}
-									</span>
-								</button>
+								<div class="room-row">
+									<button class="room-btn" onclick={() => joinRoom(room.id)}>
+										<span class="room-name">{room.name}</span>
+										<span class="room-info">
+											<span class="room-players">{room.playerCount} player{room.playerCount !== 1 ? 's' : ''}</span>
+											{#if room.wave && room.wave > 1}
+												<span class="room-wave">Wave {room.wave}</span>
+											{/if}
+										</span>
+									</button>
+									{#if authState.isSuperAdmin}
+										<button
+											class="room-delete-btn"
+											onclick={() => deleteRoom(room.id)}
+											disabled={deletingRoomId === room.id}
+											title="Delete room (admin)"
+										>
+											{deletingRoomId === room.id ? '...' : 'X'}
+										</button>
+									{/if}
+								</div>
 							{/each}
 						</div>
 					</div>
@@ -552,6 +591,42 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-xs, 4px);
+	}
+
+	.room-row {
+		display: flex;
+		gap: var(--spacing-xs, 4px);
+		align-items: stretch;
+	}
+
+	.room-row .room-btn {
+		flex: 1;
+	}
+
+	.room-delete-btn {
+		min-width: var(--touch-target-min, 44px);
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.7rem);
+		font-weight: bold;
+		color: #ff4444;
+		background: rgba(255, 68, 68, 0.1);
+		border: 1px solid rgba(255, 68, 68, 0.3);
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.room-delete-btn:hover:not(:disabled) {
+		background: rgba(255, 68, 68, 0.25);
+		border-color: rgba(255, 68, 68, 0.6);
+	}
+
+	.room-delete-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.room-btn {

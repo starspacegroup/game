@@ -132,6 +132,25 @@ export class GameRoom implements DurableObject {
       });
     }
 
+    // Admin: terminate room and disconnect all players
+    if (url.pathname === '/terminate' && request.method === 'POST') {
+      this.stopGameLoop();
+
+      for (const ws of this.state.getWebSockets()) {
+        try {
+          ws.close(1000, 'Room terminated by admin');
+        } catch {
+          // Already closed
+        }
+      }
+      this.sessions.clear();
+      this.players.clear();
+
+      await this.state.storage.deleteAll();
+
+      return Response.json({ success: true });
+    }
+
     return new Response('Game Room Durable Object', { status: 200 });
   }
 
@@ -299,12 +318,45 @@ export class GameRoom implements DurableObject {
       if (npc.destroyed) continue;
 
       if (npc.converted) {
-        // Converted NPCs orbit their target puzzle node
+        // Converted NPCs orbit their target puzzle node and generate hints
         this.updateConvertedNpc(npc, deltaTime);
-      } else {
-        // Hostile NPCs chase nearest player
-        this.updateHostileNpc(npc, playerArray, deltaTime);
+        continue;
       }
+
+      // Handle conversion animation (matches solo: 0.5 second conversion)
+      if (npc.conversionProgress > 0 && npc.conversionProgress < 1) {
+        npc.conversionProgress += deltaTime * 2;
+        if (npc.conversionProgress >= 1) {
+          npc.converted = true;
+          npc.conversionProgress = 1;
+          // Find nearest unconnected puzzle node to orbit
+          let nearestNode: PuzzleNodeState | null = null;
+          let nearestDist = Infinity;
+          for (const node of this.puzzleNodes) {
+            if (node.connected) continue;
+            const dist = this.wrappedDistance(npc.position, node.position);
+            if (dist < nearestDist) {
+              nearestDist = dist;
+              nearestNode = node;
+            }
+          }
+          npc.targetNodeId = nearestNode?.id || null;
+
+          // Broadcast conversion event
+          this.broadcast({
+            type: 'npc-converted',
+            npcId: npc.id,
+            convertedBy: '',
+            targetNodeId: npc.targetNodeId || ''
+          });
+        }
+        // Spin in place during conversion
+        npc.rotation.z += deltaTime * 10;
+        continue;
+      }
+
+      // Hostile NPCs chase nearest player
+      this.updateHostileNpc(npc, playerArray, deltaTime);
 
       // Update position
       npc.position.x += npc.velocity.x * deltaTime;
@@ -326,13 +378,58 @@ export class GameRoom implements DurableObject {
     const targetNode = this.puzzleNodes.find(n => n.id === npc.targetNodeId);
     if (!targetNode) return;
 
-    // Orbit around the puzzle node
-    npc.orbitAngle += deltaTime * 0.5;
-    const targetX = targetNode.position.x + Math.cos(npc.orbitAngle) * npc.orbitDistance;
-    const targetY = targetNode.position.y + Math.sin(npc.orbitAngle) * npc.orbitDistance;
+    const dx = targetNode.position.x - npc.position.x;
+    const dy = targetNode.position.y - npc.position.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-    npc.velocity.x = (targetX - npc.position.x) * 2;
-    npc.velocity.y = (targetY - npc.position.y) * 2;
+    // Navigate to the puzzle node if far away (matching solo behavior)
+    if (dist > npc.orbitDistance + 2) {
+      const navSpeed = 6 * 1.2;
+      npc.velocity.x = (dx / dist) * navSpeed;
+      npc.velocity.y = (dy / dist) * navSpeed;
+      npc.position.x += npc.velocity.x * deltaTime;
+      npc.position.y += npc.velocity.y * deltaTime;
+      npc.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
+    } else {
+      // Orbit the puzzle node (matching solo orbit speed of 1.5)
+      npc.orbitAngle += deltaTime * 1.5;
+      npc.position.x = targetNode.position.x + Math.cos(npc.orbitAngle) * npc.orbitDistance;
+      npc.position.y = targetNode.position.y + Math.sin(npc.orbitAngle) * npc.orbitDistance;
+      npc.rotation.z = npc.orbitAngle + Math.PI / 2;
+      npc.velocity.x = 0;
+      npc.velocity.y = 0;
+
+      // Generate hints while orbiting (matching solo: 4-7 seconds between hints)
+      // Use shootCooldown as hint timer since converted NPCs don't shoot
+      npc.shootCooldown -= deltaTime;
+      if (npc.shootCooldown <= 0) {
+        npc.shootCooldown = 4 + Math.random() * 3;
+
+        // Generate a hint about this puzzle node
+        const hint = this.generateHint(targetNode);
+
+        // Broadcast hint to all players
+        this.broadcast({
+          type: 'hint',
+          nodeId: targetNode.id,
+          hint,
+          fromNpcId: npc.id
+        });
+
+        // Help push the node toward its target (converted NPCs contribute to solving)
+        if (!targetNode.connected) {
+          const tdx = targetNode.targetPosition.x - targetNode.position.x;
+          const tdy = targetNode.targetPosition.y - targetNode.position.y;
+          const tdz = targetNode.targetPosition.z - targetNode.position.z;
+          targetNode.position.x += tdx * 0.01;
+          targetNode.position.y += tdy * 0.01;
+          targetNode.position.z += tdz * 0.01;
+          this.checkPuzzleProgress();
+        }
+      }
+    }
+
+    this.wrapPosition(npc.position);
   }
 
   private updateHostileNpc(npc: NpcState, players: PlayerState[], deltaTime: number): void {
@@ -352,20 +449,27 @@ export class GameRoom implements DurableObject {
 
     if (!nearestPlayer) return;
 
-    // Chase the player
+    // Chase the player (matching solo NPC_SPEED = 6)
     const dir = this.wrappedDirection(npc.position, nearestPlayer.position);
-    const speed = 8;
+    const speed = 6;
 
-    npc.velocity.x = (dir.dx / dir.dist) * speed;
-    npc.velocity.y = (dir.dy / dir.dist) * speed;
+    if (dir.dist > 2.5) {
+      // Chase until very close
+      npc.velocity.x = (dir.dx / dir.dist) * speed;
+      npc.velocity.y = (dir.dy / dir.dist) * speed;
+    } else {
+      // Circle tightly when close (matching solo behavior)
+      npc.velocity.x = (-dir.dy / dir.dist) * speed * 0.8;
+      npc.velocity.y = (dir.dx / dir.dist) * speed * 0.8;
+    }
 
     // Point towards player
     npc.rotation.z = Math.atan2(dir.dy, dir.dx) - Math.PI / 2;
 
-    // Shoot at player if in range and cooldown ready
-    if (nearestDist < 50 && npc.shootCooldown <= 0) {
-      this.createLaser(npc.id, npc.position, { x: dir.dx / dir.dist, y: dir.dy / dir.dist, z: 0 });
-      npc.shootCooldown = 2 + Math.random();
+    // Shoot at player if in range and cooldown ready (matching solo: range 40, rate 2.5)
+    if (nearestDist < 40 && npc.shootCooldown <= 0) {
+      this.createNpcLaser(npc.id, npc.position, { x: dir.dx / dir.dist, y: dir.dy / dir.dist, z: 0 });
+      npc.shootCooldown = 2.5 + Math.random();
     }
   }
 
@@ -394,25 +498,14 @@ export class GameRoom implements DurableObject {
    * Handle all collision detection
    */
   private handleCollisions(): void {
-    // Player vs Asteroids
+    // Player vs Power-ups (use wrappedDistance for toroidal world)
     for (const player of this.players.values()) {
       if (player.health <= 0) continue;
 
-      for (const asteroid of this.asteroids) {
-        if (asteroid.destroyed) continue;
-
-        const dist = this.distance(player.position, asteroid.position);
-        if (dist < 1 + asteroid.radius) {
-          // Collision - damage player
-          this.damagePlayer(player.id, 10);
-        }
-      }
-
-      // Player vs Power-ups
       for (const powerUp of this.powerUps) {
         if (powerUp.collected) continue;
 
-        const dist = this.distance(player.position, powerUp.position);
+        const dist = this.wrappedDistance(player.position, powerUp.position);
         if (dist < 1 + powerUp.radius) {
           this.collectPowerUp(player, powerUp);
         }
@@ -422,10 +515,20 @@ export class GameRoom implements DurableObject {
       for (const node of this.puzzleNodes) {
         if (node.connected) continue;
 
-        const dist = this.distance(player.position, node.position);
-        if (dist < 1 + node.radius) {
+        const dist = this.wrappedDistance(player.position, node.position);
+        if (dist < 1 + node.radius + 3) {
           // Interact with puzzle node - snap it closer to target
           this.interactPuzzleNode(node);
+        }
+      }
+
+      // Player vs hostile NPCs - instant death (matches solo mode)
+      for (const npc of this.npcs) {
+        if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
+
+        const dist = this.wrappedDistance(player.position, npc.position);
+        if (dist < 1 + npc.radius + 0.5) {
+          this.damagePlayer(player.id, player.health); // Instant death like solo
         }
       }
     }
@@ -435,49 +538,31 @@ export class GameRoom implements DurableObject {
       const laser = this.lasers[i];
       let hit = false;
 
-      // Check vs asteroids
-      for (const asteroid of this.asteroids) {
-        if (asteroid.destroyed) continue;
+      // Player lasers vs NPCs → conversion (not damage, matching solo mechanic)
+      if (this.players.has(laser.ownerId)) {
+        for (const npc of this.npcs) {
+          // Skip destroyed, converted, or already-converting NPCs
+          if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
 
-        const dist = this.distance(laser.position, asteroid.position);
-        if (dist < laser.radius + asteroid.radius) {
-          asteroid.health -= 10;
-          if (asteroid.health <= 0) {
-            asteroid.destroyed = true;
+          const dist = this.wrappedDistance(laser.position, npc.position);
+          if (dist < laser.radius + npc.radius + 1.0) {
+            // Start conversion instead of dealing damage (matches solo)
+            npc.conversionProgress = 0.01;
             // Award score to owner
             const owner = this.players.get(laser.ownerId);
-            if (owner) owner.score += 10;
-          }
-          hit = true;
-          break;
-        }
-      }
-
-      // Check vs NPCs (player lasers only)
-      if (!hit && laser.ownerId.startsWith('player') || this.players.has(laser.ownerId)) {
-        for (const npc of this.npcs) {
-          if (npc.destroyed || npc.converted) continue;
-
-          const dist = this.distance(laser.position, npc.position);
-          if (dist < laser.radius + npc.radius) {
-            npc.health -= 15;
-            if (npc.health <= 0) {
-              npc.destroyed = true;
-              const owner = this.players.get(laser.ownerId);
-              if (owner) owner.score += 25;
-            }
+            if (owner) owner.score += 25;
             hit = true;
             break;
           }
         }
       }
 
-      // Check vs players (NPC lasers only)
-      if (!hit && laser.ownerId.startsWith('npc')) {
+      // NPC lasers vs players
+      if (!hit && !this.players.has(laser.ownerId)) {
         for (const player of this.players.values()) {
           if (player.health <= 0) continue;
 
-          const dist = this.distance(laser.position, player.position);
+          const dist = this.wrappedDistance(laser.position, player.position);
           if (dist < laser.radius + 1) {
             this.damagePlayer(player.id, 15);
             hit = true;
@@ -668,7 +753,7 @@ export class GameRoom implements DurableObject {
         };
 
         this.createLaser(player.id, player.position, direction);
-        player.shootCooldown = 0.2; // 5 shots per second max
+        player.shootCooldown = 0.15; // Match solo SHOOT_COOLDOWN
         break;
       }
 
@@ -727,9 +812,22 @@ export class GameRoom implements DurableObject {
       ownerId,
       position: { ...position },
       direction,
-      speed: 80,
+      speed: 60,
       life: 2,
       radius: 0.3
+    };
+    this.lasers.push(laser);
+  }
+
+  private createNpcLaser(ownerId: string, position: Vector3, direction: Vector3): void {
+    const laser: LaserState = {
+      id: `laser_${this.tick}_${ownerId}`,
+      ownerId,
+      position: { ...position },
+      direction,
+      speed: 30,
+      life: 1.4,
+      radius: 0.2
     };
     this.lasers.push(laser);
   }
@@ -773,7 +871,9 @@ export class GameRoom implements DurableObject {
         player.health = Math.min(player.maxHealth, player.health + 25);
         break;
       case 'speed':
-        player.speed = Math.min(40, player.speed + 5);
+        player.speed = 30;
+        // Temporary boost matching solo mode (8 seconds)
+        setTimeout(() => { player.speed = 20; }, 8000);
         break;
       case 'shield':
         player.health = Math.min(player.maxHealth + 50, player.health + 50);
@@ -792,23 +892,22 @@ export class GameRoom implements DurableObject {
   }
 
   private interactPuzzleNode(node: PuzzleNodeState): void {
-    // Move node closer to its target position
+    // Move node closer to its target position (matching solo's lerp behavior)
     const dx = node.targetPosition.x - node.position.x;
     const dy = node.targetPosition.y - node.position.y;
     const dz = node.targetPosition.z - node.position.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    if (dist < 2) {
-      // Close enough - snap to target and mark as connected
+    // Lerp toward target (matching solo's 0.05 factor)
+    node.position.x += dx * 0.05;
+    node.position.y += dy * 0.05;
+    node.position.z += dz * 0.05;
+
+    if (dist < 3) {
+      // Close enough - snap to target and mark as connected (matching solo threshold of 3)
       node.position = { ...node.targetPosition };
       node.connected = true;
       this.checkPuzzleProgress();
-    } else {
-      // Move towards target
-      const step = 1;
-      node.position.x += (dx / dist) * step;
-      node.position.y += (dy / dist) * step;
-      node.position.z += (dz / dist) * step;
     }
   }
 
@@ -822,7 +921,7 @@ export class GameRoom implements DurableObject {
 
     for (const node of this.puzzleNodes) {
       if (node.connected) continue;
-      const dist = this.distance(npc.position, node.position);
+      const dist = this.wrappedDistance(npc.position, node.position);
       if (dist < nearestDist) {
         nearestDist = dist;
         nearestNode = node;
@@ -853,25 +952,40 @@ export class GameRoom implements DurableObject {
   }
 
   private broadcastState(): void {
-    // Send current state to all players
-    // Only include players with active sessions to avoid ghost duplicates
-    const stateMsg: ServerMessage = {
-      type: 'state',
-      tick: this.tick,
-      players: this.getActivePlayers(),
-      lasers: this.lasers,
-      // Only send changed entities periodically
-      ...(this.tick % 5 === 0 && {
-        asteroids: this.asteroids.filter(a => !a.destroyed),
-        npcs: this.npcs.filter(n => !n.destroyed),
-        powerUps: this.powerUps.filter(p => !p.collected),
-        puzzleNodes: this.puzzleNodes
-      }),
-      puzzleProgress: this.puzzleProgress,
-      puzzleSolved: this.puzzleSolved
-    };
+    // Send per-player state with only nearby entities to reduce bandwidth
+    const activePlayers = this.getActivePlayers();
+    const ENTITY_SYNC_RADIUS = 250; // Only sync entities within this distance
 
-    this.broadcast(stateMsg);
+    for (const [ws, session] of this.sessions) {
+      const player = this.players.get(session.id);
+      if (!player) continue;
+
+      const stateMsg: ServerMessage = {
+        type: 'state',
+        tick: this.tick,
+        players: activePlayers,
+        lasers: this.lasers.filter(l =>
+          this.wrappedDistance(l.position, player.position) < ENTITY_SYNC_RADIUS
+        ),
+        // Send entity snapshots every 3 ticks (~100ms) — only nearby ones
+        ...(this.tick % 3 === 0 && {
+          asteroids: this.asteroids.filter(a =>
+            !a.destroyed && this.wrappedDistance(a.position, player.position) < ENTITY_SYNC_RADIUS
+          ),
+          npcs: this.npcs.filter(n =>
+            !n.destroyed && this.wrappedDistance(n.position, player.position) < ENTITY_SYNC_RADIUS
+          ),
+          powerUps: this.powerUps.filter(p =>
+            !p.collected && this.wrappedDistance(p.position, player.position) < ENTITY_SYNC_RADIUS
+          ),
+          puzzleNodes: this.puzzleNodes
+        }),
+        puzzleProgress: this.puzzleProgress,
+        puzzleSolved: this.puzzleSolved
+      };
+
+      this.send(ws, stateMsg);
+    }
   }
 
   private async saveState(): Promise<void> {
@@ -900,6 +1014,65 @@ export class GameRoom implements DurableObject {
 
     if (pos.y > this.bounds.y) pos.y -= this.bounds.y * 2;
     else if (pos.y < -this.bounds.y) pos.y += this.bounds.y * 2;
+  }
+
+  private generateHint(node: PuzzleNodeState): string {
+    const hints = [
+      () => {
+        const dx = node.targetPosition.x - node.position.x;
+        const dy = node.targetPosition.y - node.position.y;
+        const dir = Math.abs(dx) > Math.abs(dy)
+          ? (dx > 0 ? 'east' : 'west')
+          : (dy > 0 ? 'north' : 'south');
+        return `Data suggests node should shift ${dir}...`;
+      },
+      () => {
+        const dx = node.targetPosition.x - node.position.x;
+        const dy = node.targetPosition.y - node.position.y;
+        const dz = node.targetPosition.z - node.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 10) return 'Node alignment nearly complete!';
+        if (dist < 20) return 'Node getting closer to target...';
+        return 'Node requires significant repositioning...';
+      },
+      () => {
+        const connected = this.puzzleNodes.filter(n => n.connected).length;
+        return `${connected}/${this.puzzleNodes.length} nodes aligned. Structure emerging...`;
+      },
+      () => {
+        const angle = Math.atan2(
+          node.targetPosition.y - node.position.y,
+          node.targetPosition.x - node.position.x
+        );
+        const degrees = Math.round((angle * 180) / Math.PI);
+        return `Vector correction: ${degrees}° from current position`;
+      },
+      () => {
+        return node.connected
+          ? 'This node is locked in place. Well done!'
+          : 'Approaching node will enable alignment...';
+      },
+      () => {
+        const dx = node.targetPosition.x - node.position.x;
+        const dy = node.targetPosition.y - node.position.y;
+        const dz = node.targetPosition.z - node.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        return `Distance to target: ${dist.toFixed(1)} units`;
+      },
+      () => 'Detecting geometric resonance... icosahedral symmetry?',
+      () => {
+        const nearbyNodes = this.puzzleNodes.filter(n => {
+          if (n.id === node.id) return false;
+          const dx = node.targetPosition.x - n.targetPosition.x;
+          const dy = node.targetPosition.y - n.targetPosition.y;
+          const dz = node.targetPosition.z - n.targetPosition.z;
+          return Math.sqrt(dx * dx + dy * dy + dz * dz) < 35;
+        });
+        return `This node connects to ${nearbyNodes.length} others in the structure`;
+      }
+    ];
+
+    return hints[Math.floor(Math.random() * hints.length)]();
   }
 
   private distance(a: Vector3, b: Vector3): number {

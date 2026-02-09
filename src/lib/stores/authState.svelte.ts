@@ -1,3 +1,5 @@
+import { SUPER_ADMIN_IDS } from '$lib/shared/protocol';
+
 /** Reactive auth state for Discord login */
 class AuthStore {
   isLoggedIn = $state(false);
@@ -47,6 +49,10 @@ class AuthStore {
         localStorage.removeItem('discord_auth');
       }
     }
+  }
+
+  get isSuperAdmin(): boolean {
+    return this.isLoggedIn && this.userId !== null && SUPER_ADMIN_IDS.includes(this.userId);
   }
 
   get avatarUrl(): string | null {

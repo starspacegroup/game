@@ -82,53 +82,65 @@
 		// Clamp delta to avoid physics explosions on tab-switch
 		const dt = Math.min(delta, 0.1);
 
+		// In multiplayer, server is authoritative for entity simulation
+		const isMP = gameState.mode === 'multiplayer' && isConnected();
+
+		// Client-side prediction: always simulate player locally for responsiveness
 		updatePlayer(dt);
 		updateShooting(dt);
 		updateLasers(dt);
+
+		// Always run entity simulation locally (even in MP) for smooth visuals
+		// Server corrections are applied via interpolation in socketClient
 		updateAsteroids(dt);
 		updateNpcs(dt);
+
 		updatePowerUps(dt);
 
-		// Check laser collisions every frame (lasers move fast and can skip through targets)
-		handleLaserCollisions();
+		if (!isMP) {
+			// Solo mode: client handles all collision detection
+			// Check laser collisions every frame (lasers move fast and can skip through targets)
+			handleLaserCollisions();
 
-		collisionCooldown -= dt;
-		if (collisionCooldown <= 0) {
-			collisionCooldown = 0.05; // Check entity collisions ~20fps
-			handleCollisions();
+			collisionCooldown -= dt;
+			if (collisionCooldown <= 0) {
+				collisionCooldown = 0.05; // Check entity collisions ~20fps
+				handleCollisions();
+			}
+
+			updatePuzzle();
 		}
 
-		updatePuzzle();
 		updateEntityLists(dt);
 		syncMultiplayer(dt);
-		respawnEntities(dt);
+
+		if (!isMP) {
+			respawnEntities(dt);
+		}
+
 		checkGameOver();
 	});
 
 	function updatePlayer(dt: number): void {
-		// In multiplayer, server is authoritative - client only sends inputs
-		// and interpolates to server position (no local prediction)
 		const isMultiplayer = gameState.mode === 'multiplayer' && isConnected();
 
-		if (!isMultiplayer) {
-			// Solo mode: full client-side physics
-			const speed = world.player.speed * (inputState.boost ? 1.8 : 1);
-			let mx = inputState.moveX;
-			let my = inputState.moveY;
-			// Normalize diagonal movement so it's not faster than cardinal
-			const moveMag = Math.sqrt(mx * mx + my * my);
-			if (moveMag > 1) {
-				mx /= moveMag;
-				my /= moveMag;
-			}
-			world.player.velocity.x = mx * speed;
-			world.player.velocity.y = my * speed;
-			world.player.position.x += world.player.velocity.x * dt;
-			world.player.position.y += world.player.velocity.y * dt;
-
-			// Wrap around for borderless world
-			wrapPosition(world.player.position);
+		// Always simulate player movement locally for responsiveness (client-side prediction)
+		const speed = world.player.speed * (inputState.boost ? 1.8 : 1);
+		let mx = inputState.moveX;
+		let my = inputState.moveY;
+		// Normalize diagonal movement so it's not faster than cardinal
+		const moveMag = Math.sqrt(mx * mx + my * my);
+		if (moveMag > 1) {
+			mx /= moveMag;
+			my /= moveMag;
 		}
+		world.player.velocity.x = mx * speed;
+		world.player.velocity.y = my * speed;
+		world.player.position.x += world.player.velocity.x * dt;
+		world.player.position.y += world.player.velocity.y * dt;
+
+		// Wrap around for borderless world
+		wrapPosition(world.player.position);
 
 		// Aim rotation (always local for responsiveness)
 		// Dead zone: ignore mouse aim near screen center to prevent jittery rotation
@@ -266,8 +278,8 @@
 					id: `laser_${nextLaserId++}`,
 					position: npc.position.clone(),
 					direction: new THREE.Vector3(
-						Math.cos(angle + Math.PI),
-						Math.sin(angle + Math.PI),
+						Math.cos(angle),
+						Math.sin(angle),
 						0
 					),
 					speed: LASER_SPEED * 0.5,
@@ -366,6 +378,15 @@
 				case 'laser-npc':
 					// Handled every frame in handleLaserCollisions
 					break;
+				case 'laser-player': {
+					const laser = world.lasers.find((l) => l.id === event.entityA);
+					if (laser) {
+						laser.life = 0;
+						gameState.health = Math.max(0, gameState.health - 15);
+						world.player.health = gameState.health;
+					}
+					break;
+				}
 				case 'player-npc': {
 					gameState.health = 0;
 					world.player.health = 0;

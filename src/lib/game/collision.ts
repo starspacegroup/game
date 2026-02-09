@@ -3,6 +3,7 @@ import { world, wrappedDistance } from './world';
 export interface CollisionEvent {
 	type:
 	| 'laser-npc'
+	| 'laser-player'
 	| 'player-npc'
 	| 'player-powerup'
 	| 'player-puzzlenode';
@@ -49,6 +50,14 @@ export function checkCollisions(): CollisionEvent[] {
 					events.push({ type: 'laser-npc', entityA: laser.id, entityB: npc.id });
 				}
 			}
+		}
+	}
+
+	// NPC Lasers vs Player - using wrapped distance
+	for (const laser of world.lasers) {
+		if (laser.life <= 0 || laser.owner === 'player') continue;
+		if (wrappedDistance(pp, laser.position) < pr + laser.radius + 0.5) {
+			events.push({ type: 'laser-player', entityA: laser.id, entityB: 'player' });
 		}
 	}
 

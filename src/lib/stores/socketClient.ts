@@ -23,7 +23,7 @@ let inputSequence = 0;
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 2000;
-const INPUT_SEND_RATE = 50; // Send inputs every 50ms
+const INPUT_SEND_RATE = 33; // Send inputs every 33ms (match server tick rate)
 
 // Input state tracking
 let inputInterval: ReturnType<typeof setInterval> | null = null;
@@ -81,11 +81,19 @@ export function connectToServer(room: string = 'default'): void {
       startInputLoop();
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       console.log('[Starspace] Disconnected from server');
       gameState.mode = 'solo';
       socket = null;
       stopInputLoop();
+
+      // If room was terminated by admin, return to welcome screen
+      if (event.reason === 'Room terminated by admin') {
+        gameState.phase = 'welcome';
+        currentRoomCode = null;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        return;
+      }
 
       // Try to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentRoomCode) {
@@ -321,27 +329,49 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
 
 /**
  * Apply incremental state updates from server
+ * Uses smooth interpolation to avoid jitter — entities are simulated locally
+ * and gently corrected toward server state each tick.
  */
 function applyStateUpdate(data: StateMessage): void {
+  const SERVER_CORRECTION = 0.15; // Gentle correction toward server position
+  const SNAP_THRESHOLD = 50; // Hard-snap if more than this far off (teleport/respawn)
+
   // Update players
   for (const serverPlayer of data.players) {
     if (serverPlayer.id === playerId) {
-      // Server is authoritative - smoothly interpolate to server position
-      // Use lerp for smooth movement instead of hard snaps
-      const lerpFactor = 0.3; // Smooth interpolation
-      world.player.position.x += (serverPlayer.position.x - world.player.position.x) * lerpFactor;
-      world.player.position.y += (serverPlayer.position.y - world.player.position.y) * lerpFactor;
-      world.player.position.z += (serverPlayer.position.z - world.player.position.z) * lerpFactor;
+      // Client-side prediction: client simulates movement locally.
+      // Server corrections nudge the local position to stay in sync.
+      const dx = serverPlayer.position.x - world.player.position.x;
+      const dy = serverPlayer.position.y - world.player.position.y;
+      const dz = serverPlayer.position.z - world.player.position.z;
+      const errorDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
+      if (errorDist > SNAP_THRESHOLD) {
+        // Large desync — hard snap (respawn, teleport, etc.)
+        world.player.position.set(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
+      } else if (errorDist > 0.5) {
+        // Small desync — gently correct
+        world.player.position.x += dx * SERVER_CORRECTION;
+        world.player.position.y += dy * SERVER_CORRECTION;
+        world.player.position.z += dz * SERVER_CORRECTION;
+      }
+      // else: close enough, let client prediction ride
+
+      // Authoritative values from server
       world.player.health = serverPlayer.health;
       world.player.score = serverPlayer.score;
+      world.player.speed = serverPlayer.speed;
       gameState.health = serverPlayer.health;
       gameState.score = serverPlayer.score;
     } else {
-      // Update other player
+      // Other players — interpolate position for smooth movement
       const existing = world.otherPlayers.find(p => p.id === serverPlayer.id);
       if (existing) {
-        existing.position.set(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
+        // Store target for interpolation
+        existing.position.lerp(
+          new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z),
+          0.4
+        );
         existing.rotation.set(serverPlayer.rotation.x, serverPlayer.rotation.y, serverPlayer.rotation.z);
         existing.username = serverPlayer.username;
         existing.lastUpdate = Date.now();
@@ -357,20 +387,46 @@ function applyStateUpdate(data: StateMessage): void {
     }
   }
 
-  // Update lasers from server
+  // Lasers: merge with local laser state instead of replacing
+  // Keep locally-created lasers (client prediction), update server-known lasers
   if (data.lasers) {
-    world.lasers = data.lasers.map(l => ({
-      id: l.id,
-      position: new THREE.Vector3(l.position.x, l.position.y, l.position.z),
-      direction: new THREE.Vector3(l.direction.x, l.direction.y, l.direction.z),
-      speed: l.speed,
-      life: l.life,
-      owner: l.ownerId,
-      radius: l.radius
-    }));
+    const serverLaserIds = new Set(data.lasers.map(l => l.id));
+
+    // Update existing server lasers with fresh data
+    for (const sl of data.lasers) {
+      const local = world.lasers.find(l => l.id === sl.id);
+      if (local) {
+        // Gently correct position
+        local.position.lerp(
+          new THREE.Vector3(sl.position.x, sl.position.y, sl.position.z),
+          0.5
+        );
+        local.life = sl.life;
+      } else {
+        // New server laser — add it
+        world.lasers.push({
+          id: sl.id,
+          position: new THREE.Vector3(sl.position.x, sl.position.y, sl.position.z),
+          direction: new THREE.Vector3(sl.direction.x, sl.direction.y, sl.direction.z),
+          speed: sl.speed,
+          life: sl.life,
+          owner: sl.ownerId,
+          radius: sl.radius
+        });
+      }
+    }
+
+    // Remove local lasers that the server doesn't know about and are old
+    // (keep recent client-predicted lasers for a few frames)
+    world.lasers = world.lasers.filter(l => {
+      if (serverLaserIds.has(l.id)) return true;
+      // Keep client-predicted lasers (they have local IDs like laser_0, laser_1)
+      if (l.id.startsWith('laser_') && !l.id.includes('_player') && !l.id.includes('_npc')) return l.life > 0;
+      return l.life > 0;
+    });
   }
 
-  // Update full entity state periodically (every 5 ticks from server)
+  // Update full entity state periodically (every few ticks from server)
   if (data.asteroids) {
     syncAsteroids(data.asteroids);
   }
@@ -389,27 +445,94 @@ function applyStateUpdate(data: StateMessage): void {
 }
 
 function syncAsteroids(serverAsteroids: AsteroidState[]): void {
+  const LERP = 0.3;
+  const serverIds = new Set(serverAsteroids.map(a => a.id));
+
   for (const sa of serverAsteroids) {
     const local = world.asteroids.find(a => a.id === sa.id);
     if (local) {
-      local.position.set(sa.position.x, sa.position.y, sa.position.z);
-      local.velocity.set(sa.velocity.x, sa.velocity.y, sa.velocity.z);
+      // Smoothly correct position and velocity
+      local.position.lerp(
+        new THREE.Vector3(sa.position.x, sa.position.y, sa.position.z),
+        LERP
+      );
+      local.velocity.lerp(
+        new THREE.Vector3(sa.velocity.x, sa.velocity.y, sa.velocity.z),
+        0.5
+      );
       local.health = sa.health;
       local.destroyed = sa.destroyed;
+    } else if (!sa.destroyed) {
+      // New asteroid from server — add it
+      world.asteroids.push({
+        id: sa.id,
+        position: new THREE.Vector3(sa.position.x, sa.position.y, sa.position.z),
+        velocity: new THREE.Vector3(sa.velocity.x, sa.velocity.y, sa.velocity.z),
+        rotation: new THREE.Euler(sa.rotation.x, sa.rotation.y, sa.rotation.z),
+        rotationSpeed: new THREE.Vector3(sa.rotationSpeed.x, sa.rotationSpeed.y, sa.rotationSpeed.z),
+        radius: sa.radius,
+        health: sa.health,
+        maxHealth: sa.maxHealth,
+        puzzleIndex: null,
+        destroyed: false
+      });
+    }
+  }
+
+  // Mark asteroids destroyed that the server doesn't report anymore
+  for (const local of world.asteroids) {
+    if (!local.destroyed && !serverIds.has(local.id)) {
+      local.destroyed = true;
     }
   }
 }
 
 function syncNpcs(serverNpcs: NpcState[]): void {
+  const LERP = 0.3;
+  const serverIds = new Set(serverNpcs.map(n => n.id));
+
   for (const sn of serverNpcs) {
     const local = world.npcs.find(n => n.id === sn.id);
     if (local) {
-      local.position.set(sn.position.x, sn.position.y, sn.position.z);
+      // Smoothly correct position
+      local.position.lerp(
+        new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
+        LERP
+      );
       local.velocity.set(sn.velocity.x, sn.velocity.y, sn.velocity.z);
       local.health = sn.health;
       local.destroyed = sn.destroyed;
       local.converted = sn.converted;
+      local.conversionProgress = sn.conversionProgress;
       local.targetNodeId = sn.targetNodeId;
+      local.orbitAngle = sn.orbitAngle;
+    } else if (!sn.destroyed) {
+      // New NPC from server — add it
+      world.npcs.push({
+        id: sn.id,
+        position: new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
+        velocity: new THREE.Vector3(sn.velocity.x, sn.velocity.y, sn.velocity.z),
+        rotation: new THREE.Euler(sn.rotation.x, sn.rotation.y, sn.rotation.z),
+        radius: sn.radius,
+        health: sn.health,
+        maxHealth: sn.maxHealth,
+        shootCooldown: sn.shootCooldown,
+        destroyed: false,
+        converted: sn.converted,
+        conversionProgress: sn.conversionProgress,
+        targetNodeId: sn.targetNodeId,
+        orbitAngle: sn.orbitAngle,
+        orbitDistance: sn.orbitDistance,
+        hintTimer: 3,
+        hintData: null
+      });
+    }
+  }
+
+  // Mark NPCs destroyed that the server doesn't report
+  for (const local of world.npcs) {
+    if (!local.destroyed && !serverIds.has(local.id)) {
+      local.destroyed = true;
     }
   }
 }
@@ -418,8 +541,21 @@ function syncPowerUps(serverPowerUps: PowerUpState[]): void {
   for (const sp of serverPowerUps) {
     const local = world.powerUps.find(p => p.id === sp.id);
     if (local) {
-      local.position.set(sp.position.x, sp.position.y, sp.position.z);
+      local.position.lerp(
+        new THREE.Vector3(sp.position.x, sp.position.y, sp.position.z),
+        0.3
+      );
       local.collected = sp.collected;
+    } else if (!sp.collected) {
+      // New power-up from server — add it
+      world.powerUps.push({
+        id: sp.id,
+        position: new THREE.Vector3(sp.position.x, sp.position.y, sp.position.z),
+        type: sp.type,
+        radius: sp.radius,
+        collected: false,
+        bobPhase: Math.random() * Math.PI * 2
+      });
     }
   }
 }
@@ -428,7 +564,10 @@ function syncPuzzleNodes(serverNodes: PuzzleNodeState[]): void {
   for (const sn of serverNodes) {
     const local = world.puzzleNodes.find(n => n.id === sn.id);
     if (local) {
-      local.position.set(sn.position.x, sn.position.y, sn.position.z);
+      local.position.lerp(
+        new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
+        0.3
+      );
       local.connected = sn.connected;
     }
   }
