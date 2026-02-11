@@ -30,6 +30,11 @@ export interface PlayerState {
   score: number;
   speed: number;
   shootCooldown: number;
+  /** Timestamp (ms) until which the player is invincible after taking damage */
+  damageCooldownUntil: number;
+  /** The input sequence number the server last processed for this player.
+   *  Used by the owning client for server reconciliation. */
+  lastProcessedInput: number;
 }
 
 export interface AsteroidState {
@@ -136,11 +141,22 @@ export interface InputMessage {
   rotateX: number;
   rotateY: number;
   rotateZ: number;
+  /** World-space velocity vector computed by the client using its local frame.
+   *  The server applies this directly instead of re-interpreting moveX/moveY
+   *  through a potentially different tangent frame. */
+  velX: number;
+  velY: number;
+  velZ: number;
 }
 
 export interface FireMessage {
   type: 'fire';
   tick: number;
+  /** World-space fire direction computed by the client using its local (parallel-transported) frame.
+   *  The server applies this directly, avoiding geographic-frame mismatch. */
+  dirX: number;
+  dirY: number;
+  dirZ: number;
 }
 
 export interface InteractMessage {
@@ -281,13 +297,13 @@ export interface WorldBounds {
 
 /** @deprecated Use SPHERE_RADIUS instead. Kept for compatibility. */
 export const DEFAULT_BOUNDS: WorldBounds = {
-  x: 2116,
-  y: 2116,
-  z: 40
+  x: 846,
+  y: 846,
+  z: 16
 };
 
 /** Radius of the sphere world. All entities live on this surface. */
-export const SPHERE_RADIUS = 500;
+export const SPHERE_RADIUS = 200;
 
 /** Interior radius where puzzle nodes live inside the sphere */
 export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
@@ -296,11 +312,11 @@ export const TICK_RATE = 30; // ticks per second
 export const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 export const MAX_PLAYERS = 8;
 
-// Entity counts
-export const ASTEROID_COUNT = 600;
-export const POWER_UP_COUNT = 100;
+// Entity counts (scaled for sphere surface area)
+export const ASTEROID_COUNT = 100;
+export const POWER_UP_COUNT = 20;
 export const PUZZLE_NODE_COUNT = 12;
-export const BASE_NPC_COUNT = 5;
+export const BASE_NPC_COUNT = 4;
 
 // Super admin Discord user IDs (can delete rooms, etc.)
 export const SUPER_ADMIN_IDS: ReadonlyArray<string> = [

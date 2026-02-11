@@ -12,7 +12,7 @@ export function checkPuzzleProgress(nodes: PuzzleNodeData[]): number {
 	}
 
 	const avgDist = totalDist / nodes.length;
-	const threshold = 200; // scaled for interior sphere positions
+	const threshold = 80; // scaled for interior sphere positions
 	return Math.max(0, Math.min(1, 1 - avgDist / threshold));
 }
 
@@ -26,7 +26,7 @@ export function getPuzzleConnections(nodes: PuzzleNodeData[]): [number, number][
 	const connections: [number, number][] = [];
 	// With nodes inside the sphere at PUZZLE_INTERIOR_RADIUS * 0.65,
 	// icosahedron edge length ≈ radius * 1.05, so threshold must be higher
-	const maxEdgeLength = 250;
+	const maxEdgeLength = 100;
 	for (let i = 0; i < nodes.length; i++) {
 		for (let j = i + 1; j < nodes.length; j++) {
 			const dist = nodes[i].targetPosition.distanceTo(nodes[j].targetPosition);
@@ -60,7 +60,7 @@ export function generateHexGrid(
 	return positions;
 }
 
-/** Find the nearest puzzle node to a given position (using wrapped distance for toroidal world) */
+/** Find the nearest puzzle node to a given position (using chord distance on sphere) */
 export function findNearestPuzzleNode(
 	position: THREE.Vector3,
 	nodes: PuzzleNodeData[]

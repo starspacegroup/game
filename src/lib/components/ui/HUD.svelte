@@ -1,6 +1,31 @@
 <script lang="ts">
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { authState } from '$lib/stores/authState.svelte';
+	import { world, SPHERE_RADIUS } from '$lib/game/world';
+	import { toSpherical } from '$lib/game/chunk';
+
+	// Reactive position info for sphere coordinates
+	let latDisplay = $state('0.0');
+	let lonDisplay = $state('0.0');
+	let altDisplay = $state('0');
+	let hemisphere = $state('N');
+
+	// Update coordinates periodically (every ~200ms via rAF)
+	let coordTimer = 0;
+	function updateCoords() {
+		coordTimer++;
+		if (coordTimer % 12 === 0) { // Every ~12 frames
+			const { lat, lon } = toSpherical(world.player.position);
+			const latDeg = (lat * 180) / Math.PI;
+			const lonDeg = (lon * 180) / Math.PI;
+			latDisplay = Math.abs(latDeg).toFixed(1);
+			lonDisplay = Math.abs(lonDeg).toFixed(1);
+			hemisphere = latDeg >= 0 ? 'N' : 'S';
+			altDisplay = (world.player.position.length() - SPHERE_RADIUS).toFixed(0);
+		}
+		requestAnimationFrame(updateCoords);
+	}
+	if (typeof window !== 'undefined') requestAnimationFrame(updateCoords);
 </script>
 
 <div class="hud">
@@ -102,6 +127,13 @@
 			WASD move &bull; Mouse aim &bull; Click shoot &bull; E interact &bull; Shift boost
 		</div>
 	{/if}
+
+	<!-- Sphere coordinates -->
+	<div class="sphere-coords">
+		<span class="coord-label">LAT</span> <span class="coord-val">{latDisplay}°{hemisphere}</span>
+		<span class="coord-sep">&bull;</span>
+		<span class="coord-label">LON</span> <span class="coord-val">{lonDisplay}°</span>
+	</div>
 </div>
 
 <style>
@@ -557,5 +589,31 @@
 			padding: 5px 12px;
 			gap: 8px;
 		}
+	}
+
+	.sphere-coords {
+		position: fixed;
+		bottom: 16px;
+		left: 16px;
+		font-family: 'Courier New', monospace;
+		font-size: 0.65rem;
+		color: rgba(100, 160, 220, 0.6);
+		letter-spacing: 1px;
+		pointer-events: none;
+	}
+
+	.coord-label {
+		color: rgba(100, 160, 220, 0.4);
+		font-size: 0.55rem;
+	}
+
+	.coord-val {
+		color: rgba(0, 255, 200, 0.7);
+		font-weight: bold;
+	}
+
+	.coord-sep {
+		margin: 0 4px;
+		opacity: 0.3;
 	}
 </style>

@@ -92,16 +92,16 @@ export function generateAsteroids(
   const playerStart = vec3(0, 0, SPHERE_RADIUS);
 
   // Some near the player start
-  const nearCount = Math.min(Math.floor(count * 0.15), 60);
+  const nearCount = Math.min(Math.floor(count * 0.15), 20);
   for (let i = 0; i < nearCount; i++) {
     const radius = 0.5 + Math.random() * 3;
     asteroids.push({
       id: genId('ast'),
-      position: randomSphereNear(playerStart, 20, 150),
+      position: randomSphereNear(playerStart, 10, 60),
       velocity: vec3(
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 0.5
+        0
       ),
       rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
       rotationSpeed: vec3(
@@ -125,7 +125,7 @@ export function generateAsteroids(
       velocity: vec3(
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 0.5
+        0
       ),
       rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
       rotationSpeed: vec3(
@@ -156,7 +156,7 @@ export function generateNpcs(
   for (let i = 0; i < count; i++) {
     npcs.push({
       id: genId('npc'),
-      position: randomSphereNear(playerStart, 30, 50),
+      position: randomSphereNear(playerStart, 15, 30),
       velocity: vec3(0, 0, 0),
       rotation: euler3(0, 0, 0),
       radius: 1.2,
@@ -235,11 +235,11 @@ export function generatePowerUps(
   const powerUps: PowerUpState[] = [];
   const playerStart = vec3(0, 0, SPHERE_RADIUS);
 
-  const nearCount = Math.min(Math.floor(count * 0.15), 12);
+  const nearCount = Math.min(Math.floor(count * 0.15), 5);
   for (let i = 0; i < nearCount; i++) {
     powerUps.push({
       id: genId('pwr'),
-      position: randomSphereNear(playerStart, 30, 120),
+      position: randomSphereNear(playerStart, 15, 50),
       type: types[Math.floor(Math.random() * types.length)],
       radius: 0.8,
       collected: false
@@ -292,8 +292,10 @@ export function createPlayerState(id: string, username: string): import('../shar
     health: 100,
     maxHealth: 100,
     score: 0,
-    speed: 20,
-    shootCooldown: 0
+    speed: 12,
+    shootCooldown: 0,
+    damageCooldownUntil: 0,
+    lastProcessedInput: 0
   };
 }
 
@@ -308,7 +310,7 @@ export function respawnAsteroid(_bounds?: WorldBounds): AsteroidState {
     velocity: vec3(
       (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 0.5
+      0
     ),
     rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
     rotationSpeed: vec3(
@@ -343,7 +345,7 @@ export function respawnPowerUp(_bounds?: WorldBounds): PowerUpState {
 export function respawnNpc(nearPosition: Vector3): NpcState {
   return {
     id: genId('npc'),
-    position: randomSphereNear(nearPosition, 30, 80),
+    position: randomSphereNear(nearPosition, 15, 40),
     velocity: vec3(0, 0, 0),
     rotation: euler3(0, 0, 0),
     radius: 1.2,

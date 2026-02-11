@@ -47,9 +47,9 @@ useTask(delta) →
 
 Delta is clamped to 0.1s to prevent physics explosions on tab-switch. Different systems run at different rates using cooldown timers.
 
-### Toroidal World
+### Sphere World
 
-The world wraps at ±2116 units in both axes. All distance/direction calculations must use `wrappedDistance()` and `wrappedDirection()` from `world.ts` to find the shortest path across boundaries. `wrapPosition()` keeps entities in bounds.
+The world is a sphere with `SPHERE_RADIUS = 200`. Players fly on the surface. All positions are 3D vectors projected onto the sphere via `projectToSphere()`. Navigation uses tangent-frame movement with parallel-transported "up" vector (`world.playerUp`) using Rodrigues rotation to prevent orientation snaps at the poles. Distance uses `sphereDistance()` (chord distance). The `chunk.ts` module provides sphere-aware spatial utilities: `toSpherical()`, `fromSpherical()`, `arcDistance()`, and `SpatialHash`. Puzzle nodes exist inside the sphere at `PUZZLE_INTERIOR_RADIUS`. In multiplayer, the client sends world-space velocity vectors to the server, eliminating tangent-frame mismatch.
 
 ### Multiplayer
 
@@ -61,11 +61,11 @@ The world wraps at ±2116 units in both axes. All distance/direction calculation
 
 ### Entity Lifecycle
 
-Entities are generated procedurally (`src/lib/game/procedural.ts`), updated per-frame in the game loop, culled by `VIEW_DISTANCE` (200 units) for rendering, and respawned on intervals. Entity IDs use prefixed counters: `ast_`, `npc_`, `laser_`, `pu_`.
+Entities are generated procedurally (`src/lib/game/procedural.ts`) on the sphere surface via `randomSpherePosition()` / `randomSpherePositionNear()`, updated per-frame in the game loop, culled by `RENDER_DISTANCE` (100 chord units) for rendering, and respawned on intervals. Entity IDs use prefixed counters: `ast_`, `npc_`, `laser_`, `pu_`.
 
 ### Collision Detection
 
-Simple distance-based (sum of radii vs distance). Uses `wrappedDistance()` for toroidal accuracy. No physics engine.
+Simple distance-based (sum of radii vs chord distance). Uses `sphereDistance()` for accurate 3D collision on the sphere surface. No physics engine.
 
 ### Puzzle System (Kal-Toh)
 

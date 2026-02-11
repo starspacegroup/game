@@ -1,6 +1,6 @@
 import { gameState } from './gameState.svelte';
 import { authState } from './authState.svelte';
-import { world, projectToSphere, sphereDistance, SPHERE_RADIUS } from '$lib/game/world';
+import { world, projectToSphere, sphereDistance, getPlayerFrame, transportTangent, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
 import * as THREE from 'three';
 import type {
   ClientMessage,
@@ -25,6 +25,65 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 2000;
 const INPUT_SEND_RATE = 33; // Send inputs every 33ms (match server tick rate)
 
+// ==========================================
+// Server reconciliation — input history buffer
+// ==========================================
+// Each entry records the input we sent + the predicted position *after* applying it.
+// When the server echoes back lastProcessedInput, we compare its authoritative position
+// against our prediction at that tick. If they match (within tolerance), prediction is
+// good. If not, we snap to the server position and replay all inputs the server hasn't
+// processed yet, giving us an authoritative-but-responsive result.
+
+interface InputHistoryEntry {
+  seq: number;
+  moveX: number;
+  moveY: number;
+  boost: boolean;
+  dt: number; // deltaTime used for this input's physics step
+  /** World-space velocity vector — used for frame-independent replay */
+  velX: number;
+  velY: number;
+  velZ: number;
+}
+
+const INPUT_BUFFER_SIZE = 128;
+const inputHistory: InputHistoryEntry[] = [];
+// Reconciliation error threshold — chord distance on sphere.
+// Must be large enough to absorb floating-point difference between
+// server (plain-object math) and client (THREE.js math) tangent frames.
+const RECONCILE_THRESHOLD = 3.0;
+
+/**
+ * Record an input that was sent to the server, for later reconciliation.
+ * Called from the game loop (GameWorld) after applying local prediction.
+ */
+export function recordInput(seq: number, moveX: number, moveY: number, boost: boolean, dt: number, velX = 0, velY = 0, velZ = 0): void {
+  inputHistory.push({ seq, moveX, moveY, boost, dt, velX, velY, velZ });
+  // Trim old entries
+  if (inputHistory.length > INPUT_BUFFER_SIZE) {
+    inputHistory.splice(0, inputHistory.length - INPUT_BUFFER_SIZE);
+  }
+}
+
+/**
+ * Replay unprocessed inputs on top of a server-authoritative position.
+ * Uses world-space velocity directly — matches what the server does,
+ * and avoids corrupting world.playerUp during replay.
+ */
+function replayInputs(fromPos: THREE.Vector3, startAfterSeq: number): THREE.Vector3 {
+  const pos = fromPos.clone();
+  for (const entry of inputHistory) {
+    if (entry.seq <= startAfterSeq) continue;
+
+    // Apply world-space velocity directly (same as server)
+    pos.x += entry.velX * entry.dt;
+    pos.y += entry.velY * entry.dt;
+    pos.z += entry.velZ * entry.dt;
+    projectToSphere(pos);
+  }
+  return pos;
+}
+
 // Input state tracking
 let inputInterval: ReturnType<typeof setInterval> | null = null;
 let currentInput: Omit<InputMessage, 'type' | 'tick'> = {
@@ -32,7 +91,10 @@ let currentInput: Omit<InputMessage, 'type' | 'tick'> = {
   brake: false,
   rotateX: 0,
   rotateY: 0,
-  rotateZ: 0
+  rotateZ: 0,
+  velX: 0,
+  velY: 0,
+  velZ: 0
 };
 
 function generatePlayerId(): string {
@@ -173,6 +235,8 @@ function handleMessage(data: ServerMessage): void {
       if (data.playerId === playerId) {
         gameState.health = data.health;
         world.player.health = data.health;
+        // Trigger 1-second invincibility blink on client
+        world.player.damageCooldownUntil = Date.now() + 1000;
       }
       break;
     }
@@ -182,6 +246,7 @@ function handleMessage(data: ServerMessage): void {
         gameState.health = data.player.health;
         world.player.health = data.player.health;
         world.player.position.set(data.player.position.x, data.player.position.y, data.player.position.z);
+        inputHistory.length = 0; // Clear stale predictions
       }
       break;
     }
@@ -331,7 +396,7 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
     direction: new THREE.Vector3(l.direction.x, l.direction.y, l.direction.z),
     speed: l.speed,
     life: l.life,
-    owner: l.ownerId,
+    owner: l.ownerId === playerId ? 'player' : l.ownerId,
     radius: l.radius
   }));
 }
@@ -342,38 +407,44 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
  * and gently corrected toward server state each tick.
  */
 function applyStateUpdate(data: StateMessage): void {
-  const SERVER_CORRECTION = 0.15; // Gentle correction toward server position
   const SNAP_THRESHOLD = 50; // Hard-snap if more than this far off (teleport/respawn)
 
   // Update players
   for (const serverPlayer of data.players) {
     if (serverPlayer.id === playerId) {
-      // Client-side prediction: use chord distance for error detection on sphere
+      // Server reconciliation:
+      // Compare the server's authoritative position (which corresponds to
+      // lastProcessedInput) against where our client-side prediction ended
+      // up at that same input. If they agree, our prediction is valid. If
+      // not, we snap to the server position and replay all inputs the server
+      // hasn't processed yet.
       const serverPos = new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
       projectToSphere(serverPos);
+
+      const lastAck = serverPlayer.lastProcessedInput ?? 0;
+
+      // Discard acknowledged inputs from the history buffer
+      while (inputHistory.length > 0 && inputHistory[0].seq <= lastAck) {
+        inputHistory.shift();
+      }
+
       const errorDist = sphereDistance(world.player.position, serverPos);
 
       if (errorDist > SNAP_THRESHOLD) {
-        // Large desync — hard snap (respawn, teleport, etc.)
+        // Major desync (teleport / respawn) — hard snap, clear buffer
         world.player.position.copy(serverPos);
-      } else if (errorDist > 1.0) {
-        // Moderate desync — correct proportionally
-        const correctionStrength = Math.min(SERVER_CORRECTION * (errorDist / 5), 0.5);
-        sphereLerp(world.player.position, serverPos, correctionStrength);
+        inputHistory.length = 0;
+      } else if (errorDist > RECONCILE_THRESHOLD) {
+        // Server disagrees with our prediction — reconcile.
+        // Start from the server's authoritative position and replay
+        // all inputs the server hasn't processed yet.
+        const reconciled = replayInputs(serverPos, lastAck);
+        world.player.position.copy(reconciled);
+        projectToSphere(world.player.position);
       }
-      // else: close enough (<1 unit), let client prediction ride
+      // else: prediction matches server — no correction needed
 
-      // Sync velocity to prevent drift when idle
-      const serverSpeed = Math.sqrt(
-        serverPlayer.velocity.x * serverPlayer.velocity.x +
-        serverPlayer.velocity.y * serverPlayer.velocity.y +
-        serverPlayer.velocity.z * serverPlayer.velocity.z
-      );
-      if (serverSpeed < 0.1) {
-        world.player.velocity.set(0, 0, 0);
-      }
-
-      // Authoritative values from server
+      // Authoritative values from server (not position-related)
       world.player.health = serverPlayer.health;
       world.player.score = serverPlayer.score;
       world.player.speed = serverPlayer.speed;
@@ -420,8 +491,9 @@ function applyStateUpdate(data: StateMessage): void {
           0.5
         );
         local.life = sl.life;
-      } else {
-        // New server laser — add it
+      } else if (sl.ownerId !== playerId) {
+        // New server laser from another player/NPC — add it.
+        // Skip lasers from self: the client prediction laser is already in flight.
         world.lasers.push({
           id: sl.id,
           position: new THREE.Vector3(sl.position.x, sl.position.y, sl.position.z),
@@ -463,22 +535,14 @@ function applyStateUpdate(data: StateMessage): void {
 }
 
 function syncAsteroids(serverAsteroids: AsteroidState[]): void {
-  const LERP = 0.3;
   const serverIds = new Set(serverAsteroids.map(a => a.id));
 
   for (const sa of serverAsteroids) {
     const local = world.asteroids.find(a => a.id === sa.id);
     if (local) {
-      // Smoothly correct position on sphere
-      sphereLerp(
-        local.position,
-        new THREE.Vector3(sa.position.x, sa.position.y, sa.position.z),
-        LERP
-      );
-      local.velocity.lerp(
-        new THREE.Vector3(sa.velocity.x, sa.velocity.y, sa.velocity.z),
-        0.5
-      );
+      // Set interpolation target — game loop handles smooth per-frame convergence
+      local._serverTarget = new THREE.Vector3(sa.position.x, sa.position.y, sa.position.z);
+      local.velocity.set(sa.velocity.x, sa.velocity.y, sa.velocity.z);
       local.health = sa.health;
       local.destroyed = sa.destroyed;
     } else if (!sa.destroyed) {
@@ -512,19 +576,15 @@ function syncAsteroids(serverAsteroids: AsteroidState[]): void {
 }
 
 function syncNpcs(serverNpcs: NpcState[]): void {
-  const LERP = 0.3;
   const serverIds = new Set(serverNpcs.map(n => n.id));
 
   for (const sn of serverNpcs) {
     const local = world.npcs.find(n => n.id === sn.id);
     if (local) {
-      // Smoothly correct position on sphere
-      sphereLerp(
-        local.position,
-        new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z),
-        LERP
-      );
+      // Set interpolation target — game loop handles smooth per-frame convergence
+      local._serverTarget = new THREE.Vector3(sn.position.x, sn.position.y, sn.position.z);
       local.velocity.set(sn.velocity.x, sn.velocity.y, sn.velocity.z);
+      local.rotation.set(sn.rotation.x, sn.rotation.y, sn.rotation.z);
       local.health = sn.health;
       local.destroyed = sn.destroyed;
       local.converted = sn.converted;
@@ -617,11 +677,26 @@ function startInputLoop(): void {
 
   inputInterval = setInterval(() => {
     if (socket?.readyState === WebSocket.OPEN) {
+      const seq = inputSequence++;
       send({
         type: 'input',
-        tick: inputSequence++,
+        tick: seq,
         ...currentInput
       });
+
+      // Record this input for server reconciliation.
+      // dt = INPUT_SEND_RATE in seconds (matches the interval at which
+      // inputs are sent and the server processes them).
+      recordInput(
+        seq,
+        currentInput.rotateX,
+        currentInput.rotateY,
+        currentInput.brake,
+        INPUT_SEND_RATE / 1000,
+        currentInput.velX,
+        currentInput.velY,
+        currentInput.velZ
+      );
     }
   }, INPUT_SEND_RATE);
 }
@@ -643,9 +718,15 @@ export function setInput(input: Partial<Omit<InputMessage, 'type' | 'tick'>>): v
 /**
  * Send a fire command to the server
  */
-export function sendFire(): void {
+export function sendFire(direction?: { x: number; y: number; z: number; }): void {
   if (socket?.readyState !== WebSocket.OPEN) return;
-  send({ type: 'fire', tick: inputSequence });
+  send({
+    type: 'fire',
+    tick: inputSequence,
+    dirX: direction?.x ?? 0,
+    dirY: direction?.y ?? 0,
+    dirZ: direction?.z ?? 0
+  });
 }
 
 /**
@@ -692,6 +773,7 @@ export function disconnect(): void {
     reconnectTimeout = null;
   }
   stopInputLoop();
+  inputHistory.length = 0;
   socket?.close();
   socket = null;
   playerId = null;

@@ -16,10 +16,10 @@
 
 	for (let i = 0; i < starCount; i++) {
 		const i3 = i * 3;
-		// Stars on a very large sphere (well outside planet radius of 500)
+		// Stars on a very large sphere (well outside planet radius of 200)
 		const theta = Math.random() * Math.PI * 2;
 		const phi = Math.acos(2 * Math.random() - 1);
-		const r = 1200 + Math.random() * 800;
+		const r = 800 + Math.random() * 500;
 		positions[i3] = r * Math.sin(phi) * Math.cos(theta);
 		positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
 		positions[i3 + 2] = r * Math.cos(phi);

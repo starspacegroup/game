@@ -74,29 +74,22 @@ function sphereDistance(a: Vector3, b: Vector3): number {
 }
 
 /** Get tangent frame (east, north, normal) at a position on the sphere.
- *  Uses smooth blending near poles to prevent "stuck on seam" artifacts. */
+ *  Uses Y-up reference; switches to Z-up near the Y-axis poles. */
 function getTangentFrame(pos: Vector3): { east: Vector3; north: Vector3; normal: Vector3; } {
   const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
   const normal = len > 0.001
     ? { x: pos.x / len, y: pos.y / len, z: pos.z / len }
     : { x: 0, y: 0, z: 1 };
 
-  const absZ = Math.abs(normal.z);
-
-  // Smoothly blend reference vector in transition zone (0.7 – 0.95)
+  // Y-up everywhere; Z-up fallback near Y-poles
   let ux: number, uy: number, uz: number;
-  if (absZ < 0.7) {
+  if (Math.abs(normal.y) > 0.99) {
     ux = 0; uy = 0; uz = 1;
-  } else if (absZ > 0.95) {
-    ux = 1; uy = 0; uz = 0;
   } else {
-    const t = (absZ - 0.7) / 0.25;
-    ux = t; uy = 0; uz = 1 - t;
-    const ulen = Math.sqrt(ux * ux + uz * uz);
-    ux /= ulen; uz /= ulen;
+    ux = 0; uy = 1; uz = 0;
   }
 
-  // east = cross(up, normal)
+  // east = cross(ref, normal)
   let ex = uy * normal.z - uz * normal.y;
   let ey = uz * normal.x - ux * normal.z;
   let ez = ux * normal.y - uy * normal.x;
@@ -344,7 +337,7 @@ export class GameRoom implements DurableObject {
   }
 
   /**
-   * Update player positions based on inputs (sphere tangent-frame movement)
+   * Update player positions based on inputs (world-space velocity from client)
    */
   private updatePlayers(deltaTime: number): void {
     for (const [ws, session] of this.sessions) {
@@ -360,34 +353,53 @@ export class GameRoom implements DurableObject {
         continue;
       }
 
+      // Track which client input we processed (for reconciliation)
+      player.lastProcessedInput = input.tick;
+
       // Direct rotation from client
       player.rotation.z = input.rotateZ;
 
-      const speed = player.speed * (input.brake ? 1.8 : 1);
+      // Use world-space velocity from client if available (new protocol).
+      // This eliminates frame mismatch: the client computes the velocity
+      // using its parallel-transported frame, and we apply it directly.
+      const hasWorldVel = input.velX !== undefined && input.velY !== undefined && input.velZ !== undefined;
 
-      let moveX = input.rotateX;
-      let moveY = input.rotateY;
+      if (hasWorldVel) {
+        // Clamp velocity magnitude for anti-cheat
+        const maxSpeed = player.speed * 2.0; // allow boost
+        const velMag = Math.sqrt(input.velX * input.velX + input.velY * input.velY + input.velZ * input.velZ);
+        let vx = input.velX, vy = input.velY, vz = input.velZ;
+        if (velMag > maxSpeed) {
+          const scale = maxSpeed / velMag;
+          vx *= scale; vy *= scale; vz *= scale;
+        }
 
-      // Safety: normalize diagonal movement
-      const moveMag = Math.sqrt(moveX * moveX + moveY * moveY);
-      if (moveMag > 1) {
-        moveX /= moveMag;
-        moveY /= moveMag;
+        // Apply world-space velocity directly
+        player.position.x += vx * deltaTime;
+        player.position.y += vy * deltaTime;
+        player.position.z += vz * deltaTime;
+        projectToSphereM(player.position);
+
+        // Store velocity for broadcast
+        player.velocity.x = vx;
+        player.velocity.y = vy;
+        player.velocity.z = vz;
+      } else {
+        // Fallback: old protocol (rotateX/rotateY as tangent-frame components)
+        const speed = player.speed * (input.brake ? 1.8 : 1);
+        let moveX = input.rotateX;
+        let moveY = input.rotateY;
+        const moveMag = Math.sqrt(moveX * moveX + moveY * moveY);
+        if (moveMag > 1) { moveX /= moveMag; moveY /= moveMag; }
+        const dx = moveX * speed * deltaTime;
+        const dy = moveY * speed * deltaTime;
+        if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+          moveSphere(player.position, dx, dy);
+        }
+        player.velocity.x = moveX * speed;
+        player.velocity.y = moveY * speed;
+        player.velocity.z = 0;
       }
-
-      // Move on sphere surface using tangent frame
-      const dx = moveX * speed * deltaTime;
-      const dy = moveY * speed * deltaTime;
-
-      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
-        moveSphere(player.position, dx, dy);
-      }
-
-      // Store velocity for client prediction (tangent frame components)
-      const frame = getTangentFrame(player.position);
-      player.velocity.x = moveX * speed;
-      player.velocity.y = moveY * speed;
-      player.velocity.z = 0;
 
       // Update shoot cooldown
       if (player.shootCooldown > 0) {
@@ -491,7 +503,7 @@ export class GameRoom implements DurableObject {
       const frame = getTangentFrame(npc.position);
       const localX = dir.dx * frame.east.x + dir.dy * frame.east.y + dir.dz * frame.east.z;
       const localY = dir.dx * frame.north.x + dir.dy * frame.north.y + dir.dz * frame.north.z;
-      npc.rotation.z = Math.atan2(localX, localY);
+      npc.rotation.z = Math.atan2(localX, -localY);
     } else {
       // Orbit on the sphere surface above the interior node
       npc.orbitAngle += deltaTime * 1.5;
@@ -572,8 +584,8 @@ export class GameRoom implements DurableObject {
       }
     }
 
-    // Point towards player
-    npc.rotation.z = Math.atan2(localDx, localDy);
+    // Point towards player (atan2(east, -north) so the cone nose faces target)
+    npc.rotation.z = Math.atan2(localDx, -localDy);
 
     // Shoot at player if in range
     if (nearestDist < 40 && npc.shootCooldown <= 0) {
@@ -599,6 +611,24 @@ export class GameRoom implements DurableObject {
 
       // Project back to sphere surface
       projectToSphereM(laser.position);
+
+      // Parallel-transport direction to stay tangent to sphere at new position.
+      // This makes lasers travel along great circles instead of slowing down.
+      const len = Math.sqrt(laser.position.x ** 2 + laser.position.y ** 2 + laser.position.z ** 2);
+      if (len > 0.001) {
+        const nx = laser.position.x / len, ny = laser.position.y / len, nz = laser.position.z / len;
+        const dot = laser.direction.x * nx + laser.direction.y * ny + laser.direction.z * nz;
+        laser.direction.x -= dot * nx;
+        laser.direction.y -= dot * ny;
+        laser.direction.z -= dot * nz;
+        // Re-normalize direction
+        const dLen = Math.sqrt(laser.direction.x ** 2 + laser.direction.y ** 2 + laser.direction.z ** 2);
+        if (dLen > 0.001) {
+          laser.direction.x /= dLen;
+          laser.direction.y /= dLen;
+          laser.direction.z /= dLen;
+        }
+      }
 
       laser.life -= deltaTime;
 
@@ -637,13 +667,19 @@ export class GameRoom implements DurableObject {
         }
       }
 
-      // Player vs hostile NPCs - instant death
+      // Player vs hostile NPCs - deal damage, teleport away, grant invincibility
       for (const npc of this.npcs) {
         if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
+        if (Date.now() < player.damageCooldownUntil) continue;
 
         const dist = sphereDistance(player.position, npc.position);
         if (dist < 1 + npc.radius + 0.5) {
-          this.damagePlayer(player.id, player.health);
+          this.damagePlayer(player.id, 25);
+          // Teleport player to a safe position away from all NPCs
+          this.teleportPlayerToSafety(player);
+          // 1-second invincibility
+          player.damageCooldownUntil = Date.now() + 1000;
+          break; // Only one NPC collision per frame
         }
       }
     }
@@ -673,6 +709,7 @@ export class GameRoom implements DurableObject {
       if (!hit && !this.players.has(laser.ownerId)) {
         for (const player of this.players.values()) {
           if (player.health <= 0) continue;
+          if (Date.now() < player.damageCooldownUntil) continue;
 
           const dist = sphereDistance(laser.position, player.position);
           if (dist < laser.radius + 1) {
@@ -856,17 +893,32 @@ export class GameRoom implements DurableObject {
         const player = this.players.get(session.id);
         if (!player || player.health <= 0 || player.shootCooldown > 0) return;
 
-        // Create laser — direction in tangent plane based on player facing
-        const frame = getTangentFrame(player.position);
-        const angle = player.rotation.z;
-        // Firing direction: combine east and north based on rotation
-        const sinA = Math.sin(angle);
-        const cosA = Math.cos(angle);
-        const direction = {
-          x: -sinA * frame.east.x + cosA * frame.north.x,
-          y: -sinA * frame.east.y + cosA * frame.north.y,
-          z: -sinA * frame.east.z + cosA * frame.north.z
-        };
+        // Use the world-space fire direction sent by the client.
+        // The client computes this using its parallel-transported frame,
+        // which avoids the geographic-frame mismatch that causes direction
+        // to depend on position on the sphere.
+        let direction: Vector3;
+        if (data.dirX !== undefined && data.dirY !== undefined && data.dirZ !== undefined) {
+          const dLen = Math.sqrt(data.dirX * data.dirX + data.dirY * data.dirY + data.dirZ * data.dirZ);
+          if (dLen > 0.001) {
+            direction = { x: data.dirX / dLen, y: data.dirY / dLen, z: data.dirZ / dLen };
+          } else {
+            // Fallback: geographic frame
+            const frame = getTangentFrame(player.position);
+            direction = { x: frame.north.x, y: frame.north.y, z: frame.north.z };
+          }
+        } else {
+          // Legacy client without direction fields
+          const frame = getTangentFrame(player.position);
+          const angle = player.rotation.z;
+          const sinA = Math.sin(angle);
+          const cosA = Math.cos(angle);
+          direction = {
+            x: -sinA * frame.east.x + cosA * frame.north.x,
+            y: -sinA * frame.east.y + cosA * frame.north.y,
+            z: -sinA * frame.east.z + cosA * frame.north.z
+          };
+        }
 
         this.createLaser(player.id, player.position, direction);
         player.shootCooldown = 0.15; // Match solo SHOOT_COOLDOWN
@@ -951,6 +1003,7 @@ export class GameRoom implements DurableObject {
   private damagePlayer(playerId: string, damage: number): void {
     const player = this.players.get(playerId);
     if (!player) return;
+    if (Date.now() < player.damageCooldownUntil) return;
 
     player.health = Math.max(0, player.health - damage);
 
@@ -979,6 +1032,38 @@ export class GameRoom implements DurableObject {
     }
   }
 
+  /** Teleport player a short distance away from NPCs */
+  private teleportPlayerToSafety(player: PlayerState): void {
+    // Generate candidates near the player (10-20 units away)
+    let bestPos = this.randomSpherePositionNear(player.position, 10, 20);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = this.randomSpherePositionNear(player.position, 10, 20);
+      const tooClose = this.npcs.some(
+        (n) => !n.destroyed && sphereDistance(candidate, n.position) < 8
+      );
+      if (!tooClose) {
+        bestPos = candidate;
+        break;
+      }
+    }
+    player.position = bestPos;
+    player.velocity = { x: 0, y: 0, z: 0 };
+  }
+
+  /** Generate a random position on the sphere near a given point */
+  private randomSpherePositionNear(center: Vector3, minDist: number, maxDist: number): Vector3 {
+    const { east, north } = getTangentFrame(center);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = minDist + Math.random() * (maxDist - minDist);
+    const pos = {
+      x: center.x + east.x * Math.cos(angle) * dist + north.x * Math.sin(angle) * dist,
+      y: center.y + east.y * Math.cos(angle) * dist + north.y * Math.sin(angle) * dist,
+      z: center.z + east.z * Math.cos(angle) * dist + north.z * Math.sin(angle) * dist
+    };
+    projectToSphereM(pos);
+    return pos;
+  }
+
   private collectPowerUp(player: PlayerState, powerUp: PowerUpState): void {
     powerUp.collected = true;
 
@@ -987,9 +1072,9 @@ export class GameRoom implements DurableObject {
         player.health = Math.min(player.maxHealth, player.health + 25);
         break;
       case 'speed':
-        player.speed = 30;
+        player.speed = 20;
         // Temporary boost matching solo mode (8 seconds)
-        setTimeout(() => { player.speed = 20; }, 8000);
+        setTimeout(() => { player.speed = 12; }, 8000);
         break;
       case 'shield':
         player.health = Math.min(player.maxHealth + 50, player.health + 50);
@@ -1068,7 +1153,7 @@ export class GameRoom implements DurableObject {
   private broadcastState(): void {
     // Send per-player state with only nearby entities to reduce bandwidth
     const activePlayers = this.getActivePlayers();
-    const ENTITY_SYNC_RADIUS = 250; // Only sync entities within this distance
+    const ENTITY_SYNC_RADIUS = 100; // Only sync entities within this distance
 
     for (const [ws, session] of this.sessions) {
       const player = this.players.get(session.id);
@@ -1175,7 +1260,7 @@ export class GameRoom implements DurableObject {
           const dx = node.targetPosition.x - n.targetPosition.x;
           const dy = node.targetPosition.y - n.targetPosition.y;
           const dz = node.targetPosition.z - n.targetPosition.z;
-          return Math.sqrt(dx * dx + dy * dy + dz * dz) < 250;
+          return Math.sqrt(dx * dx + dy * dy + dz * dz) < 100;
         });
         return `This node connects to ${nearbyNodes.length} others in the structure`;
       }

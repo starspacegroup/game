@@ -1,6 +1,19 @@
 import * as THREE from 'three';
 import type { AsteroidData, NpcData, PuzzleNodeData, PowerUpData } from './world';
-import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSpherePositionNear, projectToSphere } from './world';
+import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSpherePositionNear, projectToSphere, getTangentFrame } from './world';
+
+/**
+ * Generate a random tangent-frame velocity for an entity on the sphere.
+ * Returns a Vector3 where x = east speed, y = north speed, z = 0.
+ * This matches the server convention used by moveSphere().
+ */
+function randomTangentVelocity(maxSpeed: number): THREE.Vector3 {
+	return new THREE.Vector3(
+		(Math.random() - 0.5) * 2 * maxSpeed,
+		(Math.random() - 0.5) * 2 * maxSpeed,
+		0
+	);
+}
 
 let nextId = 0;
 function genId(prefix: string): string {
@@ -19,18 +32,14 @@ export function generateAsteroids(
 	const playerStart = new THREE.Vector3(0, 0, SPHERE_RADIUS);
 
 	// Spawn some asteroids near the player start for immediate visibility
-	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 60);
+	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 20);
 	for (let i = 0; i < nearPlayerCount; i++) {
 		const radius = 0.5 + Math.random() * 3;
-		const pos = randomSpherePositionNear(playerStart, 20, 150);
+		const pos = randomSpherePositionNear(playerStart, 10, 60);
 		asteroids.push({
 			id: genId('ast'),
 			position: pos,
-			velocity: new THREE.Vector3(
-				(Math.random() - 0.5) * 2,
-				(Math.random() - 0.5) * 2,
-				(Math.random() - 0.5) * 0.5
-			),
+			velocity: randomTangentVelocity(1),
 			rotation: new THREE.Euler(
 				Math.random() * Math.PI * 2,
 				Math.random() * Math.PI * 2,
@@ -55,11 +64,7 @@ export function generateAsteroids(
 		asteroids.push({
 			id: genId('ast'),
 			position: randomSpherePosition(),
-			velocity: new THREE.Vector3(
-				(Math.random() - 0.5) * 2,
-				(Math.random() - 0.5) * 2,
-				(Math.random() - 0.5) * 0.5
-			),
+			velocity: randomTangentVelocity(1),
 			rotation: new THREE.Euler(
 				Math.random() * Math.PI * 2,
 				Math.random() * Math.PI * 2,
@@ -87,7 +92,7 @@ export function generateNpcs(
 	const npcs: NpcData[] = [];
 	const playerStart = new THREE.Vector3(0, 0, SPHERE_RADIUS);
 	for (let i = 0; i < count; i++) {
-		const pos = randomSpherePositionNear(playerStart, 30, 50);
+		const pos = randomSpherePositionNear(playerStart, 15, 30);
 		npcs.push({
 			id: genId('npc'),
 			position: pos,
@@ -161,11 +166,11 @@ export function generatePowerUps(
 	const playerStart = new THREE.Vector3(0, 0, SPHERE_RADIUS);
 
 	// Spawn some power-ups near the player start
-	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 12);
+	const nearPlayerCount = Math.min(Math.floor(count * 0.15), 5);
 	for (let i = 0; i < nearPlayerCount; i++) {
 		powerUps.push({
 			id: genId('pwr'),
-			position: randomSpherePositionNear(playerStart, 30, 120),
+			position: randomSpherePositionNear(playerStart, 15, 50),
 			type: types[Math.floor(Math.random() * types.length)],
 			radius: 0.8,
 			collected: false,

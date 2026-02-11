@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getSphereOrientation } from '$lib/game/world';
+	import { world, getPlayerOrientation } from '$lib/game/world';
 	import { authState } from '$lib/stores/authState.svelte';
 
 	let rootGroup: THREE.Group | undefined = $state();
@@ -52,7 +52,16 @@
 
 		// Position on sphere surface and orient tangent to sphere
 		rootGroup.position.copy(world.player.position);
-		rootGroup.quaternion.copy(getSphereOrientation(world.player.position));
+		rootGroup.quaternion.copy(getPlayerOrientation());
+
+		// Blink during invincibility
+		const isInvincible = Date.now() < world.player.damageCooldownUntil;
+		if (isInvincible) {
+			// Blink at ~8Hz
+			rootGroup.visible = Math.floor(Date.now() / 125) % 2 === 0;
+		} else {
+			rootGroup.visible = true;
+		}
 
 		// Rotate only the ship mesh within the tangent plane
 		if (shipMesh) {

@@ -10,7 +10,8 @@
 	import Starfield from './Starfield.svelte';
 	import PuzzleStructure from './PuzzleStructure.svelte';
 	import PowerUp from './PowerUp.svelte';
-	import HexGrid from './HexGrid.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, projectToSphere, sphereDistance, sphereDirection, getTangentFrame, randomSpherePositionNear, SPHERE_RADIUS } from '$lib/game/world';
+	import HexGrid from './HexGrid.svelte';
+	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -22,18 +23,19 @@
 	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
-	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
+	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected, disconnect } from '$lib/stores/socketClient';
 
 	// Render distance for entities - beyond this they're culled (chord distance on sphere)
-	const RENDER_DISTANCE = 200;
+	// On a sphere with R=200, chord dist ~100 covers about 29° of arc
+	const RENDER_DISTANCE = 100;
 
 	// Initialize the game world on sphere surface
 	resetIdCounter();
 	resetWorld();
-	world.asteroids = generateAsteroids(600);
+	world.asteroids = generateAsteroids(100);
 	world.npcs = generateNpcs(gameState.npcCount);
 	world.puzzleNodes = generatePuzzleNodes(12);
-	world.powerUps = generatePowerUps(100);
+	world.powerUps = generatePowerUps(20);
 
 	// Reactive entity lists (controls which components are rendered)
 	// Entities render at their wrapped position relative to player automatically
@@ -91,8 +93,8 @@
 
 		// Always run entity simulation locally (even in MP) for smooth visuals
 		// Server corrections are applied via interpolation in socketClient
-		updateAsteroids(dt);
-		updateNpcs(dt);
+		updateAsteroids(dt, isMP);
+		updateNpcs(dt, isMP);
 
 		updatePowerUps(dt);
 
@@ -134,30 +136,53 @@
 			my /= moveMag;
 		}
 
-		// Move along sphere surface using tangent frame
-		const { east, north } = getTangentFrame(world.player.position);
+		// Move along sphere surface using the parallel-transported player frame
+		// so controls are relative to the camera, not the geographic poles
+		const { east, north } = getPlayerFrame(world.player.position);
 		world.player.velocity.copy(east).multiplyScalar(mx * speed).addScaledVector(north, my * speed);
+
+		// Save old position for accurate parallel transport via Rodrigues rotation
+		const oldPos = world.player.position.clone();
 		world.player.position.addScaledVector(world.player.velocity, dt);
 		projectToSphere(world.player.position);
+
+		// Parallel-transport the player's "up" using exact Rodrigues rotation
+		transportTangent(world.playerUp, world.player.position, oldPos);
+
+		// Re-orthogonalize every frame to prevent any drift accumulation
+		reorthogonalizePlayerUp();
 
 		// Aim rotation (always local for responsiveness)
 		// Dead zone: ignore mouse aim near screen center to prevent jittery rotation
 		const aimMag = Math.sqrt(inputState.aimX * inputState.aimX + inputState.aimY * inputState.aimY);
+		let targetRotZ = world.player.rotation.z;
 		if (aimMag > 0.1) {
-			world.player.rotation.z = Math.atan2(inputState.aimY, inputState.aimX) - Math.PI / 2;
+			targetRotZ = Math.atan2(inputState.aimY, inputState.aimX) - Math.PI / 2;
 		} else if (inputState.moveX !== 0 || inputState.moveY !== 0) {
 			// Fall back to movement direction when mouse is near center
-			world.player.rotation.z = Math.atan2(inputState.moveY, inputState.moveX) - Math.PI / 2;
+			targetRotZ = Math.atan2(inputState.moveY, inputState.moveX) - Math.PI / 2;
 		}
+		// Smooth rotation to target (lerp with shortest-arc handling)
+		let angleDiff = targetRotZ - world.player.rotation.z;
+		// Wrap to [-PI, PI] for shortest rotation path
+		while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+		while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+		const rotSmooth = 1 - Math.exp(-18 * dt); // fast but not instant
+		world.player.rotation.z += angleDiff * rotSmooth;
 		
 		// Send inputs to server in multiplayer mode
 		if (isMultiplayer) {
 			setInput({
 				thrust: inputState.moveX !== 0 || inputState.moveY !== 0,
 				brake: inputState.boost,
-				rotateX: mx,  // Send normalized movement direction (matches client physics)
-				rotateY: my,  // Send normalized movement direction (matches client physics)
-				rotateZ: world.player.rotation.z
+				rotateX: mx,  // Legacy: abstract move direction
+				rotateY: my,  // Legacy: abstract move direction
+				rotateZ: world.player.rotation.z,
+				// World-space velocity: matches what we just applied locally.
+				// Server applies this directly, eliminating frame mismatch.
+				velX: world.player.velocity.x,
+				velY: world.player.velocity.y,
+				velZ: world.player.velocity.z
 			});
 		}
 	}
@@ -170,7 +195,7 @@
 			const angle = world.player.rotation.z + Math.PI / 2;
 			
 			// Fire direction in tangent plane (3D world coords)
-			const { east, north } = getTangentFrame(world.player.position);
+			const { east, north } = getPlayerFrame(world.player.position);
 			const dir = east.clone().multiplyScalar(Math.cos(angle)).addScaledVector(north, Math.sin(angle));
 			
 			// Spawn laser from the front of the ship (offset in firing direction on sphere)
@@ -180,7 +205,7 @@
 			
 			// In multiplayer, send fire event to server which creates authoritative laser
 			if (gameState.mode === 'multiplayer' && isConnected()) {
-				sendFire();
+				sendFire(dir);
 			}
 			
 			// Create local laser for immediate feedback (client prediction)
@@ -205,28 +230,57 @@
 			// Keep on sphere surface
 			projectToSphere(laser.position);
 			
+			// Parallel-transport direction to stay tangent to sphere at new position.
+			// This makes lasers travel along great circles instead of slowing down.
+			projectToTangent(laser.direction, laser.position);
+			laser.direction.normalize();
+			
 			if (laser.life <= 0) {
 				world.lasers.splice(i, 1);
 			}
 		}
 	}
 
-	function updateAsteroids(dt: number): void {
+	function updateAsteroids(dt: number, isMP: boolean): void {
 		for (const ast of world.asteroids) {
 			if (ast.destroyed) continue;
-			// Drift on sphere surface: add velocity in tangent plane, project back
-			const { east, north } = getTangentFrame(ast.position);
-			ast.position.addScaledVector(east, ast.velocity.x * dt).addScaledVector(north, ast.velocity.y * dt);
-			projectToSphere(ast.position);
-			
+
+			if (isMP && ast._serverTarget) {
+				// In MP: smoothly interpolate toward server position per-frame.
+				// Don't run local drift sim — it fights server corrections and causes jitter.
+				const factor = 1 - Math.exp(-8 * dt);
+				ast.position.lerp(ast._serverTarget, factor);
+				projectToSphere(ast.position);
+			} else {
+				// Solo / no server target yet: drift on sphere surface using tangent frame.
+				// velocity.x = east speed, velocity.y = north speed (matches server convention)
+				const { east, north } = getTangentFrame(ast.position);
+				ast.position.addScaledVector(east, ast.velocity.x * dt);
+				ast.position.addScaledVector(north, ast.velocity.y * dt);
+				projectToSphere(ast.position);
+			}
+
 			ast.rotation.x += ast.rotationSpeed.x * dt;
 			ast.rotation.y += ast.rotationSpeed.y * dt;
 		}
 	}
 
-	function updateNpcs(dt: number): void {
+	function updateNpcs(dt: number, isMP: boolean): void {
 		for (const npc of world.npcs) {
 			if (npc.destroyed) continue;
+
+			// In multiplayer, server is authoritative for NPC AI.
+			// Just smoothly interpolate position toward server target each frame
+			// instead of running local AI which fights server corrections.
+			if (isMP) {
+				if (npc._serverTarget) {
+					const factor = 1 - Math.exp(-10 * dt);
+					npc.position.lerp(npc._serverTarget, factor);
+					projectToSphere(npc.position);
+				}
+				// Rotation & conversion state already set by syncNpcs
+				continue;
+			}
 
 			// Handle converted NPCs - they navigate to puzzle nodes and orbit
 			if (npc.converted) {
@@ -251,33 +305,42 @@
 			}
 
 			// Chase player on sphere surface
-			const { dx, dy, dist } = sphereDirection(npc.position, world.player.position);
-			const { east, north } = getTangentFrame(npc.position);
+			// sphereDirection returns a tangent-plane vector in WORLD-space (dx,dy,dz).
+			// Use it directly as a 3D velocity direction instead of incorrectly decomposing
+			// dx/dy as east/north components (which only works at spawn).
+			const { dx, dy, dz, dist } = sphereDirection(npc.position, world.player.position);
 
-			if (dist > 2.5) {
-				// Chase until very close
-				const chaseDir = east.clone().multiplyScalar((dx / dist) * NPC_SPEED).addScaledVector(north, (dy / dist) * NPC_SPEED);
-				npc.velocity.copy(chaseDir);
-			} else {
-				// Circle tightly - close enough to hit
-				const circleDir = east.clone().multiplyScalar((-dy / dist) * NPC_SPEED * 0.8).addScaledVector(north, (dx / dist) * NPC_SPEED * 0.8);
-				npc.velocity.copy(circleDir);
+			if (dist > 0.01) {
+				if (dist > 2.5) {
+					// Chase: tangent vector IS the correct 3D velocity direction
+					npc.velocity.set(dx / dist * NPC_SPEED, dy / dist * NPC_SPEED, dz / dist * NPC_SPEED);
+				} else {
+					// Circle: perpendicular to chase direction in tangent plane
+					const normal = npc.position.clone().normalize();
+					const unitDir = new THREE.Vector3(dx / dist, dy / dist, dz / dist);
+					const perp = new THREE.Vector3().crossVectors(normal, unitDir);
+					npc.velocity.copy(perp).multiplyScalar(NPC_SPEED * 0.8);
+				}
+
+				// Facing: decompose tangent into local frame via dot products
+				const { east, north } = getTangentFrame(npc.position);
+				const tangent = new THREE.Vector3(dx, dy, dz);
+				const eastComp = tangent.dot(east);
+				const northComp = tangent.dot(north);
+				npc.rotation.z = Math.atan2(eastComp, -northComp);
 			}
 
 			npc.position.addScaledVector(npc.velocity, dt);
 			projectToSphere(npc.position);
-			npc.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
 
 			// NPC shooting
 			npc.shootCooldown -= dt;
 			if (npc.shootCooldown <= 0 && dist < 40) {
 				npc.shootCooldown = NPC_SHOOT_RATE + Math.random();
-				// Fire direction toward player in tangent plane
-				const { east: e2, north: n2 } = getTangentFrame(npc.position);
-				const dmag = Math.sqrt(dx * dx + dy * dy);
-				const fireDir = dmag > 0 
-					? e2.clone().multiplyScalar(dx / dmag).addScaledVector(n2, dy / dmag)
-					: e2.clone();
+				// Fire toward player: tangent vector is already the correct 3D direction
+				const fireDir = dist > 0.01
+					? new THREE.Vector3(dx / dist, dy / dist, dz / dist)
+					: getTangentFrame(npc.position).east.clone();
 				world.lasers.push({
 					id: `laser_${nextLaserId++}`,
 					position: npc.position.clone(),
@@ -313,16 +376,18 @@
 
 		// Navigate to the surface point above the puzzle node
 		if (dist > npc.orbitDistance + 2) {
-			const { dx, dy } = sphereDirection(npc.position, surfaceTarget);
-			const { east, north } = getTangentFrame(npc.position);
+			const { dx, dy, dz, dist: dMag } = sphereDirection(npc.position, surfaceTarget);
 			const navSpeed = NPC_SPEED * 1.2;
-			const dmag = Math.sqrt(dx * dx + dy * dy);
-			if (dmag > 0) {
-				npc.velocity.copy(east).multiplyScalar((dx / dmag) * navSpeed).addScaledVector(north, (dy / dmag) * navSpeed);
+			if (dMag > 0.01) {
+				// Use tangent vector directly as 3D velocity direction
+				npc.velocity.set(dx / dMag * navSpeed, dy / dMag * navSpeed, dz / dMag * navSpeed);
+				// Facing: project into local frame via dot products
+				const { east, north } = getTangentFrame(npc.position);
+				const tangent = new THREE.Vector3(dx, dy, dz);
+				npc.rotation.z = Math.atan2(tangent.dot(east), -tangent.dot(north));
 			}
 			npc.position.addScaledVector(npc.velocity, dt);
 			projectToSphere(npc.position);
-			npc.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
 		} else {
 			// Orbit on the sphere surface above the node
 			npc.orbitAngle += dt * 1.5;
@@ -385,6 +450,7 @@
 					// Handled every frame in handleLaserCollisions
 					break;
 				case 'laser-player': {
+					if (Date.now() < world.player.damageCooldownUntil) break;
 					const laser = world.lasers.find((l) => l.id === event.entityA);
 					if (laser) {
 						laser.life = 0;
@@ -394,8 +460,27 @@
 					break;
 				}
 				case 'player-npc': {
-					gameState.health = 0;
-					world.player.health = 0;
+					if (Date.now() < world.player.damageCooldownUntil) break;
+					gameState.health = Math.max(0, gameState.health - 25);
+					world.player.health = gameState.health;
+					// Teleport player a short distance away from the NPC
+					let safePos = randomSpherePositionNear(world.player.position, 10, 20);
+					let attempts = 0;
+					while (attempts < 10) {
+						const tooClose = world.npcs.some(
+							(n) => !n.destroyed && sphereDistance(safePos, n.position) < 8
+						);
+						if (!tooClose) break;
+						safePos = randomSpherePositionNear(world.player.position, 10, 20);
+						attempts++;
+					}
+					world.player.position.copy(safePos);
+					projectToSphere(world.player.position);
+					// Re-derive playerUp for the new position
+					reorthogonalizePlayerUp();
+					world.player.velocity.set(0, 0, 0);
+					// 1-second invincibility
+					world.player.damageCooldownUntil = Date.now() + 1000;
 					break;
 				}
 				case 'player-powerup': {
@@ -407,9 +492,9 @@
 								gameState.health = Math.min(gameState.maxHealth, gameState.health + 25);
 								break;
 							case 'speed':
-								world.player.speed = 30;
+								world.player.speed = 20;
 								setTimeout(() => {
-									world.player.speed = 20;
+									world.player.speed = 12;
 								}, 8000);
 								break;
 							case 'multishot':
@@ -503,7 +588,7 @@
 		for (const ast of deadAst.slice(0, 3)) {
 			ast.destroyed = false;
 			ast.health = ast.maxHealth;
-			const pos = randomSpherePositionNear(world.player.position, 80, 250);
+			const pos = randomSpherePositionNear(world.player.position, 35, 100);
 			ast.position.copy(pos);
 		}
 
@@ -511,7 +596,7 @@
 		const hostileNpcs = world.npcs.filter((n) => !n.destroyed && !n.converted && n.conversionProgress === 0);
 		if (hostileNpcs.length < 2) {
 			// Add a new hostile NPC near the player on the sphere
-			const pos = randomSpherePositionNear(world.player.position, 80, 120);
+			const pos = randomSpherePositionNear(world.player.position, 35, 60);
 			world.npcs.push({
 				id: `npc_${Date.now()}_${Math.random().toString(36).slice(2)}`,
 				position: pos,
@@ -536,7 +621,7 @@
 		const collected = world.powerUps.filter((p) => p.collected);
 		for (const pu of collected.slice(0, 2)) {
 			pu.collected = false;
-			const pos = randomSpherePositionNear(world.player.position, 60, 200);
+			const pos = randomSpherePositionNear(world.player.position, 25, 80);
 			pu.position.copy(pos);
 		}
 	}
@@ -545,6 +630,10 @@
 		if (gameState.health <= 0) {
 			gameState.health = 0;
 			gameState.phase = 'gameover';
+			// Disconnect from multiplayer so socket stops reconnecting
+			if (gameState.mode === 'multiplayer') {
+				disconnect();
+			}
 		}
 	}
 </script>
@@ -552,17 +641,20 @@
 <!-- Camera -->
 <FollowCamera />
 
-<!-- Lighting -->
-<T.AmbientLight intensity={0.12} color="#334466" />
-<T.DirectionalLight position={[50, 30, 50]} intensity={0.7} color="#ffffff" />
-<T.DirectionalLight position={[-30, -20, 30]} intensity={0.2} color="#4466aa" />
-<T.PointLight position={[0, 0, 25]} intensity={0.4} color="#6688ff" distance={100} />
+<!-- Lighting — sun-like directional for sphere surface visibility -->
+<T.AmbientLight intensity={0.15} color="#334466" />
+<T.DirectionalLight position={[120, 80, 160]} intensity={0.8} color="#ffffee" />
+<T.DirectionalLight position={[-80, -40, 80]} intensity={0.25} color="#4466aa" />
+<T.PointLight position={[0, 0, 0]} intensity={0.3} color="#6688ff" distance={SPHERE_RADIUS * 1.2} />
 
-<!-- Fog for depth -->
-<T.FogExp2 args={['#000011', 0.003]} attach="fog" />
+<!-- Fog for depth — tuned for sphere radius so horizon is visible -->
+<T.FogExp2 args={['#000811', 0.004]} attach="fog" />
 
 <!-- Background stars -->
 <Starfield count={2500} />
+
+<!-- Sphere surface — visible planet ground with grid lines -->
+<SphereSurface />
 
 <!-- Hex grid (Kadis-Kot strategic area) -->
 <HexGrid />

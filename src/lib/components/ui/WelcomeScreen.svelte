@@ -51,6 +51,14 @@
 		fetchRooms();
 	});
 
+	// Re-fetch rooms whenever the welcome/gameover screen becomes visible
+	$effect(() => {
+		const phase = gameState.phase;
+		if (phase === 'welcome' || phase === 'gameover') {
+			fetchRooms();
+		}
+	});
+
 	async function fetchRooms(): Promise<void> {
 		loadingRooms = true;
 		try {
@@ -105,12 +113,12 @@
 
 		// Only generate world locally for solo mode
 		// For multiplayer, server will send full world state
-		if (mode === 'solo') {
-			// Spawn enough entities to feel populated (view distance ~200 in a 4232x4232 world)
-			world.asteroids = generateAsteroids(400, world.bounds);
-			world.npcs = generateNpcs(gameState.npcCount, world.bounds);
+				if (mode === 'solo') {
+			// Spawn enough entities to feel populated across the sphere
+			world.asteroids = generateAsteroids(400);
+			world.npcs = generateNpcs(gameState.npcCount);
 			world.puzzleNodes = generatePuzzleNodes(12);
-			world.powerUps = generatePowerUps(80, world.bounds);
+			world.powerUps = generatePowerUps(80);
 			gameState.mode = 'solo';
 		}
 

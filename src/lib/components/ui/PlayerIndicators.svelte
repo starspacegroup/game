@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { world } from '$lib/game/world';
+	import { world, sphereDistance, sphereDirection, getPlayerFrame } from '$lib/game/world';
 
 	interface IndicatorData {
 		id: string;
@@ -15,27 +15,13 @@
 	let screenHeight = $state(window.innerHeight);
 
 	// Camera parameters (matching FollowCamera.svelte)
-	const CAMERA_Z = 40;
-	const CAMERA_FOV = 70;
+	const CAMERA_HEIGHT = 25;
+	const CAMERA_FOV = 60;
 
-	// Calculate shortest distance considering world wrap-around
-	function getWrappedDelta(playerPos: number, otherPos: number, bound: number): number {
-		let delta = otherPos - playerPos;
-		const worldSize = bound * 2;
-		
-		// Check if wrapping gives a shorter path
-		if (delta > bound) {
-			delta -= worldSize;
-		} else if (delta < -bound) {
-			delta += worldSize;
-		}
-		return delta;
-	}
-
-	// Calculate visible area in world units at z=0 plane
+	// Calculate visible area in world units at sphere surface
 	function getVisibleBounds(): { halfWidth: number; halfHeight: number } {
 		const aspect = screenWidth / screenHeight;
-		const halfHeight = CAMERA_Z * Math.tan((CAMERA_FOV / 2) * (Math.PI / 180));
+		const halfHeight = CAMERA_HEIGHT * Math.tan((CAMERA_FOV / 2) * (Math.PI / 180));
 		const halfWidth = halfHeight * aspect;
 		return { halfWidth, halfHeight };
 	}
@@ -47,32 +33,38 @@
 		// Edge padding from screen border
 		const padding = 50;
 
+		// Get player's local frame for projecting directions onto screen
+		const { east, north } = getPlayerFrame(world.player.position);
+
 		for (const other of world.otherPlayers) {
-			// Position relative to local player (with wrap-around handling)
-			const dx = getWrappedDelta(world.player.position.x, other.position.x, world.bounds.x);
-			const dy = getWrappedDelta(world.player.position.y, other.position.y, world.bounds.y);
-			const distance = Math.sqrt(dx * dx + dy * dy);
+			// Sphere direction: tangent-plane vector in world space
+			const { dx, dy, dz, dist } = sphereDirection(world.player.position, other.position);
+			const distance = dist;
+
+			if (distance < 5) continue; // Too close, skip
+
+			// Project the tangent direction into the player's screen frame
+			// east maps to screen-right, north maps to screen-up
+			const tangent = { x: dx, y: dy, z: dz };
+			const screenDx = tangent.x * east.x + tangent.y * east.y + tangent.z * east.z;
+			const screenDy = tangent.x * north.x + tangent.y * north.y + tangent.z * north.z;
 
 			// Check if player is on screen (within visible bounds with some margin)
-			const margin = 3; // Units margin before showing indicator
+			const margin = 3;
 			const isOnScreen =
-				Math.abs(dx) < halfWidth - margin && Math.abs(dy) < halfHeight - margin;
+				Math.abs(screenDx) < halfWidth - margin && Math.abs(screenDy) < halfHeight - margin;
 
-			if (!isOnScreen && distance > 5) {
-				// Calculate angle from player to other player
-				const angle = Math.atan2(dy, dx);
+			if (!isOnScreen) {
+				// Calculate angle from player to other player (in screen space)
+				const angle = Math.atan2(screenDy, screenDx);
 
 				// Calculate where to place the indicator on screen edge
-				// Project onto screen space
 				const screenCenterX = screenWidth / 2;
 				const screenCenterY = screenHeight / 2;
 
-				// Direction vector
 				const dirX = Math.cos(angle);
 				const dirY = Math.sin(angle);
 
-				// Find intersection with screen edge
-				// We need to scale the direction to hit the screen boundary
 				const maxX = screenWidth / 2 - padding;
 				const maxY = screenHeight / 2 - padding;
 
@@ -84,14 +76,13 @@
 					scale = Math.min(scale, maxY / Math.abs(dirY));
 				}
 
-				// Screen position for indicator (note: Y is inverted in screen coords)
 				const indicatorX = screenCenterX + dirX * scale;
-				const indicatorY = screenCenterY - dirY * scale; // Invert Y for screen coords
+				const indicatorY = screenCenterY - dirY * scale;
 
 				newIndicators.push({
 					id: other.id,
 					username: other.username || 'Player',
-					angle: angle * (180 / Math.PI), // Convert to degrees for CSS
+					angle: angle * (180 / Math.PI),
 					distance: Math.round(distance),
 					x: indicatorX,
 					y: indicatorY
