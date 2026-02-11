@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getSphereOrientation } from '$lib/game/world';
+	import { world, getSphereOrientation, projectToSphere } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -18,6 +18,10 @@
 	// Track conversion state for reactive visuals
 	let isConverted = $state(false);
 	let conversionProgress = $state(0);
+
+	// Debug: line from converted NPC to target node
+	let debugLineGeometry: THREE.BufferGeometry | undefined = $state();
+	let hasTargetLine = $state(false);
 
 	useTask((delta) => {
 		if (cachedIndex < 0) cachedIndex = world.npcs.findIndex((n) => n.id === id);
@@ -43,6 +47,25 @@
 			glowIntensity = 0.4 + Math.sin(glowPhase) * 0.2;
 			// Data stream animation
 			dataStreamPhase += delta * 5;
+
+			// Debug: draw line to target node
+			const targetNode = data.targetNodeId ? world.puzzleNodes.find(n => n.id === data.targetNodeId) : null;
+			if (targetNode) {
+				const surfaceTarget = targetNode.position.clone();
+				projectToSphere(surfaceTarget);
+				const positions = new Float32Array([
+					data.position.x, data.position.y, data.position.z,
+					surfaceTarget.x, surfaceTarget.y, surfaceTarget.z
+				]);
+				if (!debugLineGeometry) {
+					debugLineGeometry = new THREE.BufferGeometry();
+				}
+				debugLineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+				debugLineGeometry.attributes.position.needsUpdate = true;
+				hasTargetLine = true;
+			} else {
+				hasTargetLine = false;
+			}
 		} else if (conversionProgress > 0) {
 			// Converting - rapid flickering
 			glowIntensity = 0.5 + Math.sin(glowPhase * 10) * 0.5;
@@ -114,3 +137,10 @@
 		</T.Mesh>
 	{/if}
 </T.Group>
+
+{#if isConverted && hasTargetLine && debugLineGeometry}
+	<T.Line>
+		<T is={debugLineGeometry} />
+		<T.LineBasicMaterial color="#00ffff" linewidth={2} transparent opacity={0.8} />
+	</T.Line>
+{/if}

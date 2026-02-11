@@ -73,6 +73,16 @@ function sphereDistance(a: Vector3, b: Vector3): number {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+/** Angular distance between two position vectors (angle from sphere center).
+ *  Works correctly for points at different radii (surface vs interior). */
+function angularDistance(a: Vector3, b: Vector3): number {
+  const lenA = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  const lenB = Math.sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+  if (lenA < 0.001 || lenB < 0.001) return Math.PI;
+  const dot = (a.x * b.x + a.y * b.y + a.z * b.z) / (lenA * lenB);
+  return Math.acos(Math.max(-1, Math.min(1, dot)));
+}
+
 /** Get tangent frame (east, north, normal) at a position on the sphere.
  *  Uses Y-up reference; switches to Z-up near the Y-axis poles. */
 function getTangentFrame(pos: Vector3): { east: Vector3; north: Vector3; normal: Vector3; } {
@@ -187,6 +197,13 @@ export class GameRoom implements DurableObject {
         // Restore players (they'll rejoin via WebSocket)
         for (const player of stored.players) {
           this.players.set(player.id, player);
+        }
+
+        // Re-assign converted NPCs to nearest nodes (fixes stale targets from old code)
+        for (const npc of this.npcs) {
+          if (npc.converted && !npc.destroyed) {
+            npc.targetNodeId = this.findBestNodeForNpc(npc);
+          }
         }
       }
 
@@ -445,17 +462,7 @@ export class GameRoom implements DurableObject {
         if (npc.conversionProgress >= 1) {
           npc.converted = true;
           npc.conversionProgress = 1;
-          let nearestNode: PuzzleNodeState | null = null;
-          let nearestDist = Infinity;
-          for (const node of this.puzzleNodes) {
-            if (node.connected) continue;
-            const dist = sphereDistance(npc.position, node.position);
-            if (dist < nearestDist) {
-              nearestDist = dist;
-              nearestNode = node;
-            }
-          }
-          npc.targetNodeId = nearestNode?.id || null;
+          npc.targetNodeId = this.findBestNodeForNpc(npc);
 
           this.broadcast({
             type: 'npc-converted',
@@ -484,10 +491,14 @@ export class GameRoom implements DurableObject {
   }
 
   private updateConvertedNpc(npc: NpcState, deltaTime: number): void {
-    if (!npc.targetNodeId) return;
+    // Reassign if we have no target or the current target is already connected
+    const currentTarget = npc.targetNodeId ? this.puzzleNodes.find(n => n.id === npc.targetNodeId) : null;
+    if (!currentTarget || currentTarget.connected) {
+      this.reassignConvertedNpc(npc);
+      if (!npc.targetNodeId) return; // No unconnected nodes left
+    }
 
-    const targetNode = this.puzzleNodes.find(n => n.id === npc.targetNodeId);
-    if (!targetNode) return;
+    const targetNode = this.puzzleNodes.find(n => n.id === npc.targetNodeId)!;
 
     // Project node position to sphere surface — NPC orbits on surface above the interior node
     const surfaceTarget = projectToSurfaceV(targetNode.position);
@@ -1114,22 +1125,9 @@ export class GameRoom implements DurableObject {
     npc.converted = true;
     npc.conversionProgress = 1;
 
-    // Assign to nearest unconnected puzzle node
-    let nearestNode: PuzzleNodeState | null = null;
-    let nearestDist = Infinity;
-
-    for (const node of this.puzzleNodes) {
-      if (node.connected) continue;
-      const dist = sphereDistance(npc.position, node.position);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestNode = node;
-      }
-    }
-
-    if (nearestNode) {
-      npc.targetNodeId = nearestNode.id;
-    }
+    // Assign to nearest unconnected puzzle node using angular distance,
+    // preferring nodes not already targeted by other converted NPCs
+    npc.targetNodeId = this.findBestNodeForNpc(npc);
 
     this.broadcast({
       type: 'npc-converted',
@@ -1137,6 +1135,28 @@ export class GameRoom implements DurableObject {
       convertedBy,
       targetNodeId: npc.targetNodeId || ''
     });
+  }
+
+  /** Reassign a converted NPC to the nearest unconnected puzzle node */
+  private reassignConvertedNpc(npc: NpcState): void {
+    npc.targetNodeId = this.findBestNodeForNpc(npc);
+  }
+
+  /** Find the nearest unconnected puzzle node for a converted NPC. */
+  private findBestNodeForNpc(npc: NpcState): string | null {
+    let nearestNode: PuzzleNodeState | null = null;
+    let nearestDist = Infinity;
+
+    for (const node of this.puzzleNodes) {
+      if (node.connected) continue;
+      const dist = angularDistance(npc.position, node.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestNode = node;
+      }
+    }
+
+    return nearestNode?.id || null;
   }
 
   private checkPuzzleProgress(): void {
@@ -1172,7 +1192,7 @@ export class GameRoom implements DurableObject {
             !a.destroyed && sphereDistance(a.position, player.position) < ENTITY_SYNC_RADIUS
           ),
           npcs: this.npcs.filter(n =>
-            !n.destroyed && sphereDistance(n.position, player.position) < ENTITY_SYNC_RADIUS
+            !n.destroyed && (n.converted || sphereDistance(n.position, player.position) < ENTITY_SYNC_RADIUS)
           ),
           powerUps: this.powerUps.filter(p =>
             !p.collected && sphereDistance(p.position, player.position) < ENTITY_SYNC_RADIUS

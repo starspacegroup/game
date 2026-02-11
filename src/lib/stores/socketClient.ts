@@ -304,6 +304,13 @@ function handleMessage(data: ServerMessage): void {
 
     case 'npc-converted': {
       gameState.convertedNpcCount++;
+      // Apply conversion state immediately so the NPC is recognized as an ally
+      const convertedNpc = world.npcs.find(n => n.id === data.npcId);
+      if (convertedNpc) {
+        convertedNpc.converted = true;
+        convertedNpc.conversionProgress = 1;
+        convertedNpc.targetNodeId = data.targetNodeId || null;
+      }
       break;
     }
 
@@ -649,10 +656,12 @@ function syncNpcs(serverNpcs: NpcState[]): void {
   }
 
   // Only mark nearby NPCs as destroyed if the server doesn't include them.
-  // The server only sends entities within ~250 units, so distant entities
+  // The server only sends entities within its sync radius, so distant entities
   // missing from the list are simply out of sync range, NOT destroyed.
+  // Never destroy converted NPCs — the server always syncs them, so if they're
+  // missing it's a transient gap, not a real destruction.
   for (const local of world.npcs) {
-    if (!local.destroyed && !serverIds.has(local.id)) {
+    if (!local.destroyed && !local.converted && !serverIds.has(local.id)) {
       if (sphereDistance(world.player.position, local.position) < 200) {
         local.destroyed = true;
       }

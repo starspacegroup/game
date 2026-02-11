@@ -299,8 +299,9 @@
 					npc.converted = true;
 					npc.conversionProgress = 1;
 					gameState.convertedNpcCount++;
-					// Find nearest puzzle node to orbit
-					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes);
+					// Find nearest puzzle node
+					const takenNodeIds = getTargetedNodeIds(npc);
+					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds);
 					npc.targetNodeId = nearestNode?.id || null;
 				}
 				// During conversion, spin in place
@@ -358,15 +359,29 @@
 		}
 	}
 
+	/** Get set of node IDs already targeted by other converted NPCs (excluding the given NPC) */
+	function getTargetedNodeIds(excludeNpc: typeof world.npcs[0]): Set<string> {
+		const ids = new Set<string>();
+		for (const other of world.npcs) {
+			if (other === excludeNpc || other.destroyed || !other.converted) continue;
+			if (other.targetNodeId) ids.add(other.targetNodeId);
+		}
+		return ids;
+	}
+
 	function updateConvertedNpc(npc: typeof world.npcs[0], dt: number): void {
 		// Find target puzzle node (now inside the sphere)
 		let targetNode = world.puzzleNodes.find(n => n.id === npc.targetNodeId);
 		
-		if (!targetNode) {
-			const nearest = findNearestPuzzleNode(npc.position, world.puzzleNodes);
+		// Reassign if no target or current target is already connected
+		if (!targetNode || targetNode.connected) {
+			const takenNodeIds = getTargetedNodeIds(npc);
+			const nearest = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds);
 			if (nearest) {
 				targetNode = nearest;
 				npc.targetNodeId = nearest.id;
+			} else {
+				return; // No unconnected nodes left
 			}
 		}
 		
@@ -591,8 +606,8 @@
 		// Asteroids: filter by view distance
 		asteroidIds = world.asteroids.filter((a) => !a.destroyed && isVisible(a.position)).map((a) => a.id);
 
-		// NPCs: filter by view distance
-		npcIds = world.npcs.filter((n) => !n.destroyed && isVisible(n.position)).map((n) => n.id);
+		// NPCs: filter by view distance (always show converted allies)
+		npcIds = world.npcs.filter((n) => !n.destroyed && (n.converted || isVisible(n.position))).map((n) => n.id);
 
 		// Lasers: filter by view distance
 		laserIds = world.lasers.filter((l) => l.life > 0 && isVisible(l.position)).map((l) => l.id);

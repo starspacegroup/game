@@ -60,20 +60,28 @@ export function generateHexGrid(
 	return positions;
 }
 
-/** Find the nearest puzzle node to a given position (using chord distance on sphere) */
+/** Find the nearest unconnected puzzle node to a given position.
+ *  Uses angular distance (angle between directions from sphere center)
+ *  which works correctly for surface vs interior comparisons.
+ *  @param excludeIds  Optional set of node IDs to deprioritize (already targeted by other NPCs).
+ *                     If all untargeted nodes are connected, falls back to any nearest unconnected. */
 export function findNearestPuzzleNode(
 	position: THREE.Vector3,
-	nodes: PuzzleNodeData[]
+	nodes: PuzzleNodeData[],
+	_excludeIds?: Set<string>
 ): PuzzleNodeData | null {
 	if (nodes.length === 0) return null;
 
 	let nearest: PuzzleNodeData | null = null;
-	let minDist = Infinity;
+	let nearestAngle = Infinity;
 
 	for (const node of nodes) {
-		const dist = wrappedDistance(position, node.position);
-		if (dist < minDist) {
-			minDist = dist;
+		if (node.connected) continue;
+		// Angular distance: angle between position vectors from sphere center
+		const dot = position.dot(node.position) / (position.length() * node.position.length());
+		const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+		if (angle < nearestAngle) {
+			nearestAngle = angle;
 			nearest = node;
 		}
 	}
