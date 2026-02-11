@@ -11,6 +11,7 @@
 	} from '$lib/game/procedural';
 	import { connectToServer, disconnect } from '$lib/stores/socketClient';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 
 	interface RoomInfo {
 		id: string;
@@ -29,21 +30,54 @@
 	let joiningByCode = $state(false);
 	let deletingRoomId = $state<string | null>(null);
 
-	onMount(() => {
-		// Load auth from storage
-		authState.loadFromStorage();
-
-		// Check for auth callback data in URL
+	onMount(async () => {
+		// Check for auth callback data in URL (fresh login)
 		const params = new URLSearchParams(window.location.search);
 		const authData = params.get('auth');
 		if (authData) {
 			try {
 				const user = JSON.parse(decodeURIComponent(authData));
 				authState.setUser(user);
-				// Clean up URL
 				window.history.replaceState({}, '', '/');
 			} catch {
 				console.error('Failed to parse auth data');
+			}
+		}
+
+		// If not logged in yet, try server session (from layout data)
+		if (!authState.isLoggedIn) {
+			const serverUser = $page.data.user;
+			if (serverUser) {
+				authState.setUser({
+					id: serverUser.id,
+					username: serverUser.username,
+					avatar: serverUser.avatar,
+					accessToken: '' // token stays server-side in cookie
+				});
+			}
+		}
+
+		// If still not logged in, try localStorage
+		if (!authState.isLoggedIn) {
+			authState.loadFromStorage();
+		}
+
+		// Final fallback: ask the server directly (covers edge cases
+		// where cookie exists but layout data wasn't hydrated)
+		if (!authState.isLoggedIn) {
+			try {
+				const res = await fetch('/api/auth/me');
+				const data = await res.json() as { user?: { id: string; username: string; avatar: string | null } | null };
+				if (data.user) {
+					authState.setUser({
+						id: data.user.id,
+						username: data.user.username,
+						avatar: data.user.avatar,
+						accessToken: ''
+					});
+				}
+			} catch {
+				// Server unreachable — stay logged out
 			}
 		}
 
@@ -99,8 +133,13 @@
 		window.location.href = '/api/auth/discord';
 	}
 
-	function logout(): void {
+	async function logout(): Promise<void> {
 		authState.logout();
+		try {
+			await fetch('/api/auth/logout', { method: 'POST' });
+		} catch {
+			// Cookie clear is best-effort
+		}
 	}
 
 	function startGame(mode: 'solo' | 'multiplayer' = 'solo', roomId?: string): void {
@@ -185,10 +224,13 @@
 				</div>
 			{/if}
 
+			<div class="org-line">
+				<img src="/logo.png" alt="*Space logo" class="org-logo" />
+				<span class="org-name">*SPACE</span>
+			</div>
 			<h1 class="title">
 				<span class="title-game">GAME</span>
 			</h1>
-			<div class="subtitle">BY AND FOR *SPACE DISCORD</div>
 
 			{#if authState.isLoggedIn}
 				<div class="user-info">
@@ -267,27 +309,37 @@
 			{/if}
 
 			<p class="lore">
-				Solo fight or collaborate to decode the stars.
+				Navigate the sphere. Convert the hostile. Decode the hidden pattern.
 				<br />
-				The Kal-Toh awaits those who see beyond the chaos.
+				Alone or together — the puzzle awaits.
 			</p>
 
 			<div class="features">
 				<div class="feature">
 					<span class="feature-icon">&#9733;</span>
-					<span>Destroy asteroids & NPCs</span>
+					<span>Convert hostile ships into allied satellites</span>
 				</div>
 				<div class="feature">
 					<span class="feature-icon">&#9830;</span>
-					<span>Solve the hidden Kal-Toh puzzle</span>
+					<span>Solve the hidden puzzle — align nodes into a perfect structure</span>
 				</div>
 				<div class="feature">
 					<span class="feature-icon">&#9824;</span>
-					<span>Multiplayer collaboration</span>
+					<span>Collect power-ups: shields, speed boost, multi-shot</span>
+				</div>
+				<div class="feature">
+					<span class="feature-icon">&#9679;</span>
+					<span>Explore a seamless sphere world</span>
+				</div>
+				<div class="feature">
+					<span class="feature-icon">&#9672;</span>
+					<span>Collaborate in real-time multiplayer</span>
 				</div>
 			</div>
 
-			<div class="domain">*SPACE DISCORD</div>
+			<div class="footer">
+				<a href="https://starspace.group" target="_blank" rel="noopener noreferrer" class="footer-link">starspace.group</a>
+			</div>
 		</div>
 	</div>
 {/if}
@@ -341,7 +393,7 @@
 	.title {
 		font-size: var(--font-2xl, 1.6rem);
 		font-weight: 900;
-		margin: 0 0 4px 0;
+		margin: 0 0 var(--spacing-lg, 16px) 0;
 		letter-spacing: 3px;
 		line-height: 1;
 	}
@@ -355,12 +407,26 @@
 		filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.4));
 	}
 
-	.subtitle {
+	.org-line {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		margin-bottom: 4px;
+	}
+
+	.org-logo {
+		width: 20px;
+		height: 20px;
+		object-fit: contain;
+		filter: drop-shadow(0 0 6px rgba(68, 136, 255, 0.4));
+	}
+
+	.org-name {
 		font-family: var(--hud-font, monospace);
 		font-size: var(--font-xs, 0.6rem);
 		color: #6688aa;
 		letter-spacing: 3px;
-		margin-bottom: var(--spacing-lg, 16px);
 	}
 
 	.user-info {
@@ -712,11 +778,21 @@
 		color: #4488ff;
 	}
 
-	.domain {
+	.footer {
+		margin-top: var(--spacing-lg, 16px);
+	}
+
+	.footer-link {
 		font-family: var(--hud-font, monospace);
 		font-size: 0.5rem;
 		color: #334455;
 		letter-spacing: 2px;
+		text-decoration: none;
+		transition: color 0.2s;
+	}
+
+	.footer-link:hover {
+		color: #6688aa;
 	}
 
 	/* ===== LARGER PHONES (375px+) ===== */
@@ -726,7 +802,7 @@
 			letter-spacing: 3px;
 		}
 
-		.subtitle {
+		.org-name {
 			letter-spacing: 4px;
 		}
 
@@ -759,9 +835,14 @@
 			font-size: 1.2rem;
 		}
 
-		.subtitle {
+		.org-name {
 			font-size: 0.7rem;
 			letter-spacing: 5px;
+		}
+
+		.org-logo {
+			width: 24px;
+			height: 24px;
 		}
 
 		.avatar {
@@ -808,9 +889,14 @@
 			letter-spacing: 4px;
 		}
 
-		.subtitle {
+		.org-name {
 			font-size: 0.75rem;
-			margin-bottom: 24px;
+			letter-spacing: 4px;
+		}
+
+		.org-logo {
+			width: 28px;
+			height: 28px;
 		}
 
 		.final-score {
@@ -878,11 +964,6 @@
 
 		.feature {
 			font-size: 0.75rem;
-		}
-
-		.domain {
-			font-size: 0.6rem;
-			letter-spacing: 3px;
 		}
 	}
 </style>

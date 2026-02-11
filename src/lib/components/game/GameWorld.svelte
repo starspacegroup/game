@@ -754,7 +754,7 @@
 <!-- Sphere surface — visible planet ground with grid lines -->
 <SphereSurface />
 
-<!-- Hex grid (Kadis-Kot strategic area) -->
+<!-- Hex grid (strategic area) -->
 <HexGrid />
 
 <!-- Player ship -->
@@ -785,7 +785,7 @@
 	<PowerUp {id} />
 {/each}
 
-<!-- Puzzle structure (Kal-Toh) -->
+<!-- Puzzle structure -->
 <PuzzleStructure />
 
 <!-- Score popups -->

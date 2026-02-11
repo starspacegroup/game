@@ -38,7 +38,7 @@ export function getPuzzleConnections(nodes: PuzzleNodeData[]): [number, number][
 	return connections;
 }
 
-/** Generate hex grid positions for the Kadis-Kot element */
+/** Generate hex grid positions for the strategic area */
 export function generateHexGrid(
 	gridRadius: number,
 	center: THREE.Vector3

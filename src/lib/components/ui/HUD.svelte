@@ -55,7 +55,7 @@
 	<!-- Puzzle progress (only show when some progress exists) -->
 	{#if gameState.puzzleProgress > 0.01}
 		<div class="puzzle-progress">
-			<span class="label">KAL-TOH</span>
+			<span class="label">PUZZLE</span>
 			<div class="puzzle-bar">
 				<div
 					class="puzzle-fill"

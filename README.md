@@ -1,12 +1,12 @@
-# Starspace Puzzle Wars
+# Game
 
-A mobile-first, responsive, fullscreen 3D multiplayer space game built with SvelteKit, Threlte (Three.js), and Socket.io.
+A mobile-first, responsive, fullscreen 3D multiplayer space game built with SvelteKit, Threlte (Three.js), and Cloudflare Workers + Durable Objects.
 
 ## Game Overview
 
-**Solo Mode:** Classic 3D Asteroids — pilot your ship, destroy NPCs, collect power-ups, and survive waves of enemies. The asteroid field hides a secret puzzle structure (Kal-Toh) that isn't obvious when playing alone.
+**Solo Mode:** Pilot your ship across the surface of a sphere, convert hostile NPCs into allied satellites, collect power-ups, and survive waves of enemies. A hidden puzzle structure exists within the sphere — not obvious when playing alone.
 
-**Multiplayer Mode:** As players join, NPC bots decrease. The hidden puzzle reveals itself — players collaborate to align puzzle nodes into a symmetrical polyhedron, inspired by Star Trek's Kal-Toh. Strategic hex-grid elements (Kadis-Kot) and combat (Kotra) add depth.
+**Multiplayer Mode:** As players join, NPC bots decrease. The hidden puzzle reveals itself — players collaborate to align puzzle nodes into a symmetrical structure by converting NPCs and interacting with nodes directly.
 
 ## Controls
 
@@ -18,7 +18,7 @@ A mobile-first, responsive, fullscreen 3D multiplayer space game built with Svel
 
 - **SvelteKit** — App framework
 - **Threlte** — Svelte + Three.js for 3D rendering
-- **Socket.io** — Real-time multiplayer (requires separate server)
+- **Cloudflare Workers + Durable Objects** — Real-time multiplayer (WebSocket)
 - **Cloudflare Pages** — Deployment target
 
 ## Development
@@ -42,10 +42,10 @@ npm run dev
 
 ## Multiplayer Server
 
-The game includes Socket.io client integration. To enable multiplayer, run a separate Node.js Socket.io server that handles:
+Multiplayer runs on Cloudflare Workers with Durable Objects for room-based WebSocket connections. Each room is a Durable Object that handles:
 
 - Player join/leave events
-- Position synchronization
+- Position synchronization (~20 ticks/sec server-authoritative)
 - Puzzle state sharing
 - Chat messages
 

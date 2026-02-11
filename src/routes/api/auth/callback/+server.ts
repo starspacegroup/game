@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI } from '$env/static/private';
+import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } from '$env/static/private';
 import type { RequestHandler } from './$types';
 
 interface DiscordTokenResponse {
@@ -18,7 +18,7 @@ interface DiscordUserResponse {
   email?: string;
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, cookies }) => {
   const code = url.searchParams.get('code');
 
   if (!code) {
@@ -37,7 +37,7 @@ export const GET: RequestHandler = async ({ url }) => {
         client_secret: DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: DISCORD_REDIRECT_URI
+        redirect_uri: `${url.origin}/api/auth/callback`
       })
     });
 
@@ -60,7 +60,25 @@ export const GET: RequestHandler = async ({ url }) => {
 
     const userData = await userResponse.json() as DiscordUserResponse;
 
-    // Redirect back with user data encoded in URL (client will store it)
+    // Store session in HTTP-only cookie (persists across browser sessions)
+    const session = JSON.stringify({
+      id: userData.id,
+      username: userData.username,
+      avatar: userData.avatar,
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt: Date.now() + tokenData.expires_in * 1000
+    });
+
+    cookies.set('session', session, {
+      path: '/',
+      httpOnly: true,
+      secure: url.protocol === 'https:',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30 // 30 days
+    });
+
+    // Redirect back with user data for client-side hydration
     const authData = encodeURIComponent(
       JSON.stringify({
         id: userData.id,

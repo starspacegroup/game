@@ -67,7 +67,7 @@ Entities are generated procedurally (`src/lib/game/procedural.ts`) on the sphere
 
 Simple distance-based (sum of radii vs chord distance). Uses `sphereDistance()` for accurate 3D collision on the sphere surface. No physics engine.
 
-### Puzzle System (Kal-Toh)
+### Puzzle System
 
 12 puzzle nodes placed randomly. Players and converted NPCs push nodes toward target positions. NPCs convert from hostile to allied via repeated laser hits, then orbit puzzle nodes and generate hints.
 
