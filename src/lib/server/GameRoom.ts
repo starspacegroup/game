@@ -501,12 +501,13 @@ export class GameRoom implements DurableObject {
 
     const targetNode = this.puzzleNodes.find(n => n.id === npc.targetNodeId)!;
 
-    // Project node position to sphere surface — NPC orbits on surface above the interior node
+    // NPC stays on the sphere surface.
+    // Orbit the surface point directly above the puzzle node.
     const surfaceTarget = projectToSurfaceV(targetNode.position);
     const dist = sphereDistance(npc.position, surfaceTarget);
 
-    // Navigate to the surface point above the puzzle node
     if (dist > npc.orbitDistance + 2) {
+      // Navigate on sphere surface toward the point above the node
       const navSpeed = 6 * 3;
       moveToward(npc.position, surfaceTarget, navSpeed, deltaTime);
 
@@ -517,7 +518,7 @@ export class GameRoom implements DurableObject {
       const localY = dir.dx * frame.north.x + dir.dy * frame.north.y + dir.dz * frame.north.z;
       npc.rotation.z = Math.atan2(localX, -localY);
     } else {
-      // Orbit on the sphere surface above the interior node
+      // Orbit on sphere surface above the node
       npc.orbitAngle += deltaTime * 1.5;
       const frame = getTangentFrame(surfaceTarget);
       const ox = Math.cos(npc.orbitAngle) * npc.orbitDistance;
@@ -544,7 +545,7 @@ export class GameRoom implements DurableObject {
           fromNpcId: npc.id
         });
 
-        // Help push node toward target (inside sphere, no surface projection)
+        // Help push node toward target (inside sphere)
         if (!targetNode.connected) {
           const tdx = targetNode.targetPosition.x - targetNode.position.x;
           const tdy = targetNode.targetPosition.y - targetNode.position.y;
@@ -1193,9 +1194,9 @@ export class GameRoom implements DurableObject {
       }
     }
 
-    // Prefer untargeted only if it's within 1.5x the distance of the absolute nearest.
-    // Otherwise just go to the nearest node — don't fly across the sphere.
-    if (bestUntargeted && bestUntargetedDist <= bestOverallDist * 1.5) {
+    // Always prefer an untargeted node — each NPC should service a different node.
+    // Only fall back to a targeted (shared) node if every unconnected node is already claimed.
+    if (bestUntargeted) {
       return bestUntargeted.id;
     }
     return bestOverall?.id || null;

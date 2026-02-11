@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, getSphereOrientation, projectToSphere } from '$lib/game/world';
+	import { world, getSphereOrientation } from '$lib/game/world';
 
 	interface Props {
 		id: string;
@@ -51,11 +51,10 @@
 			// Debug: draw line to target node
 			const targetNode = data.targetNodeId ? world.puzzleNodes.find(n => n.id === data.targetNodeId) : null;
 			if (targetNode) {
-				const surfaceTarget = targetNode.position.clone();
-				projectToSphere(surfaceTarget);
+				// Point directly to the actual node position (inside the sphere)
 				const positions = new Float32Array([
 					data.position.x, data.position.y, data.position.z,
-					surfaceTarget.x, surfaceTarget.y, surfaceTarget.z
+					targetNode.position.x, targetNode.position.y, targetNode.position.z
 				]);
 				if (!debugLineGeometry) {
 					debugLineGeometry = new THREE.BufferGeometry();

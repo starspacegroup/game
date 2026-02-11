@@ -385,7 +385,7 @@
 	}
 
 	function updateConvertedNpc(npc: typeof world.npcs[0], dt: number): void {
-		// Find target puzzle node (now inside the sphere)
+		// Find target puzzle node
 		let targetNode = world.puzzleNodes.find(n => n.id === npc.targetNodeId);
 		
 		// Reassign if no target or current target is already connected
@@ -399,23 +399,20 @@
 				return; // No unconnected nodes left
 			}
 		}
-		
 		if (!targetNode) return;
 
-		// NPC orbits on the SURFACE above the node's projected position
+		// NPC stays on the sphere surface.
+		// Orbit the surface point directly above the puzzle node.
 		const surfaceTarget = targetNode.position.clone();
-		projectToSphere(surfaceTarget); // project node position up to sphere surface
-		
+		projectToSphere(surfaceTarget);
 		const dist = sphereDistance(npc.position, surfaceTarget);
 
-		// Navigate to the surface point above the puzzle node
 		if (dist > npc.orbitDistance + 2) {
+			// Navigate on sphere surface toward the point above the node
 			const { dx, dy, dz, dist: dMag } = sphereDirection(npc.position, surfaceTarget);
 			const navSpeed = NPC_SPEED * 3;
 			if (dMag > 0.01) {
-				// Use tangent vector directly as 3D velocity direction
 				npc.velocity.set(dx / dMag * navSpeed, dy / dMag * navSpeed, dz / dMag * navSpeed);
-				// Facing: project into local frame via dot products
 				const { east, north } = getTangentFrame(npc.position);
 				const tangent = new THREE.Vector3(dx, dy, dz);
 				npc.rotation.z = Math.atan2(tangent.dot(east), -tangent.dot(north));
@@ -423,7 +420,7 @@
 			npc.position.addScaledVector(npc.velocity, dt);
 			projectToSphere(npc.position);
 		} else {
-			// Orbit on the sphere surface above the node
+			// Orbit on sphere surface above the node
 			npc.orbitAngle += dt * 1.5;
 			const { east: te, north: tn } = getTangentFrame(surfaceTarget);
 			npc.position.copy(surfaceTarget)
@@ -441,7 +438,7 @@
 				gameState.addHint(targetNode.id, hint);
 				gameState.score += 5;
 				
-				// Help push the node toward its target inside the sphere (no surface projection)
+				// Help push the node toward its target inside the sphere
 				if (!targetNode.connected) {
 					targetNode.position.lerp(targetNode.targetPosition, 0.01);
 				}

@@ -113,10 +113,9 @@ export function findNearestPuzzleNode(
 		}
 	}
 
-	// Prefer untargeted node ONLY if it's within 1.5x the distance of the absolute nearest.
-	// Otherwise just go to the nearest node even if another NPC is already heading there.
-	// This prevents converted NPCs from flying across the sphere to a distant untargeted node.
-	if (bestUntargeted && bestUntargetedDist <= bestOverallDist * 1.5) {
+	// Always prefer an untargeted node — each NPC should service a different node.
+	// Only fall back to a targeted (shared) node if every unconnected node is already claimed.
+	if (bestUntargeted) {
 		return bestUntargeted;
 	}
 	return bestOverall;
