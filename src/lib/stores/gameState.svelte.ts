@@ -1,3 +1,58 @@
+// ============================================
+// Active buff / debuff system
+// ============================================
+
+export type BuffType = 'speed' | 'shield' | 'multishot';
+
+export interface ActiveBuff {
+	type: BuffType;
+	label: string;
+	icon: string;
+	color: string;
+	startedAt: number;
+	expiresAt: number;
+	/** 0..1 remaining fraction */
+	get remaining(): number;
+}
+
+class BuffInstance implements ActiveBuff {
+	type: BuffType;
+	label: string;
+	icon: string;
+	color: string;
+	startedAt: number;
+	expiresAt: number;
+
+	constructor(type: BuffType, label: string, icon: string, color: string, durationMs: number) {
+		this.type = type;
+		this.label = label;
+		this.icon = icon;
+		this.color = color;
+		this.startedAt = Date.now();
+		this.expiresAt = this.startedAt + durationMs;
+	}
+
+	get remaining(): number {
+		const now = Date.now();
+		if (now >= this.expiresAt) return 0;
+		return (this.expiresAt - now) / (this.expiresAt - this.startedAt);
+	}
+}
+
+// ============================================
+// Pickup notification system
+// ============================================
+
+export interface PickupNotification {
+	id: number;
+	type: 'health' | 'speed' | 'multishot' | 'shield';
+	label: string;
+	icon: string;
+	color: string;
+	detail: string;
+	timestamp: number;
+}
+
 /** Reactive game state for UI updates */
 class GameStore {
 	phase = $state<'welcome' | 'playing' | 'paused' | 'gameover'>('welcome');
@@ -22,6 +77,17 @@ class GameStore {
 	latestHint = $state<string | null>(null);
 	dataCollected = $state(0); // Total data fragments collected from converted NPCs
 
+	// Active buffs (time-limited effects)
+	activeBuffs = $state<ActiveBuff[]>([]);
+
+	// Pickup notifications (animated toasts)
+	pickupNotifications = $state<PickupNotification[]>([]);
+	private nextNotifId = 0;
+
+	// Health flash for animated heal feedback
+	healthFlash = $state(false);
+	previousHealth = $state(100);
+
 	get healthPercent(): number {
 		return (this.health / this.maxHealth) * 100;
 	}
@@ -42,6 +108,60 @@ class GameStore {
 		}, 5000);
 	}
 
+	/** Add a buff with duration; replaces existing buff of same type */
+	addBuff(type: BuffType, durationMs: number): void {
+		// Remove existing buff of same type
+		this.activeBuffs = this.activeBuffs.filter(b => b.type !== type);
+
+		const meta = BUFF_META[type];
+		const buff = new BuffInstance(type, meta.label, meta.icon, meta.color, durationMs);
+		this.activeBuffs = [...this.activeBuffs, buff];
+
+		// Auto-remove when expired
+		setTimeout(() => {
+			this.activeBuffs = this.activeBuffs.filter(b => b !== buff);
+		}, durationMs + 100);
+	}
+
+	/** Show a pickup notification toast */
+	notifyPickup(type: 'health' | 'speed' | 'multishot' | 'shield', detail: string): void {
+		const meta = PICKUP_META[type];
+		const notif: PickupNotification = {
+			id: this.nextNotifId++,
+			type,
+			label: meta.label,
+			icon: meta.icon,
+			color: meta.color,
+			detail,
+			timestamp: Date.now()
+		};
+		this.pickupNotifications = [...this.pickupNotifications, notif];
+
+		// Auto-remove after animation
+		setTimeout(() => {
+			this.pickupNotifications = this.pickupNotifications.filter(n => n.id !== notif.id);
+		}, 2500);
+	}
+
+	/** Trigger health bar flash animation */
+	flashHealth(): void {
+		this.healthFlash = true;
+		setTimeout(() => {
+			this.healthFlash = false;
+		}, 600);
+	}
+
+	/** Prune expired buffs (call from game loop) */
+	tickBuffs(): void {
+		const now = Date.now();
+		const before = this.activeBuffs.length;
+		this.activeBuffs = this.activeBuffs.filter(b => now < b.expiresAt);
+		if (this.activeBuffs.length !== before) {
+			// Trigger reactivity
+			this.activeBuffs = [...this.activeBuffs];
+		}
+	}
+
 	reset(): void {
 		this.phase = 'welcome';
 		this.score = 0;
@@ -55,7 +175,26 @@ class GameStore {
 		this.hints = [];
 		this.latestHint = null;
 		this.dataCollected = 0;
+		this.activeBuffs = [];
+		this.pickupNotifications = [];
+		this.healthFlash = false;
+		this.previousHealth = 100;
 	}
 }
+
+// Metadata for buff types
+const BUFF_META: Record<BuffType, { label: string; icon: string; color: string; }> = {
+	speed: { label: 'SPEED BOOST', icon: '⚡', color: '#ffdd00' },
+	shield: { label: 'SHIELD', icon: '🛡️', color: '#4488ff' },
+	multishot: { label: 'MULTI-SHOT', icon: '✦', color: '#ff44ff' },
+};
+
+// Metadata for pickup notification types
+const PICKUP_META: Record<string, { label: string; icon: string; color: string; }> = {
+	health: { label: 'REPAIR', icon: '✚', color: '#44ff44' },
+	speed: { label: 'SPEED BOOST', icon: '⚡', color: '#ffdd00' },
+	multishot: { label: 'MULTI-SHOT', icon: '✦', color: '#ff44ff' },
+	shield: { label: 'SHIELD', icon: '🛡️', color: '#4488ff' },
+};
 
 export const gameState = new GameStore();

@@ -98,6 +98,9 @@
 
 		updatePowerUps(dt);
 
+		// Tick buff expiry timers
+		gameState.tickBuffs();
+
 		if (!isMP) {
 			// Solo mode: client handles all collision detection
 			// Check laser collisions every frame (lasers move fast and can skip through targets)
@@ -488,21 +491,43 @@
 					if (pu && !pu.collected) {
 						pu.collected = true;
 						switch (pu.type) {
-							case 'health':
-								gameState.health = Math.min(gameState.maxHealth, gameState.health + 25);
+							case 'health': {
+								const healAmount = 25;
+								const before = gameState.health;
+								gameState.health = Math.min(gameState.maxHealth, gameState.health + healAmount);
+								const actual = Math.round(gameState.health - before);
+								gameState.flashHealth();
+								gameState.notifyPickup('health', `+${actual} HP restored`);
 								break;
-							case 'speed':
+							}
+							case 'speed': {
+								const speedDuration = 8000;
 								world.player.speed = 20;
+								gameState.addBuff('speed', speedDuration);
+								gameState.notifyPickup('speed', `Speed x1.7 for ${speedDuration / 1000}s`);
 								setTimeout(() => {
 									world.player.speed = 12;
-								}, 8000);
+								}, speedDuration);
 								break;
-							case 'multishot':
+							}
+							case 'multishot': {
+								const multiDuration = 10000;
 								gameState.score += 25;
+								gameState.addBuff('multishot', multiDuration);
+								gameState.notifyPickup('multishot', `+25 points & multi-shot for ${multiDuration / 1000}s`);
 								break;
-							case 'shield':
-								gameState.health = Math.min(gameState.maxHealth, gameState.health + 50);
+							}
+							case 'shield': {
+								const shieldHeal = 50;
+								const shieldDuration = 12000;
+								const before2 = gameState.health;
+								gameState.health = Math.min(gameState.maxHealth, gameState.health + shieldHeal);
+								const actual2 = Math.round(gameState.health - before2);
+								gameState.flashHealth();
+								gameState.addBuff('shield', shieldDuration);
+								gameState.notifyPickup('shield', `+${actual2} HP & shield for ${shieldDuration / 1000}s`);
 								break;
+							}
 						}
 					}
 					break;

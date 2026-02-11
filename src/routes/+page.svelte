@@ -10,6 +10,7 @@
 	import ChatBox from '$lib/components/ui/ChatBox.svelte';
 	import PlayerIndicators from '$lib/components/ui/PlayerIndicators.svelte';
 	import SphereMap from '$lib/components/ui/SphereMap.svelte';
+	import PowerUpNotification from '$lib/components/ui/PowerUpNotification.svelte';
 
 	let gameContainer: HTMLDivElement | undefined = $state();
 	let cleanupKeyboard: (() => void) | undefined;
@@ -64,6 +65,7 @@
 		<HUD />
 		<SphereMap />
 		<PlayerIndicators />
+		<PowerUpNotification />
 		{#if gameState.isMobile}
 			<VirtualJoystick />
 		{/if}
