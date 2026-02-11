@@ -61,32 +61,65 @@ export function generateHexGrid(
 }
 
 /** Find the nearest unconnected puzzle node to a given position.
- *  Uses angular distance (angle between directions from sphere center)
- *  which works correctly for surface vs interior comparisons.
+ *  Uses chord distance from the NPC's surface position to the surface
+ *  projection of each node, which directly represents travel distance.
  *  @param excludeIds  Optional set of node IDs to deprioritize (already targeted by other NPCs).
- *                     If all untargeted nodes are connected, falls back to any nearest unconnected. */
+ *                     Prefers untargeted nodes only if they're reasonably close to the absolute nearest. */
 export function findNearestPuzzleNode(
 	position: THREE.Vector3,
 	nodes: PuzzleNodeData[],
-	_excludeIds?: Set<string>
+	excludeIds?: Set<string>
 ): PuzzleNodeData | null {
 	if (nodes.length === 0) return null;
 
-	let nearest: PuzzleNodeData | null = null;
-	let nearestAngle = Infinity;
+	// Project each node to the sphere surface and measure chord distance
+	// This matches the actual travel distance the NPC needs on the surface
+	const posLen = position.length();
+	if (posLen < 0.001) return null;
+
+	let bestUntargeted: PuzzleNodeData | null = null;
+	let bestUntargetedDist = Infinity;
+	let bestOverall: PuzzleNodeData | null = null;
+	let bestOverallDist = Infinity;
 
 	for (const node of nodes) {
 		if (node.connected) continue;
-		// Angular distance: angle between position vectors from sphere center
-		const dot = position.dot(node.position) / (position.length() * node.position.length());
-		const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-		if (angle < nearestAngle) {
-			nearestAngle = angle;
-			nearest = node;
+
+		// Project node interior position to sphere surface
+		const nodeLen = node.position.length();
+		if (nodeLen < 0.001) continue;
+		const scale = posLen / nodeLen; // project to same radius as NPC
+		const projX = node.position.x * scale;
+		const projY = node.position.y * scale;
+		const projZ = node.position.z * scale;
+
+		// Chord distance on the sphere surface
+		const dx = position.x - projX;
+		const dy = position.y - projY;
+		const dz = position.z - projZ;
+		const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+		// Track absolute nearest node regardless of targeting
+		if (dist < bestOverallDist) {
+			bestOverallDist = dist;
+			bestOverall = node;
+		}
+
+		// Track nearest untargeted node
+		const isTargeted = excludeIds && excludeIds.has(node.id);
+		if (!isTargeted && dist < bestUntargetedDist) {
+			bestUntargetedDist = dist;
+			bestUntargeted = node;
 		}
 	}
 
-	return nearest;
+	// Prefer untargeted node ONLY if it's within 1.5x the distance of the absolute nearest.
+	// Otherwise just go to the nearest node even if another NPC is already heading there.
+	// This prevents converted NPCs from flying across the sphere to a distant untargeted node.
+	if (bestUntargeted && bestUntargetedDist <= bestOverallDist * 1.5) {
+		return bestUntargeted;
+	}
+	return bestOverall;
 }
 
 /** Generate a hint about the puzzle structure */

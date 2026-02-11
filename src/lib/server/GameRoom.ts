@@ -462,6 +462,7 @@ export class GameRoom implements DurableObject {
         if (npc.conversionProgress >= 1) {
           npc.converted = true;
           npc.conversionProgress = 1;
+          npc.velocity = { x: 0, y: 0, z: 0 };
           npc.targetNodeId = this.findBestNodeForNpc(npc);
 
           this.broadcast({
@@ -506,7 +507,7 @@ export class GameRoom implements DurableObject {
 
     // Navigate to the surface point above the puzzle node
     if (dist > npc.orbitDistance + 2) {
-      const navSpeed = 6 * 1.2;
+      const navSpeed = 6 * 3;
       moveToward(npc.position, surfaceTarget, navSpeed, deltaTime);
 
       // Face toward target
@@ -1124,8 +1125,9 @@ export class GameRoom implements DurableObject {
   private convertNpc(npc: NpcState, convertedBy: string): void {
     npc.converted = true;
     npc.conversionProgress = 1;
+    npc.velocity = { x: 0, y: 0, z: 0 };
 
-    // Assign to nearest unconnected puzzle node using angular distance,
+    // Assign to nearest unconnected puzzle node using surface-projected distance,
     // preferring nodes not already targeted by other converted NPCs
     npc.targetNodeId = this.findBestNodeForNpc(npc);
 
@@ -1142,21 +1144,61 @@ export class GameRoom implements DurableObject {
     npc.targetNodeId = this.findBestNodeForNpc(npc);
   }
 
-  /** Find the nearest unconnected puzzle node for a converted NPC. */
+  /** Find the nearest unconnected puzzle node for a converted NPC.
+   *  Prefers nodes not already targeted by other converted NPCs,
+   *  but only if the untargeted node is within 1.5x the distance of the absolute nearest.
+   *  Uses surface-projected chord distance for accurate travel distance. */
   private findBestNodeForNpc(npc: NpcState): string | null {
-    let nearestNode: PuzzleNodeState | null = null;
-    let nearestDist = Infinity;
+    // Collect node IDs already targeted by other converted NPCs
+    const takenIds = new Set<string>();
+    for (const other of this.npcs) {
+      if (other === npc || other.destroyed || !other.converted) continue;
+      if (other.targetNodeId) takenIds.add(other.targetNodeId);
+    }
+
+    let bestUntargeted: PuzzleNodeState | null = null;
+    let bestUntargetedDist = Infinity;
+    let bestOverall: PuzzleNodeState | null = null;
+    let bestOverallDist = Infinity;
+
+    // NPC is on sphere surface — project each node to surface and measure chord distance
+    const npcLen = Math.sqrt(npc.position.x * npc.position.x + npc.position.y * npc.position.y + npc.position.z * npc.position.z);
+    if (npcLen < 0.001) return null;
 
     for (const node of this.puzzleNodes) {
       if (node.connected) continue;
-      const dist = angularDistance(npc.position, node.position);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestNode = node;
+
+      const nodeLen = Math.sqrt(node.position.x * node.position.x + node.position.y * node.position.y + node.position.z * node.position.z);
+      if (nodeLen < 0.001) continue;
+      const scale = npcLen / nodeLen;
+      const px = node.position.x * scale;
+      const py = node.position.y * scale;
+      const pz = node.position.z * scale;
+
+      const dx = npc.position.x - px;
+      const dy = npc.position.y - py;
+      const dz = npc.position.z - pz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Track absolute nearest
+      if (dist < bestOverallDist) {
+        bestOverallDist = dist;
+        bestOverall = node;
+      }
+
+      // Track nearest untargeted
+      if (!takenIds.has(node.id) && dist < bestUntargetedDist) {
+        bestUntargetedDist = dist;
+        bestUntargeted = node;
       }
     }
 
-    return nearestNode?.id || null;
+    // Prefer untargeted only if it's within 1.5x the distance of the absolute nearest.
+    // Otherwise just go to the nearest node — don't fly across the sphere.
+    if (bestUntargeted && bestUntargetedDist <= bestOverallDist * 1.5) {
+      return bestUntargeted.id;
+    }
+    return bestOverall?.id || null;
   }
 
   private checkPuzzleProgress(): void {

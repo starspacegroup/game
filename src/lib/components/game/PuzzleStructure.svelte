@@ -12,6 +12,9 @@
 	// Cache connections (they don't change)
 	let connections: [number, number][] = [];
 
+	// Track node count so we recompute connections if nodes change
+	let lastNodeCount = 0;
+
 	useTask((delta) => {
 		const nodes = world.puzzleNodes;
 		if (nodes.length === 0) return;
@@ -21,8 +24,10 @@
 		if (updateTimer < 0.2) return;
 		updateTimer = 0;
 
-		if (connections.length === 0) {
+		// Recompute connections if node count changed (e.g. multiplayer sync)
+		if (connections.length === 0 || nodes.length !== lastNodeCount) {
 			connections = getPuzzleConnections(nodes);
+			lastNodeCount = nodes.length;
 		}
 
 		const positions = new Float32Array(connections.length * 6);
@@ -30,6 +35,7 @@
 
 		for (let i = 0; i < connections.length; i++) {
 			const [a, b] = connections[i];
+			if (a >= nodes.length || b >= nodes.length) continue;
 			const i6 = i * 6;
 			// Direct 3D positions on sphere surface
 			const posA = nodes[a].position;

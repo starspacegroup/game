@@ -122,6 +122,7 @@ export function generatePuzzleNodes(count = 12): PuzzleNodeData[] {
 	const scale = PUZZLE_INTERIOR_RADIUS * 0.65; // Scale relative to interior radius
 
 	const basePositions: [number, number, number][] = [
+		[0, 0, 1],   // North pole — guarantees a node near player spawn area
 		[0, 1, phi], [0, -1, phi], [0, 1, -phi], [0, -1, -phi],
 		[1, phi, 0], [-1, phi, 0], [1, -phi, 0], [-1, -phi, 0],
 		[phi, 0, 1], [-phi, 0, 1], [phi, 0, -1], [-phi, 0, -1]
@@ -137,10 +138,12 @@ export function generatePuzzleNodes(count = 12): PuzzleNodeData[] {
 		);
 
 		// Current position: scattered from target inside the sphere
+		// First node (polar) gets less scatter to stay near spawn area
+		const scatterFactor = i === 0 ? 0.15 : 0.6;
 		const current = targetPos.clone();
-		current.x += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
-		current.y += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
-		current.z += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
+		current.x += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+		current.y += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+		current.z += (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
 		// Clamp to stay inside the sphere
 		if (current.length() > PUZZLE_INTERIOR_RADIUS) {
 			current.normalize().multiplyScalar(PUZZLE_INTERIOR_RADIUS * 0.9);

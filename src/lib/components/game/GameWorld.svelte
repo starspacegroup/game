@@ -34,7 +34,7 @@
 	resetWorld();
 	world.asteroids = generateAsteroids(100);
 	world.npcs = generateNpcs(gameState.npcCount);
-	world.puzzleNodes = generatePuzzleNodes(12);
+	world.puzzleNodes = generatePuzzleNodes(13);
 	world.powerUps = generatePowerUps(50);
 
 	// Reactive entity lists (controls which components are rendered)
@@ -298,11 +298,26 @@
 				if (npc.conversionProgress >= 1) {
 					npc.converted = true;
 					npc.conversionProgress = 1;
+					// Zero out chase velocity so it doesn't linger
+					npc.velocity.set(0, 0, 0);
 					gameState.convertedNpcCount++;
-					// Find nearest puzzle node
+					// Find nearest puzzle node (prefer untargeted ones)
 					const takenNodeIds = getTargetedNodeIds(npc);
 					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds);
 					npc.targetNodeId = nearestNode?.id || null;
+
+					// Debug: log ALL node distances for verification
+					const allDists = world.puzzleNodes
+						.filter(n => !n.connected)
+						.map(n => {
+							const sp = n.position.clone();
+							projectToSphere(sp);
+							return { id: n.id, dist: sphereDistance(npc.position, sp) };
+						})
+						.sort((a, b) => a.dist - b.dist);
+					console.log(`[NPC ${npc.id}] Converted at (${npc.position.x.toFixed(0)},${npc.position.y.toFixed(0)},${npc.position.z.toFixed(0)}) → target ${nearestNode?.id || 'NONE'}`);
+					console.log(`  All node distances: ${allDists.map(d => `${d.id}=${d.dist.toFixed(1)}`).join(', ')}`);
+					console.log(`  Taken: [${[...takenNodeIds].join(', ')}]`);
 				}
 				// During conversion, spin in place
 				npc.rotation.z += dt * 10;
@@ -396,7 +411,7 @@
 		// Navigate to the surface point above the puzzle node
 		if (dist > npc.orbitDistance + 2) {
 			const { dx, dy, dz, dist: dMag } = sphereDirection(npc.position, surfaceTarget);
-			const navSpeed = NPC_SPEED * 1.2;
+			const navSpeed = NPC_SPEED * 3;
 			if (dMag > 0.01) {
 				// Use tangent vector directly as 3D velocity direction
 				npc.velocity.set(dx / dMag * navSpeed, dy / dMag * navSpeed, dz / dMag * navSpeed);

@@ -189,6 +189,7 @@ export function generatePuzzleNodes(
   const scale = PUZZLE_INTERIOR_RADIUS * 0.65;
 
   const basePositions: [number, number, number][] = [
+    [0, 0, 1],   // North pole — guarantees a node near player spawn area
     [0, 1, phi], [0, -1, phi], [0, 1, -phi], [0, -1, -phi],
     [1, phi, 0], [-1, phi, 0], [1, -phi, 0], [-1, -phi, 0],
     [phi, 0, 1], [-phi, 0, 1], [phi, 0, -1], [-phi, 0, -1]
@@ -204,9 +205,11 @@ export function generatePuzzleNodes(
     );
 
     // Current position: scattered from target, still inside sphere
-    let cx = target.x + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
-    let cy = target.y + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
-    let cz = target.z + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * 0.6;
+    // First node (polar) gets less scatter to stay near spawn area
+    const scatterFactor = i === 0 ? 0.15 : 0.6;
+    let cx = target.x + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+    let cy = target.y + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+    let cz = target.z + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
     const clen = Math.sqrt(cx * cx + cy * cy + cz * cz);
     if (clen > PUZZLE_INTERIOR_RADIUS) {
       const clamp = (PUZZLE_INTERIOR_RADIUS * 0.9) / clen;

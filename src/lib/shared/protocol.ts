@@ -315,7 +315,7 @@ export const MAX_PLAYERS = 8;
 // Entity counts (scaled for sphere surface area)
 export const ASTEROID_COUNT = 100;
 export const POWER_UP_COUNT = 20;
-export const PUZZLE_NODE_COUNT = 12;
+export const PUZZLE_NODE_COUNT = 13;
 export const BASE_NPC_COUNT = 2;
 
 // Super admin Discord user IDs (can delete rooms, etc.)
