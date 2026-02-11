@@ -35,7 +35,7 @@
 	world.asteroids = generateAsteroids(100);
 	world.npcs = generateNpcs(gameState.npcCount);
 	world.puzzleNodes = generatePuzzleNodes(12);
-	world.powerUps = generatePowerUps(20);
+	world.powerUps = generatePowerUps(50);
 
 	// Reactive entity lists (controls which components are rendered)
 	// Entities render at their wrapped position relative to player automatically
@@ -120,6 +120,7 @@
 
 		if (!isMP) {
 			respawnEntities(dt);
+			spawnNewPowerUps(dt);
 		}
 
 		checkGameOver();
@@ -457,17 +458,25 @@
 					const laser = world.lasers.find((l) => l.id === event.entityA);
 					if (laser) {
 						laser.life = 0;
-						gameState.health = Math.max(0, gameState.health - 15);
-						world.player.health = gameState.health;
-						gameState.flashDamage();
+						const rawDmg = 15;
+						const overflow = gameState.applyShieldDamage(rawDmg);
+						if (overflow > 0) {
+							gameState.health = Math.max(0, gameState.health - overflow);
+							world.player.health = gameState.health;
+							gameState.flashDamage();
+						}
 					}
 					break;
 				}
 				case 'player-npc': {
 					if (Date.now() < world.player.damageCooldownUntil) break;
-					gameState.health = Math.max(0, gameState.health - 25);
-					world.player.health = gameState.health;
-					gameState.flashDamage();
+					const npcDmg = 25;
+					const npcOverflow = gameState.applyShieldDamage(npcDmg);
+					if (npcOverflow > 0) {
+						gameState.health = Math.max(0, gameState.health - npcOverflow);
+						world.player.health = gameState.health;
+						gameState.flashDamage();
+					}
 					// Teleport player a short distance away from the NPC
 					let safePos = randomSpherePositionNear(world.player.position, 10, 20);
 					let attempts = 0;
@@ -527,7 +536,7 @@
 								const actual2 = Math.round(gameState.health - before2);
 								gameState.flashHealth();
 								gameState.addBuff('shield', shieldDuration);
-								gameState.notifyPickup('shield', `+${actual2} HP & shield for ${shieldDuration / 1000}s`);
+								gameState.notifyPickup('shield', `+${actual2} HP & shield (${gameState.maxShieldHealth} HP) for ${shieldDuration / 1000}s`);
 								break;
 							}
 						}
@@ -605,6 +614,13 @@
 		}
 	}
 
+	// Separate timer for power-up spawning (faster than general respawn)
+	let powerUpSpawnTimer = 0;
+	const MAX_POWERUPS = 80;
+	const POWERUP_SPAWN_INTERVAL = 8; // seconds between spawn checks
+	const POWERUP_MIN_DIST = 8; // don't spawn directly on top of player
+	const POWERUP_TYPES: ('health' | 'speed' | 'multishot' | 'shield')[] = ['health', 'speed', 'multishot', 'shield'];
+
 	function respawnEntities(dt: number): void {
 		spawnTimer += dt;
 		if (spawnTimer < 6) return;
@@ -644,12 +660,40 @@
 			});
 		}
 
-		// Respawn collected power-ups on sphere
+		// Recycle collected power-ups — reposition them away from the player
 		const collected = world.powerUps.filter((p) => p.collected);
-		for (const pu of collected.slice(0, 2)) {
+		for (const pu of collected.slice(0, 3)) {
 			pu.collected = false;
-			const pos = randomSpherePositionNear(world.player.position, 25, 80);
+			pu.type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+			const pos = randomSpherePositionNear(world.player.position, POWERUP_MIN_DIST, 80);
 			pu.position.copy(pos);
+			pu.bobPhase = Math.random() * Math.PI * 2;
+		}
+	}
+
+	/** Spawn brand-new power-ups over time, similar to how satellites appear */
+	function spawnNewPowerUps(dt: number): void {
+		powerUpSpawnTimer += dt;
+		if (powerUpSpawnTimer < POWERUP_SPAWN_INTERVAL) return;
+		powerUpSpawnTimer = 0;
+
+		// Count active (uncollected) power-ups
+		const activeCount = world.powerUps.filter((p) => !p.collected).length;
+		if (activeCount >= MAX_POWERUPS) return;
+
+		// Spawn 1-3 new power-ups each cycle
+		const spawnCount = 1 + Math.floor(Math.random() * 3);
+		for (let i = 0; i < spawnCount && (activeCount + i) < MAX_POWERUPS; i++) {
+			// Can appear on screen (min dist 8) but not directly on the player
+			const pos = randomSpherePositionNear(world.player.position, POWERUP_MIN_DIST, 60);
+			world.powerUps.push({
+				id: `pwr_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+				position: pos,
+				type: POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)],
+				radius: 0.8,
+				collected: false,
+				bobPhase: Math.random() * Math.PI * 2
+			});
 		}
 	}
 

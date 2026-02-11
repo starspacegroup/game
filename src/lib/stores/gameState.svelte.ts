@@ -86,6 +86,11 @@ class GameStore {
 	pickupNotifications = $state<PickupNotification[]>([]);
 	private nextNotifId = 0;
 
+	// Shield system
+	shieldHealth = $state(0);
+	maxShieldHealth = $state(100);
+	shieldHitFlash = $state(0); // 0..1 flash intensity when shield absorbs a hit
+
 	// Health change animation: 'heal' | 'damage' | null
 	healthChange = $state<'heal' | 'damage' | null>(null);
 	previousHealth = $state(100);
@@ -96,6 +101,32 @@ class GameStore {
 
 	get isAlive(): boolean {
 		return this.health > 0;
+	}
+
+	get hasShield(): boolean {
+		return this.shieldHealth > 0 && this.activeBuffs.some(b => b.type === 'shield' && Date.now() < b.expiresAt);
+	}
+
+	get shieldPercent(): number {
+		return this.maxShieldHealth > 0 ? (this.shieldHealth / this.maxShieldHealth) * 100 : 0;
+	}
+
+	/**
+	 * Apply damage to the shield first. Returns any overflow damage that passes through.
+	 * Also triggers shield hit flash. If shield HP reaches 0, removes the shield buff.
+	 */
+	applyShieldDamage(damage: number): number {
+		if (!this.hasShield) return damage;
+		this.shieldHitFlash = 1;
+		if (damage >= this.shieldHealth) {
+			const overflow = damage - this.shieldHealth;
+			this.shieldHealth = 0;
+			// Remove the shield buff since HP is depleted
+			this.activeBuffs = this.activeBuffs.filter(b => b.type !== 'shield');
+			return overflow;
+		}
+		this.shieldHealth -= damage;
+		return 0; // fully absorbed
 	}
 
 	addHint(nodeId: string, hint: string): void {
@@ -119,9 +150,18 @@ class GameStore {
 		const buff = new BuffInstance(type, meta.label, meta.icon, meta.color, durationMs);
 		this.activeBuffs = [...this.activeBuffs, buff];
 
+		// Initialize shield health when adding a shield buff
+		if (type === 'shield') {
+			this.shieldHealth = this.maxShieldHealth;
+		}
+
 		// Auto-remove when expired
 		setTimeout(() => {
 			this.activeBuffs = this.activeBuffs.filter(b => b !== buff);
+			// Clear shield HP when the buff expires
+			if (type === 'shield') {
+				this.shieldHealth = 0;
+			}
 		}, durationMs + 100);
 	}
 
@@ -170,10 +210,20 @@ class GameStore {
 	tickBuffs(): void {
 		const now = Date.now();
 		const before = this.activeBuffs.length;
+		const hadShield = this.activeBuffs.some(b => b.type === 'shield');
 		this.activeBuffs = this.activeBuffs.filter(b => now < b.expiresAt);
+		const hasShieldNow = this.activeBuffs.some(b => b.type === 'shield');
+		if (hadShield && !hasShieldNow) {
+			this.shieldHealth = 0;
+		}
 		if (this.activeBuffs.length !== before) {
 			// Trigger reactivity
 			this.activeBuffs = [...this.activeBuffs];
+		}
+
+		// Decay shield hit flash
+		if (this.shieldHitFlash > 0) {
+			this.shieldHitFlash = Math.max(0, this.shieldHitFlash - 0.05);
 		}
 	}
 
@@ -194,6 +244,8 @@ class GameStore {
 		this.pickupNotifications = [];
 		this.healthChange = null;
 		this.previousHealth = 100;
+		this.shieldHealth = 0;
+		this.shieldHitFlash = 0;
 	}
 }
 

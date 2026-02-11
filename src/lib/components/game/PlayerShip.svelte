@@ -4,6 +4,7 @@
 	import { world, getPlayerOrientation } from '$lib/game/world';
 	import { authState } from '$lib/stores/authState.svelte';
 	import { gameState } from '$lib/stores/gameState.svelte';
+	import ShieldBubble from './ShieldBubble.svelte';
 
 	const BUFF_COLORS: Record<string, string> = {
 		speed: '#ffdd00',
@@ -133,7 +134,8 @@
 		ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
 		const hasBuffs = buffTypes.length > 0;
-		const pillH = hasBuffs ? 90 : 64;
+		const hasShield = gameState.hasShield;
+		const pillH = hasBuffs ? (hasShield ? 104 : 90) : (hasShield ? 78 : 64);
 
 		// Background pill
 		ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -197,13 +199,56 @@
 			ctx.restore();
 		}
 
+		// Shield health bar (below health bar, only when shield active)
+		let shieldBarBottom = barY + barH;
+		if (hasShield) {
+			const sBarY = barY + barH + 4;
+			const sBarH = 6;
+			const shieldPct = gameState.shieldPercent / 100;
+			const sFillW = Math.max(0, Math.min(1, shieldPct)) * barW;
+
+			// Shield bar label
+			ctx.font = 'bold 8px "Courier New", monospace';
+			ctx.textAlign = 'left';
+			ctx.fillStyle = '#4488ff';
+			ctx.fillText('🛡', barX - 2, sBarY + sBarH / 2 + 1);
+
+			// Shield bar background
+			ctx.fillStyle = 'rgba(68, 136, 255, 0.15)';
+			ctx.beginPath();
+			ctx.roundRect(barX, sBarY, barW, sBarH, 3);
+			ctx.fill();
+
+			// Shield bar fill
+			if (sFillW > 0) {
+				ctx.fillStyle = shieldPct < 0.25 ? '#ff6644' : '#4488ff';
+				ctx.beginPath();
+				ctx.roundRect(barX, sBarY, sFillW, sBarH, 3);
+				ctx.fill();
+			}
+
+			// Shield hit flash
+			const shieldFlash = gameState.shieldHitFlash;
+			if (shieldFlash > 0) {
+				ctx.save();
+				ctx.globalAlpha = shieldFlash * 0.7;
+				ctx.fillStyle = '#88ccff';
+				ctx.beginPath();
+				ctx.roundRect(barX, sBarY, barW, sBarH, 3);
+				ctx.fill();
+				ctx.restore();
+			}
+
+			shieldBarBottom = sBarY + sBarH;
+		}
+
 		// Buff icons row
 		if (hasBuffs) {
 			const iconR = 11;
 			const gap = 8;
 			const totalW = buffTypes.length * iconR * 2 + (buffTypes.length - 1) * gap;
 			let startX = 128 - totalW / 2 + iconR;
-			const iconY = 72;
+			const iconY = shieldBarBottom + 12;
 
 			for (const bType of buffTypes) {
 				const drawFn = BUFF_DRAW[bType];
@@ -288,7 +333,8 @@
 		const displayedPct = maxHealth > 0 ? displayedHealth / maxHealth : 0;
 		const healthAnimating = Math.abs(displayedHealth - health) > 0.5;
 		const flashing = healthFlashTimer > 0;
-		const needsRedraw = username !== lastUsername || buffKey !== lastBuffKey || healthAnimating || flashing || (lastFrameDrawn > 0 && now - lastFrameDrawn > 500);
+		const shieldChanged = gameState.hasShield || gameState.shieldHitFlash > 0;
+		const needsRedraw = username !== lastUsername || buffKey !== lastBuffKey || healthAnimating || flashing || shieldChanged || (lastFrameDrawn > 0 && now - lastFrameDrawn > 500);
 
 		if (needsRedraw || buffKey !== lastBuffKey || username !== lastUsername || Math.abs(targetPct - currentPct) > 0.005) {
 			lastUsername = username;
@@ -299,7 +345,9 @@
 
 			// Update sprite scale and material
 			const hasBuffs = buffTypes.length > 0;
-			labelSprite.scale.set(4, hasBuffs ? 1.8 : 1.25, 1);
+			const hasShield = gameState.hasShield;
+			const spriteH = hasBuffs ? (hasShield ? 2.1 : 1.8) : (hasShield ? 1.55 : 1.25);
+			labelSprite.scale.set(4, spriteH, 1);
 
 			if (labelTexture) {
 				(labelSprite.material as THREE.SpriteMaterial).map = labelTexture;
@@ -328,6 +376,9 @@
 		<T.SphereGeometry args={[0.5, 6, 6]} />
 		<T.MeshBasicMaterial color="#44ffaa" transparent opacity={0.5} />
 	</T.Mesh>
+
+	<!-- Shield bubble (visible when shield buff active) -->
+	<ShieldBubble />
 
 	<!-- Username + health label: ALWAYS above ship, does NOT rotate -->
 	<T.Sprite 
