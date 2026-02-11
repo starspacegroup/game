@@ -257,6 +257,32 @@ function handleMessage(data: ServerMessage): void {
       if (pwrIdx >= 0) {
         world.powerUps[pwrIdx].collected = true;
       }
+      const durationMap: Record<string, number> = { speed: 8000, multishot: 10000, shield: 12000 };
+      const dur = durationMap[data.powerUpType] || 10000;
+      if (data.playerId === playerId) {
+        // Apply buff + notification to local player
+        const pType = data.powerUpType as 'health' | 'speed' | 'multishot' | 'shield';
+        if (pType === 'health') {
+          gameState.notifyPickup('health', '+25 HP restored');
+        } else {
+          gameState.addBuff(pType, dur);
+          const detailMap: Record<string, string> = {
+            speed: `Speed x1.7 for ${dur / 1000}s`,
+            multishot: `Multi-shot for ${dur / 1000}s`,
+            shield: `Shield for ${dur / 1000}s`,
+          };
+          gameState.notifyPickup(pType, detailMap[pType] || `Buff for ${dur / 1000}s`);
+        }
+      } else {
+        // Track buff on other players
+        if (data.powerUpType !== 'health') {
+          const other = world.otherPlayers.find(p => p.id === data.playerId);
+          if (other) {
+            other.activeBuffs = other.activeBuffs.filter(b => b.type !== data.powerUpType);
+            other.activeBuffs.push({ type: data.powerUpType, expiresAt: Date.now() + dur });
+          }
+        }
+      }
       break;
     }
 
@@ -330,6 +356,9 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
         username: p.username,
         position: pos,
         rotation: new THREE.Euler(p.rotation.x, p.rotation.y, p.rotation.z),
+        health: p.health,
+        maxHealth: p.maxHealth,
+        activeBuffs: [],
         lastUpdate: Date.now()
       });
     }
@@ -462,6 +491,8 @@ function applyStateUpdate(data: StateMessage): void {
         );
         existing.rotation.set(serverPlayer.rotation.x, serverPlayer.rotation.y, serverPlayer.rotation.z);
         existing.username = serverPlayer.username;
+        existing.health = serverPlayer.health;
+        existing.maxHealth = serverPlayer.maxHealth;
         existing.lastUpdate = Date.now();
       } else {
         world.otherPlayers.push({
@@ -469,6 +500,9 @@ function applyStateUpdate(data: StateMessage): void {
           username: serverPlayer.username,
           position: new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z),
           rotation: new THREE.Euler(serverPlayer.rotation.x, serverPlayer.rotation.y, serverPlayer.rotation.z),
+          health: serverPlayer.health,
+          maxHealth: serverPlayer.maxHealth,
+          activeBuffs: [],
           lastUpdate: Date.now()
         });
       }

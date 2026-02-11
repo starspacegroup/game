@@ -156,13 +156,13 @@ export function generateNpcs(
   for (let i = 0; i < count; i++) {
     npcs.push({
       id: genId('npc'),
-      position: randomSphereNear(playerStart, 15, 30),
+      position: randomSphereNear(playerStart, 55, 100),
       velocity: vec3(0, 0, 0),
       rotation: euler3(0, 0, 0),
       radius: 1.2,
       health: 30,
       maxHealth: 30,
-      shootCooldown: Math.random() * 2 + 1,
+      shootCooldown: Math.random() * 3 + 3,
       destroyed: false,
       converted: false,
       conversionProgress: 0,
@@ -345,13 +345,13 @@ export function respawnPowerUp(_bounds?: WorldBounds): PowerUpState {
 export function respawnNpc(nearPosition: Vector3): NpcState {
   return {
     id: genId('npc'),
-    position: randomSphereNear(nearPosition, 15, 40),
+    position: randomSphereNear(nearPosition, 55, 100),
     velocity: vec3(0, 0, 0),
     rotation: euler3(0, 0, 0),
     radius: 1.2,
     health: 30,
     maxHealth: 30,
-    shootCooldown: Math.random() * 2 + 1,
+    shootCooldown: Math.random() * 3 + 3,
     destroyed: false,
     converted: false,
     conversionProgress: 0,

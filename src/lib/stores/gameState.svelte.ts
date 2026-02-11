@@ -54,6 +54,8 @@ export interface PickupNotification {
 }
 
 /** Reactive game state for UI updates */
+let _notifTimer: ReturnType<typeof setTimeout> | null = null;
+
 class GameStore {
 	phase = $state<'welcome' | 'playing' | 'paused' | 'gameover'>('welcome');
 	mode = $state<'solo' | 'multiplayer'>('solo');
@@ -84,8 +86,8 @@ class GameStore {
 	pickupNotifications = $state<PickupNotification[]>([]);
 	private nextNotifId = 0;
 
-	// Health flash for animated heal feedback
-	healthFlash = $state(false);
+	// Health change animation: 'heal' | 'damage' | null
+	healthChange = $state<'heal' | 'damage' | null>(null);
 	previousHealth = $state(100);
 
 	get healthPercent(): number {
@@ -123,7 +125,7 @@ class GameStore {
 		}, durationMs + 100);
 	}
 
-	/** Show a pickup notification toast */
+	/** Show a pickup notification toast (only one at a time, replaces previous) */
 	notifyPickup(type: 'health' | 'speed' | 'multishot' | 'shield', detail: string): void {
 		const meta = PICKUP_META[type];
 		const notif: PickupNotification = {
@@ -135,20 +137,33 @@ class GameStore {
 			detail,
 			timestamp: Date.now()
 		};
-		this.pickupNotifications = [...this.pickupNotifications, notif];
+		// Replace — only one notification visible at a time
+		this.pickupNotifications = [notif];
+
+		// Clear any pending removal timer
+		if (_notifTimer) clearTimeout(_notifTimer);
 
 		// Auto-remove after animation
-		setTimeout(() => {
-			this.pickupNotifications = this.pickupNotifications.filter(n => n.id !== notif.id);
+		_notifTimer = setTimeout(() => {
+			this.pickupNotifications = [];
+			_notifTimer = null;
 		}, 2500);
 	}
 
-	/** Trigger health bar flash animation */
+	/** Trigger health bar flash animation for healing */
 	flashHealth(): void {
-		this.healthFlash = true;
+		this.healthChange = 'heal';
 		setTimeout(() => {
-			this.healthFlash = false;
-		}, 600);
+			this.healthChange = null;
+		}, 700);
+	}
+
+	/** Trigger health bar flash animation for damage */
+	flashDamage(): void {
+		this.healthChange = 'damage';
+		setTimeout(() => {
+			this.healthChange = null;
+		}, 700);
 	}
 
 	/** Prune expired buffs (call from game loop) */
@@ -177,7 +192,7 @@ class GameStore {
 		this.dataCollected = 0;
 		this.activeBuffs = [];
 		this.pickupNotifications = [];
-		this.healthFlash = false;
+		this.healthChange = null;
 		this.previousHealth = 100;
 	}
 }

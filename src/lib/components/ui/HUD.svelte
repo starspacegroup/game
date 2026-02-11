@@ -1,26 +1,7 @@
 <script lang="ts">
-	import { gameState, type ActiveBuff } from '$lib/stores/gameState.svelte';
-	import { authState } from '$lib/stores/authState.svelte';
+	import { gameState } from '$lib/stores/gameState.svelte';
 	import { world, SPHERE_RADIUS } from '$lib/game/world';
 	import { toSpherical } from '$lib/game/chunk';
-
-	// Tick buff timers for countdown display
-	let buffDisplays = $state<{ type: string; icon: string; label: string; color: string; remaining: number; seconds: number }[]>([]);
-
-	function updateBuffDisplays() {
-		const now = Date.now();
-		buffDisplays = gameState.activeBuffs
-			.filter(b => now < b.expiresAt)
-			.map(b => {
-				const totalDuration = b.expiresAt - b.startedAt;
-				const elapsed = now - b.startedAt;
-				const remaining = Math.max(0, 1 - elapsed / totalDuration);
-				const seconds = Math.max(0, Math.ceil((b.expiresAt - now) / 1000));
-				return { type: b.type, icon: b.icon, label: b.label, color: b.color, remaining, seconds };
-			});
-		requestAnimationFrame(updateBuffDisplays);
-	}
-	if (typeof window !== 'undefined') requestAnimationFrame(updateBuffDisplays);
 
 	// Reactive position info for sphere coordinates
 	let latDisplay = $state('0.0');
@@ -47,26 +28,6 @@
 </script>
 
 <div class="hud">
-	<!-- User indicator -->
-	{#if authState.isLoggedIn}
-		<div class="user-indicator">
-			{#if authState.avatarUrl}
-				<img src={authState.avatarUrl} alt="Avatar" class="user-avatar" />
-			{:else}
-				<div class="user-avatar-placeholder">
-					{authState.username?.charAt(0).toUpperCase() || '?'}
-				</div>
-			{/if}
-			<div class="user-info">
-				<span class="user-name">{authState.username}</span>
-				<span class="user-status">
-					<span class="status-dot"></span>
-					ONLINE
-				</span>
-			</div>
-		</div>
-	{/if}
-
 	<!-- Top bar -->
 	<div class="hud-top">
 		<div class="score">
@@ -89,56 +50,7 @@
 		</div>
 	</div>
 
-	<!-- Health bar -->
-	<div class="health-container" class:health-flash={gameState.healthFlash}>
-		<div class="health-bar">
-			<div
-				class="health-fill"
-				class:danger={gameState.healthPercent < 25}
-				class:warning={gameState.healthPercent >= 25 && gameState.healthPercent < 50}
-				class:healing={gameState.healthFlash}
-				style="width: {gameState.healthPercent}%"
-			></div>
-			{#if gameState.healthFlash}
-				<div class="health-heal-glow"></div>
-			{/if}
-		</div>
-		<span class="health-text">{Math.ceil(gameState.health)}/{gameState.maxHealth}</span>
-	</div>
 
-	<!-- Active buffs bar -->
-	{#if buffDisplays.length > 0}
-		<div class="buffs-container">
-			{#each buffDisplays as buff (buff.type)}
-				<div class="buff-item" style="--buff-color: {buff.color}; --buff-remaining: {buff.remaining}">
-					<div class="buff-icon-wrap">
-						<span class="buff-icon">{buff.icon}</span>
-						<svg class="buff-timer-ring" viewBox="0 0 36 36">
-							<circle
-								cx="18" cy="18" r="15.5"
-								fill="none"
-								stroke="{buff.color}22"
-								stroke-width="2"
-							/>
-							<circle
-								cx="18" cy="18" r="15.5"
-								fill="none"
-								stroke="{buff.color}"
-								stroke-width="2.5"
-								stroke-dasharray="{buff.remaining * 97.4} 97.4"
-								stroke-linecap="round"
-								transform="rotate(-90 18 18)"
-							/>
-						</svg>
-					</div>
-					<div class="buff-info">
-						<span class="buff-label">{buff.label}</span>
-						<span class="buff-time" class:buff-expiring={buff.seconds <= 3}>{buff.seconds}s</span>
-					</div>
-				</div>
-			{/each}
-		</div>
-	{/if}
 
 	<!-- Puzzle progress (only show when some progress exists) -->
 	{#if gameState.puzzleProgress > 0.01}
@@ -266,86 +178,6 @@
 		letter-spacing: 0;
 	}
 
-	.health-container {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm, 8px);
-		margin-top: var(--spacing-xs, 4px);
-		transition: all 0.3s ease;
-	}
-
-	.health-container.health-flash {
-		animation: health-flash-glow 0.6s ease-out;
-	}
-
-	@keyframes health-flash-glow {
-		0% { filter: brightness(1); }
-		30% { filter: brightness(1.8) drop-shadow(0 0 12px #44ff44); }
-		100% { filter: brightness(1); }
-	}
-
-	.health-bar {
-		flex: 1;
-		height: 6px;
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: 3px;
-		overflow: hidden;
-		position: relative;
-	}
-
-	.health-fill {
-		height: 100%;
-		background: #00ff88;
-		border-radius: 3px;
-		transition: width 0.4s ease;
-		box-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
-	}
-
-	.health-fill.healing {
-		transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-		box-shadow: 0 0 14px rgba(68, 255, 68, 0.8);
-	}
-
-	.health-heal-glow {
-		position: absolute;
-		inset: 0;
-		background: linear-gradient(90deg, transparent, rgba(68, 255, 68, 0.6), transparent);
-		animation: heal-sweep 0.6s ease-out forwards;
-		border-radius: 3px;
-	}
-
-	@keyframes heal-sweep {
-		0% { transform: translateX(-100%); opacity: 1; }
-		100% { transform: translateX(100%); opacity: 0; }
-	}
-
-	.health-fill.warning {
-		background: #ffaa00;
-		box-shadow: 0 0 6px rgba(255, 170, 0, 0.4);
-	}
-
-	.health-fill.danger {
-		background: #ff4444;
-		box-shadow: 0 0 8px rgba(255, 68, 68, 0.6);
-		animation: pulse 0.5s ease-in-out infinite alternate;
-	}
-
-	@keyframes pulse {
-		from {
-			opacity: 0.7;
-		}
-		to {
-			opacity: 1;
-		}
-	}
-
-	.health-text {
-		font-size: var(--font-xs, 0.6rem);
-		color: #8899aa;
-		min-width: 50px;
-		text-align: right;
-	}
-
 	.puzzle-progress {
 		margin-top: var(--spacing-sm, 8px);
 		display: flex;
@@ -397,92 +229,7 @@
 		padding-bottom: var(--safe-bottom, 0px);
 	}
 
-	/* User indicator - positioned top right, compact on mobile */
-	.user-indicator {
-		position: fixed;
-		top: calc(var(--safe-top, 0px) + var(--spacing-sm, 8px));
-		right: calc(var(--safe-right, 0px) + var(--spacing-sm, 8px));
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm, 8px);
-		background: rgba(0, 0, 0, 0.6);
-		border: 1px solid rgba(68, 136, 255, 0.4);
-		border-radius: 8px;
-		padding: 4px 8px 4px 4px;
-		pointer-events: auto;
-		backdrop-filter: blur(4px);
-		max-width: 140px;
-	}
 
-	.user-avatar {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		border: 2px solid #4488ff;
-		box-shadow: 0 0 8px rgba(68, 136, 255, 0.5);
-		flex-shrink: 0;
-	}
-
-	.user-avatar-placeholder {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		border: 2px solid #4488ff;
-		background: linear-gradient(135deg, #4488ff, #6644ff);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.8rem;
-		font-weight: bold;
-		color: white;
-		flex-shrink: 0;
-	}
-
-	.user-info {
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-		overflow: hidden;
-	}
-
-	.user-name {
-		font-size: var(--font-xs, 0.6rem);
-		color: #ffffff;
-		font-weight: 600;
-		letter-spacing: 0.5px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.user-status {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-		font-size: 0.5rem;
-		color: #00ff88;
-		letter-spacing: 1px;
-	}
-
-	.status-dot {
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-		background: #00ff88;
-		box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
-		animation: pulse-dot 1.5s ease-in-out infinite;
-	}
-
-	@keyframes pulse-dot {
-		0%, 100% {
-			opacity: 1;
-			transform: scale(1);
-		}
-		50% {
-			opacity: 0.6;
-			transform: scale(0.9);
-		}
-	}
 
 	/* ===== TABLET AND UP (768px+) ===== */
 	@media (min-width: 768px) {
@@ -511,44 +258,6 @@
 		.mode-badge {
 			padding: 3px 10px;
 			font-size: 0.7rem;
-		}
-
-		.health-text {
-			font-size: 0.65rem;
-			min-width: 55px;
-		}
-
-		.user-indicator {
-			top: 12px;
-			right: 12px;
-			gap: 10px;
-			padding: 6px 12px 6px 6px;
-			max-width: 180px;
-		}
-
-		.user-avatar,
-		.user-avatar-placeholder {
-			width: 32px;
-			height: 32px;
-		}
-
-		.user-avatar-placeholder {
-			font-size: 0.9rem;
-		}
-
-		.user-name {
-			font-size: 0.75rem;
-			max-width: 120px;
-		}
-
-		.user-status {
-			font-size: 0.6rem;
-			gap: 4px;
-		}
-
-		.status-dot {
-			width: 6px;
-			height: 6px;
 		}
 
 		.controls-hint {
@@ -703,104 +412,4 @@
 		opacity: 0.3;
 	}
 
-	/* ===== ACTIVE BUFFS BAR ===== */
-	.buffs-container {
-		display: flex;
-		gap: 8px;
-		margin-top: var(--spacing-sm, 8px);
-		flex-wrap: wrap;
-	}
-
-	.buff-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 4px 10px 4px 4px;
-		background: rgba(0, 8, 20, 0.7);
-		border: 1px solid var(--buff-color, #888);
-		border-radius: 8px;
-		animation: buff-appear 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-		backdrop-filter: blur(4px);
-	}
-
-	@keyframes buff-appear {
-		0% { opacity: 0; transform: scale(0.5) translateY(8px); }
-		100% { opacity: 1; transform: scale(1) translateY(0); }
-	}
-
-	.buff-icon-wrap {
-		position: relative;
-		width: 32px;
-		height: 32px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.buff-icon {
-		font-size: 1rem;
-		z-index: 1;
-		filter: drop-shadow(0 0 4px var(--buff-color));
-	}
-
-	.buff-timer-ring {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-	}
-
-	.buff-info {
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-	}
-
-	.buff-label {
-		font-family: 'Courier New', monospace;
-		font-size: 0.55rem;
-		color: var(--buff-color);
-		letter-spacing: 1px;
-		font-weight: bold;
-	}
-
-	.buff-time {
-		font-family: 'Courier New', monospace;
-		font-size: 0.6rem;
-		color: rgba(200, 220, 240, 0.7);
-	}
-
-	.buff-time.buff-expiring {
-		color: #ff6644;
-		animation: buff-blink 0.5s ease-in-out infinite alternate;
-	}
-
-	@keyframes buff-blink {
-		0% { opacity: 0.5; }
-		100% { opacity: 1; }
-	}
-
-	@media (min-width: 768px) {
-		.buff-item {
-			gap: 8px;
-			padding: 5px 14px 5px 5px;
-		}
-
-		.buff-icon-wrap {
-			width: 36px;
-			height: 36px;
-		}
-
-		.buff-icon {
-			font-size: 1.15rem;
-		}
-
-		.buff-label {
-			font-size: 0.6rem;
-		}
-
-		.buff-time {
-			font-size: 0.65rem;
-		}
-	}
 </style>

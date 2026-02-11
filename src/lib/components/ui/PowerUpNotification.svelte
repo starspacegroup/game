@@ -27,13 +27,12 @@
 <style>
 	.notif-container {
 		position: fixed;
-		top: 50%;
+		bottom: 12%;
 		left: 50%;
-		transform: translate(-50%, -50%);
+		transform: translateX(-50%);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8px;
 		pointer-events: none;
 		z-index: 50;
 	}

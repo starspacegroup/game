@@ -74,7 +74,7 @@
 	const LASER_SPEED = 60;
 	const LASER_LIFE = 2;
 	const NPC_SPEED = 6;
-	const NPC_SHOOT_RATE = 2.5;
+	const NPC_SHOOT_RATE = 5;
 
 	// Main game loop
 	useTask((delta) => {
@@ -459,6 +459,7 @@
 						laser.life = 0;
 						gameState.health = Math.max(0, gameState.health - 15);
 						world.player.health = gameState.health;
+						gameState.flashDamage();
 					}
 					break;
 				}
@@ -466,6 +467,7 @@
 					if (Date.now() < world.player.damageCooldownUntil) break;
 					gameState.health = Math.max(0, gameState.health - 25);
 					world.player.health = gameState.health;
+					gameState.flashDamage();
 					// Teleport player a short distance away from the NPC
 					let safePos = randomSpherePositionNear(world.player.position, 10, 20);
 					let attempts = 0;
@@ -619,9 +621,9 @@
 
 		// Spawn new hostile NPCs if too few hostile ones remain
 		const hostileNpcs = world.npcs.filter((n) => !n.destroyed && !n.converted && n.conversionProgress === 0);
-		if (hostileNpcs.length < 2) {
-			// Add a new hostile NPC near the player on the sphere
-			const pos = randomSpherePositionNear(world.player.position, 35, 60);
+		if (hostileNpcs.length < 1) {
+			// Add a new hostile NPC far from the player (off-screen)
+			const pos = randomSpherePositionNear(world.player.position, 55, 100);
 			world.npcs.push({
 				id: `npc_${Date.now()}_${Math.random().toString(36).slice(2)}`,
 				position: pos,

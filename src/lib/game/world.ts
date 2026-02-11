@@ -69,11 +69,19 @@ export interface PowerUpData {
 	bobPhase: number;
 }
 
+export interface OtherPlayerBuff {
+	type: string;
+	expiresAt: number;
+}
+
 export interface OtherPlayerData {
 	id: string;
 	username: string;
 	position: THREE.Vector3;
 	rotation: THREE.Euler;
+	health: number;
+	maxHealth: number;
+	activeBuffs: OtherPlayerBuff[];
 	lastUpdate: number;
 }
 

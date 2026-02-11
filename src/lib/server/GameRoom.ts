@@ -594,7 +594,7 @@ export class GameRoom implements DurableObject {
         ? { x: dir.dx / dir.dist, y: dir.dy / dir.dist, z: dir.dz / dir.dist }
         : { x: 0, y: 0, z: 1 };
       this.createNpcLaser(npc.id, npc.position, fireDir);
-      npc.shootCooldown = 2.5 + Math.random();
+      npc.shootCooldown = 5 + Math.random() * 2;
     }
   }
 
@@ -759,9 +759,9 @@ export class GameRoom implements DurableObject {
 
     // Respawn NPCs based on wave
     const activeNpcs = this.npcs.filter(n => !n.destroyed && !n.converted);
-    const targetNpcCount = Math.max(2, 5 - this.players.size + this.wave);
+    const targetNpcCount = Math.max(1, 3 - this.players.size + this.wave);
     if (activeNpcs.length < targetNpcCount && this.players.size > 0) {
-      // Spawn near a random player
+      // Spawn far from all players (off-screen)
       const playerArray = Array.from(this.players.values());
       const randomPlayer = playerArray[Math.floor(Math.random() * playerArray.length)];
       const newNpc = respawnNpc(randomPlayer.position);
