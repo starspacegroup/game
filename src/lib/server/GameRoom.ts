@@ -157,6 +157,7 @@ function projectToSurfaceV(pos: Vector3): Vector3 {
 
 export class GameRoom implements DurableObject {
   private state: DurableObjectState;
+  private env: Record<string, unknown>;
   private sessions: Map<WebSocket, PlayerSession> = new Map();
 
   // Full world state
@@ -177,8 +178,9 @@ export class GameRoom implements DurableObject {
   private worldInitialized: boolean = false;
   private roomCode: string = '';
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env?: Record<string, unknown>) {
     this.state = state;
+    this.env = env || {};
 
     // Restore game state from storage
     this.state.blockConcurrencyWhile(async () => {
@@ -814,6 +816,9 @@ export class GameRoom implements DurableObject {
         playerCount: this.sessions.size
       } as ServerMessage);
 
+      // Notify lobby of updated player count
+      this.notifyLobby();
+
       // Stop game loop if no players
       if (this.sessions.size === 0) {
         this.stopGameLoop();
@@ -834,6 +839,24 @@ export class GameRoom implements DurableObject {
 
         const playerId = data.id;
         const username = data.username || 'Player';
+
+        // Kick any existing session for the same player ID (prevents
+        // the same Discord account from joining on multiple devices).
+        for (const [existingWs, existingSession] of this.sessions) {
+          if (existingSession.id === playerId && existingWs !== ws) {
+            this.send(existingWs, {
+              type: 'error',
+              code: 'duplicate-session',
+              message: 'You joined from another device. This session has been disconnected.'
+            });
+            try {
+              existingWs.close(4009, 'duplicate-session');
+            } catch {
+              // Already closed
+            }
+            this.sessions.delete(existingWs);
+          }
+        }
 
         this.sessions.set(ws, {
           id: playerId,
@@ -887,6 +910,9 @@ export class GameRoom implements DurableObject {
           player,
           playerCount: this.sessions.size
         }, ws);
+
+        // Notify lobby of updated player count
+        this.notifyLobby();
         break;
       }
 
@@ -1264,6 +1290,39 @@ export class GameRoom implements DurableObject {
     };
 
     await this.state.storage.put('worldState', state);
+  }
+
+  /**
+   * Notify the GameLobby Durable Object of this room's current state,
+   * so lobby clients receive instant updates.
+   */
+  private notifyLobby(): void {
+    const lobbyBinding = this.env.GAME_LOBBY as DurableObjectNamespace | undefined;
+    if (!lobbyBinding) return;
+
+    try {
+      const lobbyId = lobbyBinding.idFromName('global');
+      const lobby = lobbyBinding.get(lobbyId);
+
+      const roomInfo = {
+        id: this.roomCode,
+        name: this.roomCode, // Will be enriched by the rooms API
+        playerCount: this.sessions.size,
+        createdAt: 0,
+        createdBy: '',
+        puzzleProgress: this.puzzleProgress,
+        wave: this.wave
+      };
+
+      // Fire-and-forget — don't await in the hot path
+      lobby.fetch(new Request('https://internal/room-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upsert', room: roomInfo })
+      })).catch(() => { /* best-effort */ });
+    } catch {
+      // Lobby binding unavailable — ignore
+    }
   }
 
   // ==========================================

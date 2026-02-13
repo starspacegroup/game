@@ -10,21 +10,10 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { connectToServer, disconnect } from '$lib/stores/socketClient';
+	import { connectLobby, disconnectLobby, lobbyState, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
-	interface RoomInfo {
-		id: string;
-		name: string;
-		playerCount: number;
-		createdAt: number;
-		createdBy: string;
-		puzzleProgress?: number;
-		wave?: number;
-	}
-
-	let availableRooms = $state<RoomInfo[]>([]);
-	let loadingRooms = $state(false);
 	let creatingRoom = $state(false);
 	let roomCodeInput = $state('');
 	let joiningByCode = $state(false);
@@ -82,30 +71,18 @@
 		}
 
 		// Fetch available multiplayer rooms
-		fetchRooms();
+		connectLobby();
 	});
 
-	// Re-fetch rooms whenever the welcome/gameover screen becomes visible
+	// Connect/disconnect lobby WebSocket based on screen visibility
 	$effect(() => {
 		const phase = gameState.phase;
 		if (phase === 'welcome' || phase === 'gameover') {
-			fetchRooms();
+			connectLobby();
+		} else {
+			disconnectLobby();
 		}
 	});
-
-	async function fetchRooms(): Promise<void> {
-		loadingRooms = true;
-		try {
-			const response = await fetch('/api/game/rooms');
-			const data = await response.json() as { rooms?: RoomInfo[] };
-			availableRooms = data.rooms || [];
-		} catch {
-			console.error('Failed to fetch rooms');
-			availableRooms = [];
-		} finally {
-			loadingRooms = false;
-		}
-	}
 
 	async function createMultiplayerRoom(): Promise<void> {
 		creatingRoom = true;
@@ -118,7 +95,7 @@
 					createdBy: authState.username || 'Anonymous'
 				})
 			});
-			const data = await response.json() as { success?: boolean; room?: RoomInfo };
+			const data = await response.json() as { success?: boolean; room?: LobbyRoomInfo };
 			if (data.success && data.room) {
 				startGame('multiplayer', data.room.id);
 			}
@@ -189,9 +166,7 @@
 				})
 			});
 			const data = await response.json() as { success?: boolean; error?: string };
-			if (data.success) {
-				availableRooms = availableRooms.filter(r => r.id !== roomId);
-			} else {
+			if (!data.success) {
 				console.error('Failed to delete room:', data.error);
 			}
 		} catch {
@@ -266,38 +241,40 @@
 					</div>
 				</div>
 
-				{#if availableRooms.length > 0}
-					<div class="rooms-section">
-						<h3 class="rooms-header">JOIN ACTIVE GAMES</h3>
-						<div class="rooms-list">
-							{#each availableRooms as room (room.id)}
-								<div class="room-row">
-									<button class="room-btn" onclick={() => joinRoom(room.id)}>
-										<span class="room-name">{room.name}</span>
-										<span class="room-info">
-											<span class="room-players">{room.playerCount} player{room.playerCount !== 1 ? 's' : ''}</span>
-											{#if room.wave && room.wave > 1}
-												<span class="room-wave">Wave {room.wave}</span>
-											{/if}
-										</span>
-									</button>
-									{#if authState.isSuperAdmin}
-										<button
-											class="room-delete-btn"
-											onclick={() => deleteRoom(room.id)}
-											disabled={deletingRoomId === room.id}
-											title="Delete room (admin)"
-										>
-											{deletingRoomId === room.id ? '...' : 'X'}
+				<div class="rooms-section">
+						<h3 class="rooms-header"><span class="live-dot" class:connected={lobbyState.connected}></span> ACTIVE GAMES</h3>
+						{#if lobbyState.rooms.length > 0}
+							<div class="rooms-list">
+								{#each lobbyState.rooms as room (room.id)}
+									<div class="room-row">
+										<button class="room-btn" onclick={() => joinRoom(room.id)}>
+											<span class="room-name">{room.name}</span>
+											<span class="room-info">
+												<span class="room-players">{room.playerCount} player{room.playerCount !== 1 ? 's' : ''}</span>
+												{#if room.wave && room.wave > 1}
+													<span class="room-wave">Wave {room.wave}</span>
+												{/if}
+											</span>
 										</button>
-									{/if}
-								</div>
-							{/each}
-						</div>
+										{#if authState.isSuperAdmin}
+											<button
+												class="room-delete-btn"
+												onclick={() => deleteRoom(room.id)}
+												disabled={deletingRoomId === room.id}
+												title="Delete room (admin)"
+											>
+												{deletingRoomId === room.id ? '...' : 'X'}
+											</button>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{:else if !lobbyState.connected}
+							<div class="rooms-loading">Connecting...</div>
+						{:else}
+							<div class="rooms-empty">No active games — create one!</div>
+						{/if}
 					</div>
-				{:else if loadingRooms}
-					<div class="rooms-loading">Loading games...</div>
-				{/if}
 			{:else}
 				<p class="login-prompt">Login with Discord to play</p>
 				<button class="discord-btn" onclick={loginWithDiscord}>
@@ -750,12 +727,35 @@
 		color: #ff8844;
 	}
 
-	.rooms-loading {
+	.rooms-loading,
+	.rooms-empty {
 		font-family: var(--hud-font, monospace);
 		font-size: var(--font-xs, 0.6rem);
 		color: #6688aa;
 		text-align: center;
-		margin-bottom: var(--spacing-lg, 16px);
+		padding: var(--spacing-sm, 8px) 0;
+	}
+
+	.live-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		background: #666;
+		border-radius: 50%;
+		margin-right: 4px;
+		vertical-align: middle;
+		transition: background 0.3s, box-shadow 0.3s;
+	}
+
+	.live-dot.connected {
+		background: #00ff88;
+		box-shadow: 0 0 6px rgba(0, 255, 136, 0.6);
+		animation: pulse-dot 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
 	}
 
 	.features {

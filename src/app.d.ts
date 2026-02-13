@@ -15,6 +15,7 @@ declare global {
 		interface Platform {
 			env: {
 				GAME_ROOM: DurableObjectNamespace;
+				GAME_LOBBY: DurableObjectNamespace;
 				GAME_DATA: KVNamespace;
 			};
 			context: ExecutionContext;

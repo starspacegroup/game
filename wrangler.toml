@@ -12,6 +12,11 @@ name = "GAME_ROOM"
 class_name = "GameRoom"
 script_name = "game-worker"
 
+[[durable_objects.bindings]]
+name = "GAME_LOBBY"
+class_name = "GameLobby"
+script_name = "game-worker"
+
 # KV namespace for persistent game data (leaderboards, etc.)
 [[kv_namespaces]]
 binding = "GAME_DATA"

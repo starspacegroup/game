@@ -166,6 +166,16 @@ export function connectToServer(room: string = 'default'): void {
         return;
       }
 
+      // If kicked due to duplicate session (same user joined from another device),
+      // don't reconnect — the other device has taken over.
+      if (event.code === 4009 || event.reason === 'duplicate-session') {
+        console.warn('[Starspace] Disconnected: you joined from another device.');
+        gameState.phase = 'welcome';
+        currentRoomCode = null;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        return;
+      }
+
       // Try to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentRoomCode) {
         reconnectAttempts++;

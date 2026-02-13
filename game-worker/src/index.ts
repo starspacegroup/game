@@ -3,8 +3,9 @@
  * Deployed as a standalone Worker so Cloudflare Pages can bind to it via script_name.
  */
 
-// Re-export the Durable Object class (wrangler bundles transitively)
+// Re-export the Durable Object classes (wrangler bundles transitively)
 export { GameRoom } from '../../src/lib/server/GameRoom';
+export { GameLobby } from '../../src/lib/server/GameLobby';
 
 export default {
   async fetch(_request: Request): Promise<Response> {

@@ -55,6 +55,8 @@ export const GET: RequestHandler = async ({ platform }) => {
         } else {
           // Clean up stale empty rooms
           await platform.env.GAME_DATA.delete(key.name);
+          // Notify lobby of removal
+          notifyLobbyDelete(platform, roomData.id);
         }
       } catch {
         // Room fetch failed, skip it
@@ -95,6 +97,9 @@ export const POST: RequestHandler = async ({ platform, request }) => {
     // Store room info in KV (no TTL - rooms persist indefinitely)
     await platform.env.GAME_DATA.put(`room:${roomId}`, JSON.stringify(roomInfo));
 
+    // Notify lobby of new room
+    notifyLobbyUpsert(platform, roomInfo);
+
     return json({ success: true, room: roomInfo });
   } catch (error) {
     console.error('Failed to create room:', error);
@@ -109,7 +114,7 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
   }
 
   try {
-    const body = await request.json() as { roomId?: string; userId?: string };
+    const body = await request.json() as { roomId?: string; userId?: string; };
     const { roomId, userId } = body;
 
     if (!roomId || !userId) {
@@ -123,6 +128,9 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
 
     // Delete the KV entry
     await platform.env.GAME_DATA.delete(`room:${roomId}`);
+
+    // Notify lobby of removal
+    notifyLobbyDelete(platform, roomId);
 
     // Notify the Durable Object to terminate (best-effort)
     try {
@@ -139,3 +147,31 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
     return json({ error: 'Failed to delete room' }, { status: 500 });
   }
 };
+
+// ── Lobby notification helpers ──
+
+function notifyLobbyUpsert(platform: App.Platform, room: RoomInfo): void {
+  if (!platform.env?.GAME_LOBBY) return;
+  try {
+    const id = platform.env.GAME_LOBBY.idFromName('global');
+    const lobby = platform.env.GAME_LOBBY.get(id);
+    lobby.fetch(new Request('https://internal/room-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upsert', room })
+    })).catch(() => { /* best-effort */ });
+  } catch { /* lobby unavailable */ }
+}
+
+function notifyLobbyDelete(platform: App.Platform, roomId: string): void {
+  if (!platform.env?.GAME_LOBBY) return;
+  try {
+    const id = platform.env.GAME_LOBBY.idFromName('global');
+    const lobby = platform.env.GAME_LOBBY.get(id);
+    lobby.fetch(new Request('https://internal/room-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', roomId })
+    })).catch(() => { /* best-effort */ });
+  } catch { /* lobby unavailable */ }
+}

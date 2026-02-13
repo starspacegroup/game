@@ -7,6 +7,14 @@ compatibility_flags = ["nodejs_compat"]
 name = "GAME_ROOM"
 class_name = "GameRoom"
 
+[[durable_objects.bindings]]
+name = "GAME_LOBBY"
+class_name = "GameLobby"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["GameLobby"]
