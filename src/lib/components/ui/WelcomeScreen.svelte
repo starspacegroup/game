@@ -186,7 +186,7 @@
 </script>
 
 {#if gameState.phase === 'welcome' || gameState.phase === 'gameover'}
-	<div class="welcome-overlay">
+	<div class="welcome-overlay" role="dialog" aria-label="Welcome screen">
 		<div class="welcome-content">
 			{#if gameState.phase === 'gameover'}
 				<div class="gameover-badge">SIGNAL LOST</div>
@@ -272,28 +272,28 @@
 				Alone or together — the puzzle awaits.
 			</p>
 
-			<div class="features">
-				<div class="feature">
-					<span class="feature-icon">&#9733;</span>
+			<ul class="features" aria-label="Game features">
+				<li class="feature">
+					<span class="feature-icon" aria-hidden="true">&#9733;</span>
 					<span>Convert hostile ships into allied satellites</span>
-				</div>
-				<div class="feature">
-					<span class="feature-icon">&#9830;</span>
+				</li>
+				<li class="feature">
+					<span class="feature-icon" aria-hidden="true">&#9830;</span>
 					<span>Solve the hidden puzzle — align nodes into a perfect structure</span>
-				</div>
-				<div class="feature">
-					<span class="feature-icon">&#9824;</span>
+				</li>
+				<li class="feature">
+					<span class="feature-icon" aria-hidden="true">&#9824;</span>
 					<span>Collect power-ups: shields, speed boost, multi-shot</span>
-				</div>
-				<div class="feature">
-					<span class="feature-icon">&#9679;</span>
+				</li>
+				<li class="feature">
+					<span class="feature-icon" aria-hidden="true">&#9679;</span>
 					<span>Explore a seamless sphere world</span>
-				</div>
-				<div class="feature">
-					<span class="feature-icon">&#9672;</span>
+				</li>
+				<li class="feature">
+					<span class="feature-icon" aria-hidden="true">&#9672;</span>
 					<span>Collaborate in real-time multiplayer</span>
-				</div>
-			</div>
+				</li>
+			</ul>
 
 			<div class="footer">
 				<a href="https://starspace.group" target="_blank" rel="noopener noreferrer" class="footer-link">starspace.group</a>
@@ -322,13 +322,13 @@
 		max-width: 100%;
 		width: 100%;
 		/* Ensure content doesn't touch edges on small screens */
-		padding: 0 var(--spacing-sm, 8px);
+		padding: 0 var(--spacing-md, 12px);
 	}
 
 	.gameover-badge {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-sm, 0.7rem);
-		color: #ff4444;
+		font-size: var(--font-md, 1rem);
+		color: #ff6666;
 		letter-spacing: 3px;
 		margin-bottom: var(--spacing-sm, 8px);
 		text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
@@ -336,20 +336,20 @@
 
 	.final-score {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-md, 0.85rem);
-		color: #8899aa;
+		font-size: var(--font-md, 1rem);
+		color: #aabbcc;
 		margin-bottom: var(--spacing-md, 12px);
 	}
 
 	.score-value {
 		color: #00ff88;
-		font-size: var(--font-lg, 1rem);
+		font-size: var(--font-lg, 1.125rem);
 		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 	}
 
 	/* Mobile-first title sizing */
 	.title {
-		font-size: var(--font-2xl, 1.6rem);
+		font-size: var(--font-3xl, 2.25rem);
 		font-weight: 900;
 		margin: 0 0 var(--spacing-lg, 16px) 0;
 		letter-spacing: 3px;
@@ -374,16 +374,16 @@
 	}
 
 	.org-logo {
-		width: 20px;
-		height: 20px;
+		width: 24px;
+		height: 24px;
 		object-fit: contain;
 		filter: drop-shadow(0 0 6px rgba(68, 136, 255, 0.4));
 	}
 
 	.org-name {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-xs, 0.6rem);
-		color: #6688aa;
+		font-size: var(--font-sm, 0.875rem);
+		color: #8899bb;
 		letter-spacing: 3px;
 	}
 
@@ -406,19 +406,19 @@
 	.username {
 		font-family: var(--hud-font, monospace);
 		color: #00ff88;
-		font-size: var(--font-md, 0.85rem);
+		font-size: var(--font-md, 1rem);
 	}
 
 	.logout-btn {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-xs, 0.6rem);
+		font-size: var(--font-xs, 0.75rem);
 		/* Ensure minimum touch target */
 		min-height: var(--touch-target-min, 44px);
 		min-width: var(--touch-target-min, 44px);
 		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
 		background: transparent;
-		border: 1px solid #6688aa;
-		color: #6688aa;
+		border: 1px solid #8899aa;
+		color: #8899aa;
 		border-radius: 4px;
 		cursor: pointer;
 		transition: all 0.2s;
@@ -432,8 +432,8 @@
 	}
 
 	.login-prompt {
-		font-size: var(--font-md, 0.85rem);
-		color: #8899aa;
+		font-size: var(--font-md, 1rem);
+		color: #aabbcc;
 		margin-bottom: var(--spacing-md, 12px);
 	}
 
@@ -445,21 +445,21 @@
 		gap: var(--spacing-sm, 8px);
 		/* Touch-friendly sizing */
 		min-height: var(--touch-target-comfortable, 48px);
-		padding: var(--spacing-sm, 8px) var(--spacing-lg, 16px);
+		padding: var(--spacing-md, 12px) var(--spacing-lg, 16px);
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-md, 0.85rem);
+		font-size: var(--font-md, 1rem);
 		letter-spacing: 1px;
 		color: #fff;
 		background: #5865F2;
 		border: none;
-		border-radius: 6px;
+		border-radius: 8px;
 		cursor: pointer;
 		transition: all 0.2s;
 		box-shadow: 0 0 20px rgba(88, 101, 242, 0.3);
 		margin-bottom: var(--spacing-lg, 16px);
 		-webkit-tap-highlight-color: transparent;
 		width: 100%;
-		max-width: 280px;
+		max-width: 320px;
 	}
 
 	.discord-btn:hover,
@@ -475,9 +475,9 @@
 	}
 
 	.lore {
-		font-size: var(--font-sm, 0.7rem);
-		color: #8899aa;
-		line-height: 1.5;
+		font-size: var(--font-sm, 0.875rem);
+		color: #aabbcc;
+		line-height: 1.6;
 		margin-bottom: var(--spacing-lg, 16px);
 		font-style: italic;
 		padding: 0 var(--spacing-sm, 8px);
@@ -487,21 +487,22 @@
 	.start-btn {
 		display: inline-block;
 		min-height: var(--touch-target-comfortable, 48px);
-		padding: var(--spacing-sm, 8px) var(--spacing-xl, 24px);
+		padding: var(--spacing-md, 12px) var(--spacing-xl, 24px);
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-lg, 1rem);
-		letter-spacing: 3px;
+		font-size: var(--font-md, 1rem);
+		letter-spacing: 2px;
 		color: #000;
 		background: linear-gradient(135deg, #00ff88, #44ffaa);
 		border: none;
-		border-radius: 6px;
+		border-radius: 8px;
 		cursor: pointer;
 		transition: all 0.2s;
 		box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
 		margin-bottom: var(--spacing-sm, 8px);
 		-webkit-tap-highlight-color: transparent;
 		width: 100%;
-		max-width: 280px;
+		max-width: 320px;
+		font-weight: 700;
 	}
 
 	.start-btn:hover,
@@ -544,14 +545,14 @@
 	/* Rooms section */
 	.rooms-section {
 		width: 100%;
-		max-width: 320px;
+		max-width: 360px;
 		margin: 0 auto var(--spacing-lg, 16px);
 	}
 
 	.rooms-header {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-xs, 0.6rem);
-		color: #6688aa;
+		font-size: var(--font-xs, 0.75rem);
+		color: #8899bb;
 		letter-spacing: 2px;
 		margin: 0 0 var(--spacing-sm, 8px) 0;
 		text-align: center;
@@ -578,9 +579,9 @@
 		min-height: var(--touch-target-min, 44px);
 		padding: var(--spacing-sm, 8px);
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-sm, 0.7rem);
+		font-size: var(--font-sm, 0.875rem);
 		font-weight: bold;
-		color: #ff4444;
+		color: #ff6666;
 		background: rgba(255, 68, 68, 0.1);
 		border: 1px solid rgba(255, 68, 68, 0.3);
 		border-radius: 6px;
@@ -603,10 +604,10 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		min-height: var(--touch-target-min, 44px);
+		min-height: var(--touch-target-comfortable, 48px);
 		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-sm, 0.7rem);
+		font-size: var(--font-sm, 0.875rem);
 		background: rgba(68, 136, 255, 0.1);
 		border: 1px solid rgba(68, 136, 255, 0.3);
 		border-radius: 6px;
@@ -634,8 +635,8 @@
 	.room-info {
 		display: flex;
 		gap: var(--spacing-sm, 8px);
-		color: #6688aa;
-		font-size: var(--font-xs, 0.6rem);
+		color: #8899aa;
+		font-size: var(--font-xs, 0.75rem);
 	}
 
 	.room-players {
@@ -649,8 +650,8 @@
 	.rooms-loading,
 	.rooms-empty {
 		font-family: var(--hud-font, monospace);
-		font-size: var(--font-xs, 0.6rem);
-		color: #6688aa;
+		font-size: var(--font-sm, 0.875rem);
+		color: #8899aa;
 		text-align: center;
 		padding: var(--spacing-sm, 8px) 0;
 	}
@@ -682,19 +683,24 @@
 		flex-direction: column;
 		gap: var(--spacing-sm, 8px);
 		margin-bottom: var(--spacing-lg, 16px);
+		list-style: none;
+		padding: 0;
+		margin-top: 0;
 	}
 
 	.feature {
-		font-size: var(--font-xs, 0.6rem);
-		color: #6688aa;
+		font-size: var(--font-sm, 0.875rem);
+		color: #99aabb;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: var(--spacing-sm, 8px);
+		line-height: 1.4;
 	}
 
 	.feature-icon {
-		color: #4488ff;
+		color: #5599ff;
+		flex-shrink: 0;
 	}
 
 	.footer {
@@ -703,21 +709,21 @@
 
 	.footer-link {
 		font-family: var(--hud-font, monospace);
-		font-size: 0.5rem;
-		color: #334455;
+		font-size: var(--font-xs, 0.75rem);
+		color: #556677;
 		letter-spacing: 2px;
 		text-decoration: none;
 		transition: color 0.2s;
 	}
 
 	.footer-link:hover {
-		color: #6688aa;
+		color: #8899aa;
 	}
 
 	/* ===== LARGER PHONES (375px+) ===== */
 	@media (min-width: 375px) {
 		.title {
-			font-size: 2rem;
+			font-size: 2.5rem;
 			letter-spacing: 3px;
 		}
 
@@ -727,53 +733,53 @@
 
 		.discord-btn,
 		.start-btn {
-			max-width: 300px;
+			max-width: 340px;
 		}
 	}
 
 	/* ===== MEDIUM SCREENS (480px+) ===== */
 	@media (min-width: 480px) {
 		.welcome-overlay {
-			padding: 20px;
+			padding: 24px;
 		}
 
 		.welcome-content {
-			max-width: 420px;
+			max-width: 480px;
 		}
 
 		.title {
-			font-size: 2.5rem;
+			font-size: 3rem;
 		}
 
 		.gameover-badge {
-			font-size: 0.8rem;
+			font-size: 1.1rem;
 			letter-spacing: 4px;
 		}
 
 		.score-value {
-			font-size: 1.2rem;
+			font-size: 1.35rem;
 		}
 
 		.org-name {
-			font-size: 0.7rem;
+			font-size: 0.95rem;
 			letter-spacing: 5px;
 		}
 
 		.org-logo {
-			width: 24px;
-			height: 24px;
+			width: 28px;
+			height: 28px;
 		}
 
 		.avatar {
-			width: 40px;
-			height: 40px;
+			width: 44px;
+			height: 44px;
 		}
 
 		.discord-btn {
-			padding: 12px 24px;
-			font-size: 0.95rem;
+			padding: 14px 28px;
+			font-size: 1.05rem;
 			letter-spacing: 2px;
-			max-width: 320px;
+			max-width: 360px;
 		}
 
 		.discord-icon {
@@ -782,77 +788,81 @@
 		}
 
 		.start-btn {
-			padding: 12px 40px;
-			font-size: 1.05rem;
-			letter-spacing: 4px;
-			max-width: 320px;
+			padding: 14px 40px;
+			font-size: 1.1rem;
+			letter-spacing: 3px;
+			max-width: 360px;
 		}
 
 		.lore {
-			font-size: 0.8rem;
+			font-size: 0.95rem;
 		}
 
 		.feature {
-			font-size: 0.7rem;
+			font-size: 0.9rem;
+		}
+
+		.rooms-section {
+			max-width: 400px;
 		}
 	}
 
 	/* ===== TABLETS AND UP (768px+) ===== */
 	@media (min-width: 768px) {
 		.welcome-content {
-			max-width: 480px;
+			max-width: 560px;
 		}
 
 		.title {
-			font-size: 3.5rem;
-			letter-spacing: 4px;
+			font-size: 4rem;
+			letter-spacing: 5px;
 		}
 
 		.org-name {
-			font-size: 0.75rem;
-			letter-spacing: 4px;
+			font-size: 1rem;
+			letter-spacing: 5px;
 		}
 
 		.org-logo {
-			width: 28px;
-			height: 28px;
+			width: 32px;
+			height: 32px;
 		}
 
 		.final-score {
-			font-size: 0.9rem;
+			font-size: 1.1rem;
 			margin-bottom: 20px;
 		}
 
 		.score-value {
-			font-size: 1.3rem;
+			font-size: 1.5rem;
 		}
 
 		.user-info {
-			gap: 12px;
-			margin-bottom: 20px;
+			gap: 14px;
+			margin-bottom: 24px;
 		}
 
 		.username {
-			font-size: 0.9rem;
+			font-size: 1.1rem;
 		}
 
 		.logout-btn {
-			font-size: 0.7rem;
-			padding: 4px 10px;
+			font-size: 0.85rem;
+			padding: 6px 14px;
 			min-height: auto;
 			min-width: auto;
 		}
 
 		.discord-btn {
-			padding: 14px 32px;
-			font-size: 1rem;
-			margin-bottom: 24px;
+			padding: 16px 36px;
+			font-size: 1.1rem;
+			margin-bottom: 28px;
 			width: auto;
 		}
 
 		.start-btn {
-			padding: 14px 48px;
-			font-size: 1.1rem;
+			padding: 16px 48px;
+			font-size: 1.15rem;
 			margin-bottom: 12px;
 			width: auto;
 		}
@@ -864,25 +874,117 @@
 		}
 
 		.rooms-section {
-			max-width: 400px;
+			max-width: 460px;
 		}
 
 		.rooms-header {
-			font-size: 0.7rem;
+			font-size: 0.9rem;
 		}
 
 		.room-btn {
-			font-size: 0.8rem;
+			font-size: 0.95rem;
 		}
 
 		.lore {
-			font-size: 0.85rem;
-			line-height: 1.6;
+			font-size: 1rem;
+			line-height: 1.7;
 			margin-bottom: 28px;
 		}
 
 		.feature {
-			font-size: 0.75rem;
+			font-size: 0.95rem;
+		}
+	}
+
+	/* ===== DESKTOP (1024px+) ===== */
+	@media (min-width: 1024px) {
+		.welcome-content {
+			max-width: 720px;
+		}
+
+		.title {
+			font-size: 5.5rem;
+			letter-spacing: 6px;
+		}
+
+		.org-name {
+			font-size: 1.15rem;
+			letter-spacing: 6px;
+		}
+
+		.org-logo {
+			width: 36px;
+			height: 36px;
+		}
+
+		.gameover-badge {
+			font-size: 1.25rem;
+			letter-spacing: 5px;
+		}
+
+		.final-score {
+			font-size: 1.2rem;
+		}
+
+		.score-value {
+			font-size: 1.7rem;
+		}
+
+		.username {
+			font-size: 1.2rem;
+		}
+
+		.discord-btn {
+			padding: 18px 44px;
+			font-size: 1.2rem;
+			letter-spacing: 2px;
+		}
+
+		.start-btn {
+			padding: 18px 56px;
+			font-size: 1.25rem;
+			letter-spacing: 3px;
+		}
+
+		.rooms-section {
+			max-width: 560px;
+		}
+
+		.rooms-header {
+			font-size: 1rem;
+		}
+
+		.room-btn {
+			font-size: 1.05rem;
+		}
+
+		.lore {
+			font-size: 1.15rem;
+			line-height: 1.8;
+		}
+
+		.feature {
+			font-size: 1.05rem;
+		}
+	}
+
+	/* ===== LARGE DESKTOP (1280px+) ===== */
+	@media (min-width: 1280px) {
+		.welcome-content {
+			max-width: 860px;
+		}
+
+		.title {
+			font-size: 6.5rem;
+			letter-spacing: 7px;
+		}
+
+		.lore {
+			font-size: 1.25rem;
+		}
+
+		.feature {
+			font-size: 1.1rem;
 		}
 	}
 </style>

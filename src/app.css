@@ -21,13 +21,13 @@
 	--spacing-xl: 24px;
 	
 	/* Mobile-first font sizes */
-	--font-xs: 0.6rem;
-	--font-sm: 0.7rem;
-	--font-md: 0.85rem;
-	--font-lg: 1rem;
-	--font-xl: 1.2rem;
-	--font-2xl: 1.6rem;
-	--font-3xl: 2rem;
+	--font-xs: 1rem;
+	--font-sm: 1.0625rem;
+	--font-md: 1.125rem;
+	--font-lg: 1.25rem;
+	--font-xl: 1.5rem;
+	--font-2xl: 1.75rem;
+	--font-3xl: 2.25rem;
 	
 	/* Touch target sizes (minimum 44px for accessibility) */
 	--touch-target-min: 44px;
@@ -40,7 +40,7 @@
 	--safe-right: env(safe-area-inset-right, 0px);
 	
 	/* Base font size for mobile */
-	font-size: 14px;
+	font-size: 15px;
 }
 
 /* Small phones (375px+) */
@@ -63,23 +63,53 @@
 /* Tablets (768px+) */
 @media (min-width: 768px) {
 	:root {
-		font-size: 16px;
+		font-size: 17px;
 		--spacing-lg: 24px;
 		--spacing-xl: 32px;
-		--font-3xl: 2.5rem;
+		--font-xs: 1.05rem;
+		--font-sm: 1.125rem;
+		--font-md: 1.25rem;
+		--font-lg: 1.4rem;
+		--font-xl: 1.65rem;
+		--font-2xl: 2.25rem;
+		--font-3xl: 3rem;
 	}
 }
 
 /* Desktop (1024px+) */
 @media (min-width: 1024px) {
 	:root {
-		--font-3xl: 3rem;
+		font-size: 18px;
+		--font-xs: 1.1rem;
+		--font-sm: 1.2rem;
+		--font-md: 1.35rem;
+		--font-lg: 1.5rem;
+		--font-xl: 1.85rem;
+		--font-2xl: 2.5rem;
+		--font-3xl: 3.5rem;
 	}
 }
 
 * {
 	box-sizing: border-box;
 	-webkit-tap-highlight-color: transparent;
+}
+
+/* Focus styles for keyboard accessibility */
+:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+button:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+	box-shadow: 0 0 0 4px rgba(0, 255, 136, 0.25);
+}
+
+a:focus-visible {
+	outline: 2px solid var(--color-secondary);
+	outline-offset: 2px;
 }
 
 /* Prevent text selection during gameplay */
