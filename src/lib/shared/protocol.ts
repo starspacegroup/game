@@ -346,7 +346,7 @@ export const DEFAULT_BOUNDS: WorldBounds = {
 };
 
 /** Radius of the sphere world. All entities live on this surface. */
-export const SPHERE_RADIUS = 200;
+export const SPHERE_RADIUS = 100;
 
 /** Interior radius where puzzle nodes live inside the sphere */
 export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;

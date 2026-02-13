@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const SPHERE_RADIUS = 200;
+export const SPHERE_RADIUS = 100;
 
 /** Puzzle nodes live inside the sphere at this fraction of the radius */
 export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
