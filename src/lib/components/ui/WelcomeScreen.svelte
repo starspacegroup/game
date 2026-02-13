@@ -260,9 +260,10 @@
 					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
 						{creatingRoom ? 'CREATING...' : 'CREATE NEW MULTIPLAYER ROOM'}
 					</button>
+					<span class="mode-separator" aria-hidden="true">-or-</span>
 
 					<button class="start-btn solo-btn" onclick={() => startGame('solo')}>
-						SINGLE PLAYER
+						PLAY SOLO
 					</button>
 				</div>
 			{:else}
@@ -543,8 +544,22 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: var(--spacing-sm, 8px);
+		gap: var(--spacing-md, 12px);
 		margin-bottom: var(--spacing-md, 12px);
+	}
+
+	.game-modes .start-btn {
+		margin-bottom: 0;
+	}
+
+	.mode-separator {
+		display: block;
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		letter-spacing: 2px;
+		text-transform: uppercase;
+		color: #8899bb;
+		opacity: 0.9;
 	}
 
 	.solo-btn {
@@ -955,9 +970,9 @@
 		}
 
 		.game-modes {
-			flex-direction: row;
+			flex-direction: column;
 			justify-content: center;
-			gap: var(--spacing-md, 12px);
+			gap: var(--spacing-sm, 8px);
 		}
 
 		.rooms-section {
