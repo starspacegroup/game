@@ -158,7 +158,8 @@
 	.minimap {
 		position: fixed;
 		bottom: 16px;
-		right: 16px;
+		left: 50%;
+		transform: translateX(-50%);
 		width: 120px;
 		height: 140px;
 		pointer-events: none;
