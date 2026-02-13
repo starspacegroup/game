@@ -11,7 +11,7 @@
 	import PuzzleStructure from './PuzzleStructure.svelte';
 	import PowerUp from './PowerUp.svelte';
 	import HexGrid from './HexGrid.svelte';
-	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
+	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';import ShipExplosion from './ShipExplosion.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
 	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import {
 		generateAsteroids,
@@ -537,6 +537,8 @@
 						world.player.health = gameState.health;
 						gameState.flashDamage();
 					}
+					// Skip teleport if this hit killed the player
+					if (gameState.health <= 0) break;
 					// Teleport player a short distance away from the NPC
 					let safePos = randomSpherePositionNear(world.player.position, 10, 20);
 					let attempts = 0;
@@ -799,6 +801,9 @@
 
 <!-- Player ship -->
 <PlayerShip />
+
+<!-- Ship explosion debris on death -->
+<ShipExplosion />
 
 <!-- Other players -->
 {#each otherPlayerIds as id (id)}

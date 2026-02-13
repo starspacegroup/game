@@ -9,22 +9,40 @@
 	// Camera height above the sphere surface
 	const CAMERA_HEIGHT = 25;
 
+	// Captured death position/up for stable camera during death
+	let deathPos: THREE.Vector3 | null = null;
+	let deathUp: THREE.Vector3 | null = null;
+	let wasDead = false;
+
 	const _tempPos = new THREE.Vector3();
 	const _tempUp = new THREE.Vector3();
 
 	useTask(() => {
 		if (!camera) return;
 
-		// During death replay, follow the recorded positions
-		if (deathReplay.active && deathReplay.replayPosition && deathReplay.replayUp) {
-			_tempPos.set(deathReplay.replayPosition.x, deathReplay.replayPosition.y, deathReplay.replayPosition.z);
-			_tempUp.set(deathReplay.replayUp.x, deathReplay.replayUp.y, deathReplay.replayUp.z).normalize();
+		// During death replay, lock camera on the death position (no swooping)
+		if (deathReplay.active) {
+			// Capture death position on first frame of death
+			if (!wasDead) {
+				deathPos = world.player.position.clone();
+				deathUp = world.playerUp.clone();
+				wasDead = true;
+			}
 
-			const normal = _tempPos.clone().normalize();
-			camera.position.copy(_tempPos).addScaledVector(normal, CAMERA_HEIGHT);
-			camera.up.copy(_tempUp);
-			camera.lookAt(_tempPos);
+			if (deathPos && deathUp) {
+				const normal = deathPos.clone().normalize();
+				camera.position.copy(deathPos).addScaledVector(normal, CAMERA_HEIGHT);
+				camera.up.copy(deathUp);
+				camera.lookAt(deathPos);
+			}
 			return;
+		}
+
+		// Reset death state when no longer in replay
+		if (wasDead) {
+			wasDead = false;
+			deathPos = null;
+			deathUp = null;
 		}
 
 		const normal = world.player.position.clone().normalize();

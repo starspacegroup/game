@@ -331,6 +331,12 @@
 			loadAvatar(avatarUrl);
 		}
 
+		// Hide ship when dead (explosion debris replaces it)
+		if (gameState.multiplayerDead) {
+			rootGroup.visible = false;
+			return;
+		}
+
 		// Blink during invincibility
 		const isInvincible = Date.now() < world.player.damageCooldownUntil;
 		if (isInvincible) {
