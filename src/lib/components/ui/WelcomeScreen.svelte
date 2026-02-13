@@ -11,11 +11,27 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { connectToServer, disconnect } from '$lib/stores/socketClient';
-	import { connectLobby, disconnectLobby, lobbyState, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
+	import { connectLobby, disconnectLobby, lobbyState, getMyPastGames, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
 	let creatingRoom = $state(false);
+
+	const pastGames = $derived(getMyPastGames(authState.userId || ''));
+
+	function formatDuration(seconds: number): string {
+		const m = Math.floor(seconds / 60);
+		const s = seconds % 60;
+		return m > 0 ? `${m}m ${s}s` : `${s}s`;
+	}
+
+	function formatTimeAgo(timestamp: number): string {
+		const diff = Math.round((Date.now() - timestamp) / 1000);
+		if (diff < 60) return 'just now';
+		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+		return `${Math.floor(diff / 86400)}d ago`;
+	}
 
 
 	let deletingRoomId = $state<string | null>(null);
@@ -207,9 +223,9 @@
 
 				<div class="rooms-section">
 						<h3 class="rooms-header"><span class="live-dot" class:connected={lobbyState.connected}></span> ACTIVE GAMES</h3>
-						{#if lobbyState.rooms.length > 0}
+						{#if lobbyState.rooms.filter(r => r.playerCount > 0).length > 0}
 							<div class="rooms-list">
-								{#each lobbyState.rooms as room (room.id)}
+								{#each lobbyState.rooms.filter(r => r.playerCount > 0) as room (room.id)}
 									<div class="room-row">
 										<button class="room-btn" onclick={() => joinRoom(room.id)}>
 											<span class="room-name">{room.name}</span>
@@ -257,6 +273,36 @@
 					</svg>
 					Login with Discord
 				</button>
+			{/if}
+
+			{#if authState.isLoggedIn && pastGames.length > 0}
+				<div class="rooms-section past-games-section">
+					<h3 class="rooms-header past-games-header">YOUR GAME HISTORY</h3>
+					<div class="rooms-list">
+						{#each pastGames.sort((a, b) => b.endedAt - a.endedAt) as game (game.id)}
+							<div class="past-game-card">
+								<div class="past-game-top">
+									<span class="past-game-name">{game.name}</span>
+									<span class="past-game-ago">{formatTimeAgo(game.endedAt)}</span>
+								</div>
+								<div class="past-game-stats">
+									<span class="past-game-stat">Wave {game.finalWave}</span>
+									<span class="past-game-stat">{formatDuration(game.duration)}</span>
+									<span class="past-game-stat">{Math.round(game.finalPuzzleProgress)}% puzzle</span>
+								</div>
+								<div class="past-game-players">
+									{#each game.players.sort((a, b) => b.score - a.score) as player, i (player.id)}
+										<span class="past-game-player">
+											<span class="past-game-rank">#{i + 1}</span>
+											<span class="past-game-player-name">{player.username}</span>
+											<span class="past-game-player-score">{player.score.toLocaleString()}</span>
+										</span>
+									{/each}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
 			{/if}
 
 			<p class="lore">
@@ -320,28 +366,6 @@
 		padding: 0 var(--spacing-md, 12px);
 		/* Center vertically when content is shorter than viewport */
 		margin: auto 0;
-	}
-
-	.gameover-badge {
-		font-family: var(--hud-font, monospace);
-		font-size: var(--font-md, 1rem);
-		color: #ff6666;
-		letter-spacing: 3px;
-		margin-bottom: var(--spacing-sm, 8px);
-		text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
-	}
-
-	.final-score {
-		font-family: var(--hud-font, monospace);
-		font-size: var(--font-md, 1rem);
-		color: #aabbcc;
-		margin-bottom: var(--spacing-md, 12px);
-	}
-
-	.score-value {
-		color: #00ff88;
-		font-size: var(--font-lg, 1.125rem);
-		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 	}
 
 	/* Mobile-first title sizing */
@@ -653,6 +677,90 @@
 		padding: var(--spacing-sm, 8px) 0;
 	}
 
+	/* ===== PAST GAMES SECTION ===== */
+	.past-games-section {
+		margin-top: var(--spacing-lg, 16px);
+		border-top: 1px solid rgba(68, 136, 255, 0.15);
+		padding-top: var(--spacing-md, 12px);
+	}
+
+	.past-games-header {
+		color: #8899aa;
+	}
+
+	.past-game-card {
+		font-family: var(--hud-font, monospace);
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 6px;
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		text-align: left;
+	}
+
+	.past-game-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
+
+	.past-game-name {
+		color: #aabbcc;
+		font-size: var(--font-sm, 0.875rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.past-game-ago {
+		color: #556677;
+		font-size: var(--font-xs, 0.75rem);
+		flex-shrink: 0;
+		margin-left: var(--spacing-sm, 8px);
+	}
+
+	.past-game-stats {
+		display: flex;
+		gap: var(--spacing-sm, 8px);
+		margin-bottom: 4px;
+		flex-wrap: wrap;
+	}
+
+	.past-game-stat {
+		color: #667788;
+		font-size: var(--font-xs, 0.75rem);
+	}
+
+	.past-game-players {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.past-game-player {
+		display: flex;
+		gap: var(--spacing-xs, 4px);
+		align-items: center;
+		font-size: var(--font-xs, 0.75rem);
+	}
+
+	.past-game-rank {
+		color: #556677;
+		min-width: 20px;
+	}
+
+	.past-game-player-name {
+		color: #8899aa;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.past-game-player-score {
+		color: #00ff88;
+	}
+
 	.live-dot {
 		display: inline-block;
 		width: 6px;
@@ -748,15 +856,6 @@
 			font-size: 3rem;
 		}
 
-		.gameover-badge {
-			font-size: 1.1rem;
-			letter-spacing: 4px;
-		}
-
-		.score-value {
-			font-size: 1.35rem;
-		}
-
 		.org-name {
 			font-size: 0.95rem;
 			letter-spacing: 5px;
@@ -823,15 +922,6 @@
 		.org-logo {
 			width: 32px;
 			height: 32px;
-		}
-
-		.final-score {
-			font-size: 1.1rem;
-			margin-bottom: 20px;
-		}
-
-		.score-value {
-			font-size: 1.5rem;
 		}
 
 		.user-info {
@@ -912,19 +1002,6 @@
 		.org-logo {
 			width: 36px;
 			height: 36px;
-		}
-
-		.gameover-badge {
-			font-size: 1.25rem;
-			letter-spacing: 5px;
-		}
-
-		.final-score {
-			font-size: 1.2rem;
-		}
-
-		.score-value {
-			font-size: 1.7rem;
 		}
 
 		.username {

@@ -837,10 +837,11 @@ export class GameRoom implements DurableObject {
       // Notify lobby of updated player count
       this.notifyLobby();
 
-      // Stop game loop if no players
+      // If no players remain, remove from lobby and clean up
       if (this.sessions.size === 0) {
         this.stopGameLoop();
         this.saveState();
+        this.notifyLobbyDelete();
       }
     }
   }
@@ -1422,6 +1423,12 @@ export class GameRoom implements DurableObject {
       ? Math.round((Date.now() - this.roomStartTime) / 1000)
       : 0;
 
+    const playerList = Array.from(this.players.values()).map(p => ({
+      id: p.id,
+      username: p.username,
+      score: p.score
+    }));
+
     // Build the room-ended payload
     const msg: ServerMessage = {
       type: 'room-ended',
@@ -1429,18 +1436,14 @@ export class GameRoom implements DurableObject {
       duration,
       finalWave: this.wave,
       finalPuzzleProgress: this.puzzleProgress,
-      players: Array.from(this.players.values()).map(p => ({
-        id: p.id,
-        username: p.username,
-        score: p.score
-      })),
+      players: playerList,
       eventLog: this.eventLog
     };
 
     this.broadcast(msg);
 
-    // Notify lobby that this room is no longer joinable
-    this.notifyLobbyDelete();
+    // Archive the room in the lobby (instead of deleting)
+    this.notifyLobbyArchive(duration, playerList);
   }
 
   /**
@@ -1489,6 +1492,42 @@ export class GameRoom implements DurableObject {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', roomId: this.roomCode })
+      })).catch(() => { /* best-effort */ });
+    } catch {
+      // Lobby binding unavailable — ignore
+    }
+  }
+
+  /**
+   * Notify the GameLobby to archive this room (move from active to past games).
+   */
+  private notifyLobbyArchive(
+    duration: number,
+    playerList: Array<{ id: string; username: string; score: number; }>
+  ): void {
+    const lobbyBinding = this.env.GAME_LOBBY as DurableObjectNamespace | undefined;
+    if (!lobbyBinding) return;
+
+    try {
+      const lobbyId = lobbyBinding.idFromName('global');
+      const lobby = lobbyBinding.get(lobbyId);
+
+      lobby.fetch(new Request('https://internal/room-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'archive',
+          archivedRoom: {
+            id: this.roomCode,
+            name: this.roomCode,
+            endedAt: Date.now(),
+            duration,
+            finalWave: this.wave,
+            finalPuzzleProgress: this.puzzleProgress,
+            players: playerList,
+            playerIds: playerList.map(p => p.id)
+          }
+        })
       })).catch(() => { /* best-effort */ });
     } catch {
       // Lobby binding unavailable — ignore

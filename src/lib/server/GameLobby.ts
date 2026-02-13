@@ -20,11 +20,29 @@ export interface LobbyRoomInfo {
   wave?: number;
 }
 
+export interface ArchivedRoomInfo {
+  id: string;
+  name: string;
+  endedAt: number;
+  duration: number;
+  finalWave: number;
+  finalPuzzleProgress: number;
+  players: Array<{ id: string; username: string; score: number; }>;
+  /** Discord user IDs of players who participated */
+  playerIds: string[];
+}
+
 export class GameLobby implements DurableObject {
   private state: DurableObjectState;
 
   /** Current snapshot of all active rooms */
   private rooms: Map<string, LobbyRoomInfo> = new Map();
+
+  /** Archived (ended) rooms, keyed by room ID */
+  private archivedRooms: Map<string, ArchivedRoomInfo> = new Map();
+
+  /** Max archived rooms to keep */
+  private static readonly MAX_ARCHIVED = 50;
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -35,6 +53,12 @@ export class GameLobby implements DurableObject {
       if (stored) {
         for (const room of stored) {
           this.rooms.set(room.id, room);
+        }
+      }
+      const storedArchived = await this.state.storage.get<ArchivedRoomInfo[]>('archivedRooms');
+      if (storedArchived) {
+        for (const room of storedArchived) {
+          this.archivedRooms.set(room.id, room);
         }
       }
     });
@@ -49,11 +73,15 @@ export class GameLobby implements DurableObject {
       const [client, server] = [pair[0], pair[1]];
       this.state.acceptWebSocket(server);
 
-      // Send current room list immediately
+      // Send current room list and archived rooms immediately
       try {
         server.send(JSON.stringify({
           type: 'rooms',
           rooms: Array.from(this.rooms.values())
+        }));
+        server.send(JSON.stringify({
+          type: 'archived-rooms',
+          rooms: Array.from(this.archivedRooms.values())
         }));
       } catch {
         // Client may have disconnected immediately
@@ -65,20 +93,40 @@ export class GameLobby implements DurableObject {
     // ── HTTP: room state updates from GameRoom / rooms API ──
     if (url.pathname === '/room-update' && request.method === 'POST') {
       const body = await request.json() as {
-        action: 'upsert' | 'delete';
+        action: 'upsert' | 'delete' | 'archive';
         room?: LobbyRoomInfo;
         roomId?: string;
+        archivedRoom?: ArchivedRoomInfo;
       };
 
       if (body.action === 'upsert' && body.room) {
         this.rooms.set(body.room.id, body.room);
       } else if (body.action === 'delete' && body.roomId) {
         this.rooms.delete(body.roomId);
+      } else if (body.action === 'archive' && body.archivedRoom) {
+        // Remove from active rooms, add to archived
+        this.rooms.delete(body.archivedRoom.id);
+        this.archivedRooms.set(body.archivedRoom.id, body.archivedRoom);
+
+        // Trim old archived rooms if over limit
+        if (this.archivedRooms.size > GameLobby.MAX_ARCHIVED) {
+          const sorted = Array.from(this.archivedRooms.entries())
+            .sort((a, b) => a[1].endedAt - b[1].endedAt);
+          while (this.archivedRooms.size > GameLobby.MAX_ARCHIVED) {
+            const oldest = sorted.shift();
+            if (oldest) this.archivedRooms.delete(oldest[0]);
+          }
+        }
+
+        await this.persistArchivedRooms();
       }
 
       // Persist and broadcast
       await this.persistRooms();
       this.broadcastRooms();
+      if (body.action === 'archive') {
+        this.broadcastArchivedRooms();
+      }
 
       return Response.json({ ok: true });
     }
@@ -122,7 +170,25 @@ export class GameLobby implements DurableObject {
     }
   }
 
+  private broadcastArchivedRooms(): void {
+    const payload = JSON.stringify({
+      type: 'archived-rooms',
+      rooms: Array.from(this.archivedRooms.values())
+    });
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.send(payload);
+      } catch {
+        // Dead socket
+      }
+    }
+  }
+
   private async persistRooms(): Promise<void> {
     await this.state.storage.put('rooms', Array.from(this.rooms.values()));
+  }
+
+  private async persistArchivedRooms(): Promise<void> {
+    await this.state.storage.put('archivedRooms', Array.from(this.archivedRooms.values()));
   }
 }

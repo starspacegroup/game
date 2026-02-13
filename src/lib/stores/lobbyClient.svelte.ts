@@ -13,9 +13,20 @@ export interface LobbyRoomInfo {
   wave?: number;
 }
 
+export interface ArchivedRoomInfo {
+  id: string;
+  name: string;
+  endedAt: number;
+  duration: number;
+  finalWave: number;
+  finalPuzzleProgress: number;
+  players: Array<{ id: string; username: string; score: number; }>;
+  playerIds: string[];
+}
+
 interface LobbyMessage {
-  type: 'rooms';
-  rooms: LobbyRoomInfo[];
+  type: 'rooms' | 'archived-rooms';
+  rooms: LobbyRoomInfo[] | ArchivedRoomInfo[];
 }
 
 let socket: WebSocket | null = null;
@@ -27,12 +38,22 @@ const MAX_RECONNECT_DELAY = 30000;
 
 /** Reactive state — import and read from components */
 let _rooms = $state<LobbyRoomInfo[]>([]);
+let _archivedRooms = $state<ArchivedRoomInfo[]>([]);
 let _connected = $state(false);
 
 export const lobbyState = {
   get rooms() { return _rooms; },
+  get archivedRooms() { return _archivedRooms; },
   get connected() { return _connected; }
 };
+
+/**
+ * Get archived rooms filtered to only those the given user participated in.
+ */
+export function getMyPastGames(userId: string): ArchivedRoomInfo[] {
+  if (!userId) return [];
+  return _archivedRooms.filter(r => r.playerIds.includes(userId));
+}
 
 export function connectLobby(): void {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
@@ -53,7 +74,9 @@ export function connectLobby(): void {
     try {
       const msg = JSON.parse(event.data as string) as LobbyMessage;
       if (msg.type === 'rooms') {
-        _rooms = msg.rooms;
+        _rooms = msg.rooms as LobbyRoomInfo[];
+      } else if (msg.type === 'archived-rooms') {
+        _archivedRooms = msg.rooms as ArchivedRoomInfo[];
       }
     } catch {
       // Ignore malformed messages
