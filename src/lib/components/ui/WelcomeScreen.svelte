@@ -212,18 +212,6 @@
 					<button class="logout-btn" onclick={logout}>Logout</button>
 				</div>
 
-				<div class="game-modes">
-					<button class="start-btn solo-btn" onclick={() => startGame('solo')}>
-						{gameState.phase === 'gameover' ? 'SOLO AGAIN' : 'SOLO GAME'}
-					</button>
-
-					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
-						{creatingRoom ? 'CREATING...' : 'CREATE MULTIPLAYER'}
-					</button>
-				</div>
-
-
-
 				<div class="rooms-section">
 						<h3 class="rooms-header"><span class="live-dot" class:connected={lobbyState.connected}></span> ACTIVE GAMES</h3>
 						{#if lobbyState.rooms.length > 0}
@@ -258,6 +246,16 @@
 							<div class="rooms-empty">No active games — create one!</div>
 						{/if}
 					</div>
+
+				<div class="game-modes">
+					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
+						{creatingRoom ? 'CREATING...' : 'CREATE NEW MULTIPLAYER ROOM'}
+					</button>
+
+					<button class="start-btn solo-btn" onclick={() => startGame('solo')}>
+						SINGLE PLAYER
+					</button>
+				</div>
 			{:else}
 				<p class="login-prompt">Login with Discord to play</p>
 				<button class="discord-btn" onclick={loginWithDiscord}>
