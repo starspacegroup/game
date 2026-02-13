@@ -22,7 +22,8 @@ let socket: WebSocket | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
-const RECONNECT_DELAY = 3000;
+const BASE_RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_DELAY = 30000;
 
 /** Reactive state — import and read from components */
 let _rooms = $state<LobbyRoomInfo[]>([]);
@@ -86,7 +87,8 @@ export function disconnectLobby(): void {
 function scheduleReconnect(): void {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
   reconnectAttempts++;
+  const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
   reconnectTimeout = setTimeout(() => {
     connectLobby();
-  }, RECONNECT_DELAY);
+  }, delay);
 }

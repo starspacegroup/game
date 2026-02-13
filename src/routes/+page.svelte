@@ -11,6 +11,7 @@
 	import PlayerIndicators from '$lib/components/ui/PlayerIndicators.svelte';
 	import SphereMap from '$lib/components/ui/SphereMap.svelte';
 	import PowerUpNotification from '$lib/components/ui/PowerUpNotification.svelte';
+	import DeathScreen from '$lib/components/ui/DeathScreen.svelte';
 
 	let gameContainer: HTMLDivElement | undefined = $state();
 	let cleanupKeyboard: (() => void) | undefined;
@@ -71,6 +72,9 @@
 		{/if}
 		<ChatBox />
 	{/if}
+
+	<!-- Multiplayer death screen (shown over game while still connected) -->
+	<DeathScreen />
 
 	<!-- Welcome / Game Over screen -->
 	<WelcomeScreen />

@@ -23,7 +23,7 @@
 	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
-	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected, disconnect } from '$lib/stores/socketClient';
+	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
 
 	// Render distance for entities - beyond this they're culled (chord distance on sphere)
 	// On a sphere with R=200, chord dist ~100 covers about 29° of arc
@@ -727,10 +727,14 @@
 	function checkGameOver(): void {
 		if (gameState.health <= 0) {
 			gameState.health = 0;
-			gameState.phase = 'gameover';
-			// Disconnect from multiplayer so socket stops reconnecting
+
 			if (gameState.mode === 'multiplayer') {
-				disconnect();
+				// In multiplayer, show the death screen instead of full game-over.
+				// Stay connected so we receive room-stats and can rejoin.
+				gameState.multiplayerDead = true;
+			} else {
+				// Solo mode: full game over
+				gameState.phase = 'gameover';
 			}
 		}
 	}

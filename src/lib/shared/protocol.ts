@@ -172,12 +172,17 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface RespawnRequestMessage {
+  type: 'respawn-request';
+}
+
 export type ClientMessage =
   | JoinMessage
   | InputMessage
   | FireMessage
   | InteractMessage
-  | ChatMessage;
+  | ChatMessage
+  | RespawnRequestMessage;
 
 // ============================================
 // Server -> Client Messages
@@ -265,6 +270,22 @@ export interface ChatBroadcastMessage {
   timestamp: number;
 }
 
+export interface RoomStatsMessage {
+  type: 'room-stats';
+  playerCount: number;
+  aliveCount: number;
+  players: Array<{ id: string; username: string; score: number; health: number; maxHealth: number; }>;
+  wave: number;
+  puzzleProgress: number;
+  puzzleSolved: boolean;
+  canRejoin: boolean;
+}
+
+export interface RoomTerminatedMessage {
+  type: 'room-terminated';
+  reason: string;
+}
+
 export interface ErrorMessage {
   type: 'error';
   code: string;
@@ -283,6 +304,8 @@ export type ServerMessage =
   | NpcConvertedMessage
   | HintMessage
   | ChatBroadcastMessage
+  | RoomStatsMessage
+  | RoomTerminatedMessage
   | ErrorMessage;
 
 // ============================================

@@ -73,6 +73,19 @@ class GameStore {
 	isMobile = $state(false);
 	isFullscreen = $state(false);
 
+	// Multiplayer death screen state
+	multiplayerDead = $state(false);
+	roomStats = $state<{
+		playerCount: number;
+		aliveCount: number;
+		players: Array<{ id: string; username: string; score: number; health: number; maxHealth: number; }>;
+		wave: number;
+		puzzleProgress: number;
+		puzzleSolved: boolean;
+		canRejoin: boolean;
+		roomClosed?: boolean;
+	} | null>(null);
+
 	// Conversion system
 	convertedNpcCount = $state(0);
 	hints = $state<{ nodeId: string; hint: string; timestamp: number; }[]>([]);
@@ -246,6 +259,8 @@ class GameStore {
 		this.previousHealth = 100;
 		this.shieldHealth = 0;
 		this.shieldHitFlash = 0;
+		this.multiplayerDead = false;
+		this.roomStats = null;
 	}
 }
 

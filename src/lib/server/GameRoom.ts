@@ -349,6 +349,11 @@ export class GameRoom implements DurableObject {
     // Broadcast state to all players
     this.broadcastState();
 
+    // Send room stats to dead players every 10 ticks (~333ms)
+    if (this.tick % 10 === 0) {
+      this.broadcastRoomStats();
+    }
+
     // Periodic save (every 100 ticks = 5 seconds)
     if (this.tick % 100 === 0) {
       this.saveState();
@@ -1006,6 +1011,29 @@ export class GameRoom implements DurableObject {
         });
         break;
       }
+
+      case 'respawn-request': {
+        const session = this.sessions.get(ws);
+        if (!session) return;
+
+        const player = this.players.get(session.id);
+        if (!player || player.health > 0) return; // Not dead, ignore
+
+        // Only allow rejoin if at least one other player is alive
+        const otherAlive = this.getActivePlayers().some(p => p.id !== session.id && p.health > 0);
+        if (!otherAlive) return; // Can't rejoin a doomed room
+
+        // Respawn the player
+        player.health = player.maxHealth;
+        player.position = { x: 0, y: 0, z: SPHERE_RADIUS };
+        player.velocity = { x: 0, y: 0, z: 0 };
+
+        this.broadcast({
+          type: 'player-respawn',
+          player
+        });
+        break;
+      }
     }
   }
 
@@ -1054,20 +1082,18 @@ export class GameRoom implements DurableObject {
     });
 
     if (player.health <= 0) {
-      // Player died - will respawn on next join or after delay
-      // For now, just respawn immediately
-      setTimeout(() => {
-        if (this.sessions.size > 0) {
-          player.health = player.maxHealth;
-          player.position = { x: 0, y: 0, z: SPHERE_RADIUS };
-          player.velocity = { x: 0, y: 0, z: 0 };
+      // Check if all active (connected) players are now dead
+      const allDead = this.getActivePlayers().every(p => p.health <= 0);
 
-          this.broadcast({
-            type: 'player-respawn',
-            player
-          });
-        }
-      }, 3000);
+      if (allDead && this.sessions.size > 0) {
+        // Last player died — terminate the room after a short delay
+        // so clients can see the death before disconnecting
+        setTimeout(() => this.terminateRoom('All players eliminated'), 2000);
+      } else {
+        // Other players still alive — send room stats so dead player sees death screen
+        // Player can manually request respawn via 'respawn-request' message
+        this.sendRoomStatsToPlayer(playerId);
+      }
     }
   }
 
@@ -1276,6 +1302,56 @@ export class GameRoom implements DurableObject {
     }
   }
 
+  /**
+   * Build a room-stats payload for dead players / spectators.
+   */
+  private buildRoomStats(): ServerMessage {
+    const activePlayers = this.getActivePlayers();
+    const aliveCount = activePlayers.filter(p => p.health > 0).length;
+    return {
+      type: 'room-stats',
+      playerCount: this.sessions.size,
+      aliveCount,
+      players: activePlayers.map(p => ({
+        id: p.id,
+        username: p.username,
+        score: p.score,
+        health: p.health,
+        maxHealth: p.maxHealth
+      })),
+      wave: this.wave,
+      puzzleProgress: this.puzzleProgress,
+      puzzleSolved: this.puzzleSolved,
+      canRejoin: aliveCount > 0
+    } as ServerMessage;
+  }
+
+  /**
+   * Send room stats to a specific player (e.g. when they just died).
+   */
+  private sendRoomStatsToPlayer(playerId: string): void {
+    for (const [ws, session] of this.sessions) {
+      if (session.id === playerId) {
+        this.send(ws, this.buildRoomStats());
+        break;
+      }
+    }
+  }
+
+  /**
+   * Broadcast room stats to all dead (connected) players so they see
+   * real-time updates on the death screen.
+   */
+  private broadcastRoomStats(): void {
+    const stats = this.buildRoomStats();
+    for (const [ws, session] of this.sessions) {
+      const player = this.players.get(session.id);
+      if (player && player.health <= 0) {
+        this.send(ws, stats);
+      }
+    }
+  }
+
   private async saveState(): Promise<void> {
     const state: StoredState = {
       asteroids: this.asteroids,
@@ -1290,6 +1366,58 @@ export class GameRoom implements DurableObject {
     };
 
     await this.state.storage.put('worldState', state);
+  }
+
+  /**
+   * Terminate the room: broadcast game-over, close all connections,
+   * notify lobby, and clear storage.
+   */
+  private terminateRoom(reason: string): void {
+    this.stopGameLoop();
+
+    // Broadcast termination to all connected clients
+    this.broadcast({
+      type: 'room-terminated',
+      reason
+    });
+
+    // Close all WebSocket connections
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.close(1000, reason);
+      } catch {
+        // Already closed
+      }
+    }
+    this.sessions.clear();
+    this.players.clear();
+
+    // Notify lobby to remove this room
+    this.notifyLobbyDelete();
+
+    // Clear all persisted state so the DO can be garbage-collected
+    this.state.storage.deleteAll();
+  }
+
+  /**
+   * Notify the GameLobby Durable Object to delete this room.
+   */
+  private notifyLobbyDelete(): void {
+    const lobbyBinding = this.env.GAME_LOBBY as DurableObjectNamespace | undefined;
+    if (!lobbyBinding) return;
+
+    try {
+      const lobbyId = lobbyBinding.idFromName('global');
+      const lobby = lobbyBinding.get(lobbyId);
+
+      lobby.fetch(new Request('https://internal/room-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', roomId: this.roomCode })
+      })).catch(() => { /* best-effort */ });
+    } catch {
+      // Lobby binding unavailable — ignore
+    }
   }
 
   /**

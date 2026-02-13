@@ -8,7 +8,8 @@ export const GET: RequestHandler = async ({ request, platform }) => {
   }
 
   if (!platform?.env?.GAME_LOBBY) {
-    return new Response('Lobby not configured', { status: 503 });
+    console.warn('GAME_LOBBY binding unavailable — is game-worker running? (cd game-worker && npx wrangler dev)');
+    return new Response('Lobby not available — game-worker not running', { status: 503 });
   }
 
   // All lobby clients connect to the single GameLobby DO instance

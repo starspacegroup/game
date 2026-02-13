@@ -166,6 +166,14 @@ export function connectToServer(room: string = 'default'): void {
         return;
       }
 
+      // If room was terminated because all players died, go to game-over
+      if (event.reason === 'All players eliminated') {
+        gameState.phase = 'gameover';
+        currentRoomCode = null;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        return;
+      }
+
       // If kicked due to duplicate session (same user joined from another device),
       // don't reconnect — the other device has taken over.
       if (event.code === 4009 || event.reason === 'duplicate-session') {
@@ -257,6 +265,9 @@ function handleMessage(data: ServerMessage): void {
         world.player.health = data.player.health;
         world.player.position.set(data.player.position.x, data.player.position.y, data.player.position.z);
         inputHistory.length = 0; // Clear stale predictions
+        // Clear death screen state
+        gameState.multiplayerDead = false;
+        gameState.roomStats = null;
       }
       break;
     }
@@ -343,6 +354,42 @@ function handleMessage(data: ServerMessage): void {
 
     case 'error': {
       console.error(`[Starspace] Server error: ${data.code} - ${data.message}`);
+      break;
+    }
+
+    case 'room-terminated': {
+      console.log(`[Starspace] Room terminated: ${data.reason}`);
+      // Prevent reconnection attempts
+      reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+      currentRoomCode = null;
+      stopInputLoop();
+
+      if (gameState.multiplayerDead) {
+        // Death screen is showing — keep it up, mark room as closed
+        // so the user can review stats and leave manually.
+        if (gameState.roomStats) {
+          gameState.roomStats.canRejoin = false;
+          gameState.roomStats.roomClosed = true;
+        }
+      } else {
+        // Not on death screen — go straight to game-over
+        gameState.multiplayerDead = false;
+        gameState.roomStats = null;
+        gameState.phase = 'gameover';
+      }
+      break;
+    }
+
+    case 'room-stats': {
+      gameState.roomStats = {
+        playerCount: data.playerCount,
+        aliveCount: data.aliveCount,
+        players: data.players,
+        wave: data.wave,
+        puzzleProgress: data.puzzleProgress,
+        puzzleSolved: data.puzzleSolved,
+        canRejoin: data.canRejoin
+      };
       break;
     }
   }
@@ -818,6 +865,11 @@ export function sendPuzzleAction(
 export function sendChat(text: string): void {
   if (socket?.readyState !== WebSocket.OPEN) return;
   send({ type: 'chat', text });
+}
+
+export function sendRespawnRequest(): void {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  send({ type: 'respawn-request' });
 }
 
 export function disconnect(): void {
