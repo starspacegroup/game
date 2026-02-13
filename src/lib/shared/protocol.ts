@@ -101,6 +101,8 @@ export interface PowerUpState {
 // Room & World State
 // ============================================
 
+export type RoomPhase = 'lobby' | 'playing' | 'ended';
+
 export interface RoomMetadata {
   code: string;
   name: string;
@@ -108,6 +110,7 @@ export interface RoomMetadata {
   createdBy: string;
   isPrivate: boolean;
   maxPlayers: number;
+  phase: RoomPhase;
 }
 
 export interface WorldState {
@@ -179,13 +182,26 @@ export interface RespawnRequestMessage {
   type: 'respawn-request';
 }
 
+/** Host toggles room privacy (lobby phase only) */
+export interface SetPrivacyMessage {
+  type: 'set-privacy';
+  isPrivate: boolean;
+}
+
+/** Host starts the game (lobby phase only) */
+export interface StartGameMessage {
+  type: 'start-game';
+}
+
 export type ClientMessage =
   | JoinMessage
   | InputMessage
   | FireMessage
   | InteractMessage
   | ChatMessage
-  | RespawnRequestMessage;
+  | RespawnRequestMessage
+  | SetPrivacyMessage
+  | StartGameMessage;
 
 // ============================================
 // Server -> Client Messages
@@ -308,6 +324,20 @@ export interface RoomEndedMessage {
   eventLog: RoomEvent[];
 }
 
+/** Sent to all clients while in the lobby (waiting room) phase */
+export interface LobbyStateMessage {
+  type: 'lobby-state';
+  roomCode: string;
+  hostId: string;
+  isPrivate: boolean;
+  players: Array<{ id: string; username: string; avatarUrl?: string; }>;
+}
+
+/** Sent to all clients when the host starts the game */
+export interface GameStartedMessage {
+  type: 'game-started';
+}
+
 export interface ErrorMessage {
   type: 'error';
   code: string;
@@ -329,6 +359,8 @@ export type ServerMessage =
   | RoomStatsMessage
   | RoomTerminatedMessage
   | RoomEndedMessage
+  | LobbyStateMessage
+  | GameStartedMessage
   | ErrorMessage;
 
 // ============================================

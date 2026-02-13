@@ -10,12 +10,13 @@
 		generatePowerUps,
 		resetIdCounter
 	} from '$lib/game/procedural';
-	import { connectToServer, disconnect } from '$lib/stores/socketClient';
+	import { connectToServer, disconnect, sendSetPrivacy, sendStartGame } from '$lib/stores/socketClient';
 	import { connectLobby, disconnectLobby, lobbyState, getMyPastGames, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
 	let creatingRoom = $state(false);
+	let linkCopied = $state(false);
 
 	const pastGames = $derived(getMyPastGames(authState.userId || ''));
 
@@ -89,12 +90,35 @@
 
 		// Fetch available multiplayer rooms
 		connectLobby();
+
+		// Check for invite link (?join=ROOM_ID)
+		const joinRoom = params.get('join');
+		if (joinRoom && authState.isLoggedIn) {
+			// Clean URL
+			window.history.replaceState({}, '', '/');
+			// Enter lobby for this room
+			enterLobby(joinRoom);
+		} else if (joinRoom) {
+			// Not logged in yet — clean URL but remember the room to join after login
+			window.history.replaceState({}, '', '/');
+			// Store in sessionStorage so we can pick it up after login
+			sessionStorage.setItem('pendingJoinRoom', joinRoom);
+		}
+
+		// Check if there's a pending room to join after login
+		if (authState.isLoggedIn && !joinRoom) {
+			const pendingRoom = sessionStorage.getItem('pendingJoinRoom');
+			if (pendingRoom) {
+				sessionStorage.removeItem('pendingJoinRoom');
+				enterLobby(pendingRoom);
+			}
+		}
 	});
 
 	// Connect/disconnect lobby WebSocket based on screen visibility
 	$effect(() => {
 		const phase = gameState.phase;
-		if (phase === 'welcome' || phase === 'gameover') {
+		if (phase === 'welcome' || phase === 'gameover' || phase === 'lobby') {
 			connectLobby();
 		} else {
 			disconnectLobby();
@@ -109,12 +133,15 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					name: `${authState.username}'s Game`,
-					createdBy: authState.username || 'Anonymous'
+					createdBy: authState.username || 'Anonymous',
+					createdById: authState.userId || '',
+					isPrivate: true
 				})
 			});
 			const data = await response.json() as { success?: boolean; room?: LobbyRoomInfo };
 			if (data.success && data.room) {
-				startGame('multiplayer', data.room.id);
+				// Enter lobby phase — connect via WebSocket but don't start game yet
+				enterLobby(data.room.id);
 			}
 		} catch {
 			console.error('Failed to create room');
@@ -122,6 +149,67 @@
 			creatingRoom = false;
 		}
 	}
+
+	function enterLobby(roomId: string): void {
+		// Disconnect any existing connection
+		disconnect();
+
+		// Reset state
+		resetIdCounter();
+		resetWorld();
+		deathReplay.fullReset();
+		gameState.reset();
+
+		// Set phase to lobby
+		gameState.phase = 'lobby';
+		gameState.mode = 'multiplayer';
+
+		// Connect to the room's WebSocket (join message will be sent automatically)
+		connectToServer(roomId);
+	}
+
+	function getInviteLink(): string {
+		const roomCode = gameState.lobbyState?.roomCode || '';
+		return `${window.location.origin}?join=${encodeURIComponent(roomCode)}`;
+	}
+
+	async function copyInviteLink(): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(getInviteLink());
+			linkCopied = true;
+			setTimeout(() => { linkCopied = false; }, 2000);
+		} catch {
+			// Fallback: select text from a temporary input
+			const input = document.createElement('input');
+			input.value = getInviteLink();
+			document.body.appendChild(input);
+			input.select();
+			document.execCommand('copy');
+			document.body.removeChild(input);
+			linkCopied = true;
+			setTimeout(() => { linkCopied = false; }, 2000);
+		}
+	}
+
+	function togglePrivacy(): void {
+		if (!gameState.lobbyState) return;
+		sendSetPrivacy(!gameState.lobbyState.isPrivate);
+	}
+
+	function handleStartGame(): void {
+		sendStartGame();
+	}
+
+	function leaveLobby(): void {
+		disconnect();
+		gameState.lobbyState = null;
+		gameState.phase = 'welcome';
+		gameState.mode = 'solo';
+	}
+
+	const isHost = $derived(
+		gameState.lobbyState?.hostId === authState.userId
+	);
 
 	function loginWithDiscord(): void {
 		window.location.href = '/api/auth/discord';
@@ -195,13 +283,116 @@
 	}
 
 	function joinRoom(roomId: string): void {
-		startGame('multiplayer', roomId);
+		enterLobby(roomId);
 	}
 
 
 </script>
 
-{#if gameState.phase === 'welcome' || gameState.phase === 'gameover'}
+{#if gameState.phase === 'lobby' && gameState.lobbyState}
+	<!-- ===== WAITING ROOM / LOBBY ===== -->
+	<div class="welcome-overlay" role="dialog" aria-label="Waiting room">
+		<div class="welcome-content">
+			<div class="org-line">
+				<img src="/logo.png" alt="*Space logo" class="org-logo" />
+				<span class="org-name">*SPACE</span>
+			</div>
+			<h1 class="title">
+				<span class="title-game">LOBBY</span>
+			</h1>
+
+			<div class="lobby-section">
+				<!-- Privacy toggle (host only) -->
+				{#if isHost}
+					<div class="privacy-toggle">
+						<button
+							class="privacy-btn"
+							class:private={gameState.lobbyState.isPrivate}
+							class:public={!gameState.lobbyState.isPrivate}
+							onclick={togglePrivacy}
+						>
+							<span class="privacy-icon">{gameState.lobbyState.isPrivate ? '🔒' : '🌐'}</span>
+							<span class="privacy-label">{gameState.lobbyState.isPrivate ? 'PRIVATE' : 'PUBLIC'}</span>
+						</button>
+						<span class="privacy-hint">
+							{gameState.lobbyState.isPrivate ? 'Only people with the link can join' : 'Visible to everyone on the home page'}
+						</span>
+					</div>
+				{:else}
+					<div class="privacy-badge" class:private={gameState.lobbyState.isPrivate}>
+						<span class="privacy-icon">{gameState.lobbyState.isPrivate ? '🔒' : '🌐'}</span>
+						<span>{gameState.lobbyState.isPrivate ? 'Private Room' : 'Public Room'}</span>
+					</div>
+				{/if}
+
+				<!-- Invite link -->
+				<div class="invite-section">
+					<label class="invite-label">INVITE LINK</label>
+					<div class="invite-row">
+						<input
+							type="text"
+							class="invite-input"
+							value={getInviteLink()}
+							readonly
+							onclick={(e) => (e.target as HTMLInputElement).select()}
+						/>
+						<button class="copy-btn" onclick={copyInviteLink}>
+							{linkCopied ? '✓ COPIED' : 'COPY'}
+						</button>
+					</div>
+				</div>
+
+				<!-- Player list -->
+				<div class="lobby-players">
+					<h3 class="lobby-players-header">
+						PLAYERS ({gameState.lobbyState.players.length})
+					</h3>
+					<div class="lobby-players-list">
+						{#each gameState.lobbyState.players as player (player.id)}
+							<div class="lobby-player-row">
+								{#if player.avatarUrl}
+									<img src={player.avatarUrl} alt="" class="lobby-player-avatar" />
+								{:else}
+									<div class="lobby-player-avatar-placeholder">?</div>
+								{/if}
+								<span class="lobby-player-name">{player.username}</span>
+								{#if player.id === gameState.lobbyState.hostId}
+									<span class="host-badge">HOST</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					{#if gameState.lobbyState.players.length < 2}
+						<div class="waiting-hint">Waiting for more players to join...</div>
+					{/if}
+				</div>
+
+				<!-- Action buttons -->
+				<div class="lobby-actions">
+					{#if isHost}
+						<button
+							class="start-btn multiplayer-btn lobby-start-btn"
+							onclick={handleStartGame}
+							disabled={gameState.lobbyState.players.length < 1}
+						>
+							START GAME ({gameState.lobbyState.players.length} player{gameState.lobbyState.players.length !== 1 ? 's' : ''})
+						</button>
+					{:else}
+						<div class="waiting-for-host">
+							<div class="waiting-dots">
+								<span class="dot"></span><span class="dot"></span><span class="dot"></span>
+							</div>
+							<span>Waiting for host to start the game...</span>
+						</div>
+					{/if}
+					<button class="leave-btn" onclick={leaveLobby}>
+						LEAVE ROOM
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{:else if gameState.phase === 'welcome' || gameState.phase === 'gameover'}
 	<div class="welcome-overlay" role="dialog" aria-label="Welcome screen">
 		<div class="welcome-content">
 			<div class="org-line">
@@ -1075,5 +1266,305 @@
 		.feature {
 			font-size: 1.1rem;
 		}
+	}
+
+	/* ===== LOBBY / WAITING ROOM STYLES ===== */
+	.lobby-section {
+		width: 100%;
+		max-width: 400px;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md, 12px);
+	}
+
+	.privacy-toggle {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.privacy-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-lg, 16px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		letter-spacing: 2px;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
+		border: 1px solid;
+	}
+
+	.privacy-btn.private {
+		background: rgba(255, 170, 0, 0.1);
+		border-color: rgba(255, 170, 0, 0.4);
+		color: #ffaa00;
+	}
+
+	.privacy-btn.private:hover {
+		background: rgba(255, 170, 0, 0.2);
+		border-color: rgba(255, 170, 0, 0.6);
+	}
+
+	.privacy-btn.public {
+		background: rgba(0, 255, 136, 0.1);
+		border-color: rgba(0, 255, 136, 0.4);
+		color: #00ff88;
+	}
+
+	.privacy-btn.public:hover {
+		background: rgba(0, 255, 136, 0.2);
+		border-color: rgba(0, 255, 136, 0.6);
+	}
+
+	.privacy-icon {
+		font-size: 1.1rem;
+	}
+
+	.privacy-label {
+		font-weight: 700;
+	}
+
+	.privacy-hint {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #667788;
+		text-align: center;
+	}
+
+	.privacy-badge {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--spacing-sm, 8px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		padding: var(--spacing-sm, 8px);
+		border-radius: 6px;
+	}
+
+	.privacy-badge.private {
+		color: #ffaa00;
+	}
+
+	.invite-section {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.invite-label {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #8899bb;
+		letter-spacing: 2px;
+		text-align: left;
+	}
+
+	.invite-row {
+		display: flex;
+		gap: var(--spacing-xs, 4px);
+	}
+
+	.invite-input {
+		flex: 1;
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(68, 136, 255, 0.3);
+		border-radius: 6px;
+		color: #aabbcc;
+		outline: none;
+		cursor: text;
+	}
+
+	.invite-input:focus {
+		border-color: rgba(68, 136, 255, 0.6);
+	}
+
+	.copy-btn {
+		min-width: 80px;
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		font-weight: 700;
+		letter-spacing: 1px;
+		background: rgba(68, 136, 255, 0.15);
+		border: 1px solid rgba(68, 136, 255, 0.4);
+		border-radius: 6px;
+		color: #4488ff;
+		cursor: pointer;
+		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.copy-btn:hover {
+		background: rgba(68, 136, 255, 0.25);
+		border-color: rgba(68, 136, 255, 0.6);
+	}
+
+	.lobby-players {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm, 8px);
+	}
+
+	.lobby-players-header {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #8899bb;
+		letter-spacing: 2px;
+		margin: 0;
+		text-align: center;
+	}
+
+	.lobby-players-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs, 4px);
+	}
+
+	.lobby-player-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 6px;
+	}
+
+	.lobby-player-avatar {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		border: 1px solid rgba(68, 136, 255, 0.4);
+	}
+
+	.lobby-player-avatar-placeholder {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		background: rgba(68, 136, 255, 0.1);
+		border: 1px solid rgba(68, 136, 255, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #667788;
+	}
+
+	.lobby-player-name {
+		flex: 1;
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		color: #aabbcc;
+	}
+
+	.host-badge {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		font-weight: 700;
+		letter-spacing: 1px;
+		color: #ffaa00;
+		background: rgba(255, 170, 0, 0.1);
+		border: 1px solid rgba(255, 170, 0, 0.3);
+		padding: 2px 8px;
+		border-radius: 4px;
+	}
+
+	.waiting-hint {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #667788;
+		text-align: center;
+		font-style: italic;
+	}
+
+	.lobby-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+		margin-top: var(--spacing-sm, 8px);
+	}
+
+	.lobby-start-btn {
+		width: 100%;
+		max-width: 400px;
+		font-size: var(--font-md, 1rem) !important;
+	}
+
+	.waiting-for-host {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		color: #8899aa;
+		padding: var(--spacing-md, 12px);
+	}
+
+	.waiting-dots {
+		display: flex;
+		gap: 6px;
+	}
+
+	.waiting-dots .dot {
+		width: 8px;
+		height: 8px;
+		background: #4488ff;
+		border-radius: 50%;
+		animation: dot-pulse 1.4s ease-in-out infinite;
+	}
+
+	.waiting-dots .dot:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+
+	.waiting-dots .dot:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+
+	@keyframes dot-pulse {
+		0%, 80%, 100% {
+			transform: scale(0.4);
+			opacity: 0.3;
+		}
+		40% {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+
+	.leave-btn {
+		min-height: var(--touch-target-min, 44px);
+		padding: var(--spacing-sm, 8px) var(--spacing-lg, 16px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		letter-spacing: 2px;
+		background: transparent;
+		border: 1px solid rgba(255, 68, 68, 0.3);
+		color: #ff6666;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.leave-btn:hover {
+		background: rgba(255, 68, 68, 0.1);
+		border-color: rgba(255, 68, 68, 0.5);
 	}
 </style>

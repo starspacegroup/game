@@ -18,6 +18,8 @@ export interface LobbyRoomInfo {
   createdBy: string;
   puzzleProgress?: number;
   wave?: number;
+  isPrivate?: boolean;
+  phase?: 'lobby' | 'playing' | 'ended';
 }
 
 export interface ArchivedRoomInfo {
@@ -74,10 +76,12 @@ export class GameLobby implements DurableObject {
       this.state.acceptWebSocket(server);
 
       // Send current room list and archived rooms immediately
+      // Only send public rooms to lobby clients
       try {
+        const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate);
         server.send(JSON.stringify({
           type: 'rooms',
-          rooms: Array.from(this.rooms.values())
+          rooms: publicRooms
         }));
         server.send(JSON.stringify({
           type: 'archived-rooms',
@@ -157,9 +161,11 @@ export class GameLobby implements DurableObject {
   // ── Helpers ──
 
   private broadcastRooms(): void {
+    // Only broadcast public rooms to lobby clients
+    const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate);
     const payload = JSON.stringify({
       type: 'rooms',
-      rooms: Array.from(this.rooms.values())
+      rooms: publicRooms
     });
     for (const ws of this.state.getWebSockets()) {
       try {

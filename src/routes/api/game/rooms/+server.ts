@@ -8,6 +8,9 @@ interface RoomInfo {
   playerCount: number;
   createdAt: number;
   createdBy: string;
+  createdById?: string;
+  isPrivate: boolean;
+  phase: 'lobby' | 'playing' | 'ended';
 }
 
 interface RoomStatus {
@@ -16,6 +19,8 @@ interface RoomStatus {
   puzzleProgress: number;
   puzzleSolved: boolean;
   wave: number;
+  isPrivate?: boolean;
+  phase?: string;
 }
 
 // GET: List all active game rooms
@@ -45,12 +50,21 @@ export const GET: RequestHandler = async ({ platform }) => {
         const response = await room.fetch(statusUrl.toString());
         const status = await response.json() as RoomStatus;
 
+        // Use DO's authoritative privacy/phase if available
+        const isPrivate = status.isPrivate ?? roomData.isPrivate ?? false;
+        const phase = (status.phase as RoomInfo['phase']) ?? roomData.phase ?? 'playing';
+
         // Only include rooms with players or recently created (within 5 minutes)
         const isRecent = Date.now() - roomData.createdAt < 5 * 60 * 1000;
         if (status.playerCount > 0 || isRecent) {
+          // Skip private rooms from public listing
+          if (isPrivate) continue;
+
           rooms.push({
             ...roomData,
-            ...status
+            ...status,
+            isPrivate,
+            phase
           });
         } else {
           // Clean up stale empty rooms
@@ -80,25 +94,48 @@ export const POST: RequestHandler = async ({ platform, request }) => {
   }
 
   try {
-    const body = await request.json() as { name?: string; createdBy?: string; };
+    const body = await request.json() as { name?: string; createdBy?: string; createdById?: string; isPrivate?: boolean; };
 
     // Generate a unique room ID
     const roomId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const roomName = body.name || `Game ${roomId.slice(-6)}`;
+    const isPrivate = body.isPrivate !== undefined ? body.isPrivate : true; // Default to private
 
     const roomInfo: RoomInfo = {
       id: roomId,
       name: roomName,
       playerCount: 0,
       createdAt: Date.now(),
-      createdBy: body.createdBy || 'Anonymous'
+      createdBy: body.createdBy || 'Anonymous',
+      createdById: body.createdById || '',
+      isPrivate,
+      phase: 'lobby'
     };
 
     // Store room info in KV (no TTL - rooms persist indefinitely)
     await platform.env.GAME_DATA.put(`room:${roomId}`, JSON.stringify(roomInfo));
 
-    // Notify lobby of new room
-    notifyLobbyUpsert(platform, roomInfo);
+    // Configure the Durable Object with host and privacy settings
+    try {
+      const id = platform.env.GAME_ROOM.idFromName(roomId);
+      const room = platform.env.GAME_ROOM.get(id);
+      await room.fetch(new Request('https://internal/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hostId: body.createdById || '',
+          isPrivate,
+          roomCode: roomId
+        })
+      }));
+    } catch {
+      // Configuration is best-effort
+    }
+
+    // Only notify lobby of new room if it's public
+    if (!isPrivate) {
+      notifyLobbyUpsert(platform, roomInfo);
+    }
 
     return json({ success: true, room: roomInfo });
   } catch (error) {

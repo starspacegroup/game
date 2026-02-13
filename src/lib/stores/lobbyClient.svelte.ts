@@ -11,6 +11,8 @@ export interface LobbyRoomInfo {
   createdBy: string;
   puzzleProgress?: number;
   wave?: number;
+  isPrivate?: boolean;
+  phase?: 'lobby' | 'playing' | 'ended';
 }
 
 export interface ArchivedRoomInfo {

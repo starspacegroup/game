@@ -150,8 +150,11 @@ export function connectToServer(room: string = 'default'): void {
         roomCode: room
       });
 
-      // Start input sending loop
-      startInputLoop();
+      // Only start input loop if we're joining a game in progress.
+      // For lobby phase, the 'game-started' handler will start it.
+      if (gameState.phase === 'playing') {
+        startInputLoop();
+      }
     };
 
     socket.onclose = (event) => {
@@ -227,6 +230,12 @@ function handleMessage(data: ServerMessage): void {
       gameState.puzzleSolved = data.state.puzzleSolved;
       gameState.wave = data.state.wave;
       gameState.playerCount = data.state.players.length;
+
+      // Transition to playing phase (handles joining a game already in progress)
+      gameState.lobbyState = null;
+      gameState.phase = 'playing';
+      gameState.mode = 'multiplayer';
+      startInputLoop();
 
       console.log(`[Starspace] Joined room ${data.roomCode} with ${data.state.players.length} players`);
       break;
@@ -422,6 +431,33 @@ function handleMessage(data: ServerMessage): void {
         puzzleSolved: data.puzzleSolved,
         canRejoin: data.canRejoin
       };
+      break;
+    }
+
+    case 'lobby-state': {
+      // We're in the waiting room. Update lobby state on gameState.
+      currentRoomCode = data.roomCode;
+      gameState.lobbyState = {
+        roomCode: data.roomCode,
+        hostId: data.hostId,
+        isPrivate: data.isPrivate,
+        players: data.players
+      };
+      // Ensure we're in lobby phase
+      if (gameState.phase !== 'lobby') {
+        gameState.phase = 'lobby';
+      }
+      break;
+    }
+
+    case 'game-started': {
+      // Host started the game — transition from lobby to playing
+      // The welcome message with full world state will follow immediately
+      gameState.lobbyState = null;
+      gameState.phase = 'playing';
+      gameState.mode = 'multiplayer';
+      // Start input sending loop
+      startInputLoop();
       break;
     }
   }
@@ -904,6 +940,18 @@ export function sendChat(text: string): void {
 export function sendRespawnRequest(): void {
   if (socket?.readyState !== WebSocket.OPEN) return;
   send({ type: 'respawn-request' });
+}
+
+/** Host sends this to toggle room privacy (lobby phase only) */
+export function sendSetPrivacy(isPrivate: boolean): void {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  send({ type: 'set-privacy', isPrivate });
+}
+
+/** Host sends this to start the game (lobby phase only) */
+export function sendStartGame(): void {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  send({ type: 'start-game' });
 }
 
 export function disconnect(): void {

@@ -57,7 +57,7 @@ export interface PickupNotification {
 let _notifTimer: ReturnType<typeof setTimeout> | null = null;
 
 class GameStore {
-	phase = $state<'welcome' | 'playing' | 'paused' | 'gameover'>('welcome');
+	phase = $state<'welcome' | 'playing' | 'paused' | 'gameover' | 'lobby'>('welcome');
 	mode = $state<'solo' | 'multiplayer'>('solo');
 	score = $state(0);
 	health = $state(100);
@@ -117,6 +117,14 @@ class GameStore {
 	// Health change animation: 'heal' | 'damage' | null
 	healthChange = $state<'heal' | 'damage' | null>(null);
 	previousHealth = $state(100);
+
+	// Lobby (waiting room) state
+	lobbyState = $state<{
+		roomCode: string;
+		hostId: string;
+		isPrivate: boolean;
+		players: Array<{ id: string; username: string; avatarUrl?: string; }>;
+	} | null>(null);
 
 	get healthPercent(): number {
 		return (this.health / this.maxHealth) * 100;
@@ -280,6 +288,7 @@ class GameStore {
 		this.multiplayerDead = false;
 		this.roomStats = null;
 		this.roomEndData = null;
+		this.lobbyState = null;
 	}
 }
 

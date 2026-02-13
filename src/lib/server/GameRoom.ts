@@ -16,7 +16,8 @@ import type {
   ClientMessage,
   ServerMessage,
   InputMessage,
-  RoomEvent
+  RoomEvent,
+  RoomPhase
 } from '../shared/protocol';
 
 import {
@@ -181,6 +182,12 @@ export class GameRoom implements DurableObject {
   private roomStartTime: number = 0;
   private roomEnded: boolean = false;
 
+  // Lobby phase
+  private phase: RoomPhase = 'lobby';
+  private hostId: string = '';
+  private isPrivate: boolean = true;
+  private lobbyPlayers: Map<string, { id: string; username: string; avatarUrl?: string; }> = new Map();
+
   /** Event log for post-game review */
   private eventLog: RoomEvent[] = [];
 
@@ -201,6 +208,7 @@ export class GameRoom implements DurableObject {
         this.wave = stored.wave;
         this.tick = stored.tick;
         this.worldInitialized = true;
+        this.phase = 'playing'; // If world was stored, game was in progress
 
         // Restore players (they'll rejoin via WebSocket)
         for (const player of stored.players) {
@@ -217,6 +225,15 @@ export class GameRoom implements DurableObject {
 
       const roomCode = await this.state.storage.get<string>('roomCode');
       if (roomCode) this.roomCode = roomCode;
+
+      const hostId = await this.state.storage.get<string>('hostId');
+      if (hostId) this.hostId = hostId;
+
+      const isPrivate = await this.state.storage.get<boolean>('isPrivate');
+      if (isPrivate !== undefined) this.isPrivate = isPrivate;
+
+      const phase = await this.state.storage.get<RoomPhase>('phase');
+      if (phase) this.phase = phase;
     });
   }
 
@@ -232,20 +249,50 @@ export class GameRoom implements DurableObject {
     if (url.pathname === '/status') {
       return Response.json({
         roomCode: this.roomCode,
-        playerCount: this.players.size,
+        phase: this.phase,
+        isPrivate: this.isPrivate,
+        hostId: this.hostId,
+        playerCount: this.phase === 'lobby' ? this.lobbyPlayers.size : this.players.size,
         tick: this.tick,
-        players: Array.from(this.players.values()).map(p => ({
-          id: p.id,
-          username: p.username,
-          score: p.score,
-          health: p.health
-        })),
+        players: this.phase === 'lobby'
+          ? Array.from(this.lobbyPlayers.values()).map(p => ({
+            id: p.id,
+            username: p.username,
+            score: 0,
+            health: 100
+          }))
+          : Array.from(this.players.values()).map(p => ({
+            id: p.id,
+            username: p.username,
+            score: p.score,
+            health: p.health
+          })),
         asteroidCount: this.asteroids.filter(a => !a.destroyed).length,
         npcCount: this.npcs.filter(n => !n.destroyed).length,
         puzzleProgress: this.puzzleProgress,
         puzzleSolved: this.puzzleSolved,
         wave: this.wave
       });
+    }
+
+    // HTTP: configure room (called by rooms API right after creation)
+    if (url.pathname === '/configure' && request.method === 'POST') {
+      const body = await request.json() as { hostId?: string; isPrivate?: boolean; roomCode?: string; };
+      if (body.hostId) {
+        this.hostId = body.hostId;
+        this.state.storage.put('hostId', body.hostId);
+      }
+      if (body.isPrivate !== undefined) {
+        this.isPrivate = body.isPrivate;
+        this.state.storage.put('isPrivate', body.isPrivate);
+      }
+      if (body.roomCode) {
+        this.roomCode = body.roomCode;
+        this.state.storage.put('roomCode', body.roomCode);
+      }
+      this.phase = 'lobby';
+      this.state.storage.put('phase', 'lobby');
+      return Response.json({ success: true });
     }
 
     // Admin: terminate room and disconnect all players
@@ -822,6 +869,12 @@ export class GameRoom implements DurableObject {
     if (session) {
       this.sessions.delete(ws);
 
+      // Remove from lobby players if in lobby phase
+      if (this.phase === 'lobby') {
+        this.lobbyPlayers.delete(session.id);
+        this.broadcastLobbyState();
+      }
+
       // Keep player state (for potential rejoin) but mark as disconnected
       // Don't remove from this.players to preserve state
 
@@ -853,9 +906,6 @@ export class GameRoom implements DurableObject {
   private async handleMessage(ws: WebSocket, data: ClientMessage): Promise<void> {
     switch (data.type) {
       case 'join': {
-        // Initialize world on first player
-        this.initializeWorld();
-
         const playerId = data.id;
         const username = data.username || 'Player';
 
@@ -883,6 +933,32 @@ export class GameRoom implements DurableObject {
           lastInput: null,
           lastPing: Date.now()
         });
+
+        // If in lobby phase, add to lobby players and broadcast lobby state
+        if (this.phase === 'lobby') {
+          this.lobbyPlayers.set(playerId, {
+            id: playerId,
+            username,
+            avatarUrl: data.avatarUrl
+          });
+
+          // Set host if first player (in case configure wasn't called)
+          if (!this.hostId) {
+            this.hostId = playerId;
+            this.state.storage.put('hostId', playerId);
+          }
+
+          // Send lobby state to the new player
+          this.broadcastLobbyState();
+
+          // Notify external lobby of updated player count
+          this.notifyLobby();
+          break;
+        }
+
+        // === Playing phase: full game join ===
+        // Initialize world on first player
+        this.initializeWorld();
 
         // Create or restore player state
         let player = this.players.get(playerId);
@@ -938,6 +1014,86 @@ export class GameRoom implements DurableObject {
         this.logEvent('player-joined', username, `joined the crew`);
 
         // Notify lobby of updated player count
+        this.notifyLobby();
+        break;
+      }
+
+      case 'set-privacy': {
+        const session = this.sessions.get(ws);
+        if (!session || session.id !== this.hostId) break; // Only host can change
+        if (this.phase !== 'lobby') break; // Only in lobby phase
+
+        this.isPrivate = data.isPrivate;
+        this.state.storage.put('isPrivate', data.isPrivate);
+
+        // Broadcast updated lobby state
+        this.broadcastLobbyState();
+
+        // Notify external lobby (so public rooms appear/disappear)
+        this.notifyLobby();
+        break;
+      }
+
+      case 'start-game': {
+        const session = this.sessions.get(ws);
+        if (!session || session.id !== this.hostId) break; // Only host can start
+        if (this.phase !== 'lobby') break; // Only from lobby phase
+
+        // Transition to playing phase
+        this.phase = 'playing';
+        this.state.storage.put('phase', 'playing');
+
+        // Initialize world
+        this.initializeWorld();
+
+        // Create player states for all lobby players
+        for (const [pid, lobbyPlayer] of this.lobbyPlayers) {
+          let player = this.players.get(pid);
+          if (!player) {
+            player = createPlayerState(pid, lobbyPlayer.username);
+            this.players.set(pid, player);
+          }
+          if (lobbyPlayer.avatarUrl) {
+            player.avatarUrl = lobbyPlayer.avatarUrl;
+          }
+        }
+
+        // Start game loop
+        this.startGameLoop();
+
+        // Send game-started to all clients
+        this.broadcast({ type: 'game-started' } as ServerMessage);
+
+        // Send welcome with full world state to each player
+        const allPlayers = this.getActivePlayers();
+        for (const [clientWs, clientSession] of this.sessions) {
+          const ws2: WorldState = {
+            tick: this.tick,
+            players: allPlayers,
+            asteroids: this.asteroids,
+            npcs: this.npcs,
+            lasers: this.lasers,
+            puzzleNodes: this.puzzleNodes,
+            powerUps: this.powerUps,
+            puzzleProgress: this.puzzleProgress,
+            puzzleSolved: this.puzzleSolved,
+            wave: this.wave
+          };
+
+          this.send(clientWs, {
+            type: 'welcome',
+            playerId: clientSession.id,
+            roomCode: this.roomCode,
+            state: ws2
+          });
+        }
+
+        this.logEvent('game-started', this.hostId, 'host started the game');
+
+        // Clear lobby players (they're now in this.players)
+        this.lobbyPlayers.clear();
+
+        // Notify external lobby of updated state
         this.notifyLobby();
         break;
       }
@@ -1554,11 +1710,13 @@ export class GameRoom implements DurableObject {
       const roomInfo = {
         id: this.roomCode,
         name: this.roomCode, // Will be enriched by the rooms API
-        playerCount: this.sessions.size,
+        playerCount: this.phase === 'lobby' ? this.lobbyPlayers.size : this.sessions.size,
         createdAt: 0,
         createdBy: '',
         puzzleProgress: this.puzzleProgress,
-        wave: this.wave
+        wave: this.wave,
+        isPrivate: this.isPrivate,
+        phase: this.phase
       };
 
       // Fire-and-forget — don't await in the hot path
@@ -1669,5 +1827,19 @@ export class GameRoom implements DurableObject {
         }
       }
     }
+  }
+
+  /**
+   * Broadcast current lobby state (player list, privacy, host) to all connected clients.
+   */
+  private broadcastLobbyState(): void {
+    const msg: ServerMessage = {
+      type: 'lobby-state',
+      roomCode: this.roomCode,
+      hostId: this.hostId,
+      isPrivate: this.isPrivate,
+      players: Array.from(this.lobbyPlayers.values())
+    };
+    this.broadcast(msg);
   }
 }
