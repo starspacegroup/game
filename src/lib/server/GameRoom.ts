@@ -895,6 +895,11 @@ export class GameRoom implements DurableObject {
           player.health = player.maxHealth; // Reset health on rejoin
         }
 
+        // Store avatar URL if provided
+        if (data.avatarUrl) {
+          player.avatarUrl = data.avatarUrl;
+        }
+
         // Start game loop if first player
         if (this.sessions.size === 1) {
           this.startGameLoop();

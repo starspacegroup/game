@@ -222,26 +222,39 @@
 			const { east, north } = getPlayerFrame(world.player.position);
 			const dir = east.clone().multiplyScalar(Math.cos(angle)).addScaledVector(north, Math.sin(angle));
 			
-			// Spawn laser from the front of the ship (offset in firing direction on sphere)
-			const spawnOffset = 1.5;
-			const spawnPos = world.player.position.clone().addScaledVector(dir, spawnOffset);
-			projectToSphere(spawnPos);
+			// Determine how many shots to fire (multishot = 2 lasers spread 1 degree apart)
+			const hasMultishot = gameState.hasMultishot;
+			const SPREAD_DEG = 1; // degrees between each laser
+			const SPREAD_RAD = SPREAD_DEG * (Math.PI / 180);
+			// With 2 lasers: offsets are -0.5 and +0.5 (centered spread)
+			const shotCount = hasMultishot ? 2 : 1;
+			const offsets = hasMultishot ? [-0.5, 0.5] : [0];
 			
-			// In multiplayer, send fire event to server which creates authoritative laser
-			if (gameState.mode === 'multiplayer' && isConnected()) {
-				sendFire(dir);
+			for (const offset of offsets) {
+				const spreadAngle = angle + offset * SPREAD_RAD;
+				const shotDir = east.clone().multiplyScalar(Math.cos(spreadAngle)).addScaledVector(north, Math.sin(spreadAngle));
+				
+				// Spawn laser from the front of the ship (offset in firing direction on sphere)
+				const spawnOffset = 1.5;
+				const spawnPos = world.player.position.clone().addScaledVector(shotDir, spawnOffset);
+				projectToSphere(spawnPos);
+				
+				// In multiplayer, send fire event to server which creates authoritative laser
+				if (gameState.mode === 'multiplayer' && isConnected()) {
+					sendFire(shotDir);
+				}
+				
+				// Create local laser for immediate feedback (client prediction)
+				world.lasers.push({
+					id: `laser_${nextLaserId++}`,
+					position: spawnPos,
+					direction: shotDir,
+					speed: LASER_SPEED,
+					life: LASER_LIFE,
+					owner: 'player',
+					radius: 0.3
+				});
 			}
-			
-			// Create local laser for immediate feedback (client prediction)
-			world.lasers.push({
-				id: `laser_${nextLaserId++}`,
-				position: spawnPos,
-				direction: dir,
-				speed: LASER_SPEED,
-				life: LASER_LIFE,
-				owner: 'player',
-				radius: 0.3
-			});
 		}
 	}
 

@@ -22,6 +22,8 @@ export interface Euler3 {
 export interface PlayerState {
   id: string;
   username: string;
+  /** Full Discord avatar URL (e.g. https://cdn.discordapp.com/avatars/…) */
+  avatarUrl?: string;
   position: Vector3;
   velocity: Vector3;
   rotation: Euler3;
@@ -130,6 +132,7 @@ export interface JoinMessage {
   type: 'join';
   id: string;
   username: string;
+  avatarUrl?: string;
   roomCode?: string;
 }
 

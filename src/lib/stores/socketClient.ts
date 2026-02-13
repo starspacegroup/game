@@ -146,6 +146,7 @@ export function connectToServer(room: string = 'default'): void {
         type: 'join',
         id: playerId,
         username: authState.username || 'Player',
+        avatarUrl: authState.avatarUrl || undefined,
         roomCode: room
       });
 
@@ -588,11 +589,13 @@ function applyStateUpdate(data: StateMessage): void {
         existing.username = serverPlayer.username;
         existing.health = serverPlayer.health;
         existing.maxHealth = serverPlayer.maxHealth;
+        if (serverPlayer.avatarUrl) existing.avatarUrl = serverPlayer.avatarUrl;
         existing.lastUpdate = Date.now();
       } else {
         world.otherPlayers.push({
           id: serverPlayer.id,
           username: serverPlayer.username,
+          avatarUrl: serverPlayer.avatarUrl,
           position: new THREE.Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z),
           rotation: new THREE.Euler(serverPlayer.rotation.x, serverPlayer.rotation.y, serverPlayer.rotation.z),
           health: serverPlayer.health,

@@ -77,6 +77,7 @@ export interface OtherPlayerBuff {
 export interface OtherPlayerData {
 	id: string;
 	username: string;
+	avatarUrl?: string;
 	position: THREE.Vector3;
 	rotation: THREE.Euler;
 	health: number;

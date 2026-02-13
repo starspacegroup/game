@@ -18,6 +18,57 @@
 	let rootGroup: THREE.Group | undefined = $state();
 	let shipMesh: THREE.Mesh | undefined = $state();
 	let labelSprite: THREE.Sprite | undefined = $state();
+	let avatarSprite: THREE.Sprite | undefined = $state();
+
+	// Avatar system
+	const AVATAR_SIZE = 1.25; // 50% of ship width (2.5)
+	const AVATAR_CANVAS_SIZE = 128;
+	let avatarTexture: THREE.CanvasTexture | undefined;
+	let avatarLoaded = false;
+	let lastAvatarUrl = '';
+
+	function loadAvatar(url: string): void {
+		if (!url || url === lastAvatarUrl) return;
+		lastAvatarUrl = url;
+
+		const img = new Image();
+		img.crossOrigin = 'anonymous';
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			canvas.width = AVATAR_CANVAS_SIZE;
+			canvas.height = AVATAR_CANVAS_SIZE;
+			const ctx = canvas.getContext('2d')!;
+
+			// Draw circular clipped avatar
+			ctx.beginPath();
+			ctx.arc(AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+			ctx.closePath();
+			ctx.clip();
+			ctx.drawImage(img, 0, 0, AVATAR_CANVAS_SIZE, AVATAR_CANVAS_SIZE);
+
+			// Draw border ring
+			ctx.beginPath();
+			ctx.arc(AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+			ctx.strokeStyle = '#ffffff';
+			ctx.lineWidth = 3;
+			ctx.stroke();
+
+			if (!avatarTexture) {
+				avatarTexture = new THREE.CanvasTexture(canvas);
+				avatarTexture.colorSpace = THREE.SRGBColorSpace;
+			} else {
+				avatarTexture.image = canvas;
+			}
+			avatarTexture.needsUpdate = true;
+			avatarLoaded = true;
+
+			if (avatarSprite) {
+				(avatarSprite.material as THREE.SpriteMaterial).map = avatarTexture;
+				(avatarSprite.material as THREE.SpriteMaterial).needsUpdate = true;
+			}
+		};
+		img.src = url;
+	}
 
 	// Canvas label system — fixed size, never changes dimensions
 	const CANVAS_W = 256;
@@ -233,6 +284,11 @@
 			shipMesh.rotation.z = player.rotation.z;
 		}
 
+		// Load avatar if available
+		if (player.avatarUrl && !avatarLoaded) {
+			loadAvatar(player.avatarUrl);
+		}
+
 		// --- Label rendering ---
 		if (!labelSprite) return;
 
@@ -305,6 +361,15 @@
 		<T.SphereGeometry args={[0.5, 6, 6]} />
 		<T.MeshBasicMaterial color="#ff8844" transparent opacity={0.4} />
 	</T.Mesh>
+
+	<!-- Discord avatar centered on ship -->
+	<T.Sprite
+		position.z={0.15}
+		scale={[AVATAR_SIZE, AVATAR_SIZE, 1]}
+		bind:ref={avatarSprite}
+	>
+		<T.SpriteMaterial transparent depthTest={true} depthWrite={false} opacity={0.9} />
+	</T.Sprite>
 
 	<!-- Username + health label: fixed relative position, does NOT rotate -->
 	<T.Sprite 

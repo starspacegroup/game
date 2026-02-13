@@ -5,6 +5,7 @@
 	import { authState } from '$lib/stores/authState.svelte';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import ShieldBubble from './ShieldBubble.svelte';
+	import SpeedLines from './SpeedLines.svelte';
 
 	const BUFF_COLORS: Record<string, string> = {
 		speed: '#ffdd00',
@@ -17,6 +18,57 @@
 	let engineGlow = 0.5;
 	let engineMesh: THREE.Mesh | undefined = $state();
 	let labelSprite: THREE.Sprite | undefined = $state();
+	let avatarSprite: THREE.Sprite | undefined = $state();
+
+	// Avatar system
+	const AVATAR_SIZE = 1.25; // 50% of ship width (2.5)
+	const AVATAR_CANVAS_SIZE = 128;
+	let avatarTexture: THREE.CanvasTexture | undefined;
+	let avatarLoaded = false;
+	let lastAvatarUrl = '';
+
+	function loadAvatar(url: string): void {
+		if (!url || url === lastAvatarUrl) return;
+		lastAvatarUrl = url;
+
+		const img = new Image();
+		img.crossOrigin = 'anonymous';
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			canvas.width = AVATAR_CANVAS_SIZE;
+			canvas.height = AVATAR_CANVAS_SIZE;
+			const ctx = canvas.getContext('2d')!;
+
+			// Draw circular clipped avatar
+			ctx.beginPath();
+			ctx.arc(AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+			ctx.closePath();
+			ctx.clip();
+			ctx.drawImage(img, 0, 0, AVATAR_CANVAS_SIZE, AVATAR_CANVAS_SIZE);
+
+			// Draw border ring
+			ctx.beginPath();
+			ctx.arc(AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2, AVATAR_CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+			ctx.strokeStyle = '#00ffff';
+			ctx.lineWidth = 3;
+			ctx.stroke();
+
+			if (!avatarTexture) {
+				avatarTexture = new THREE.CanvasTexture(canvas);
+				avatarTexture.colorSpace = THREE.SRGBColorSpace;
+			} else {
+				avatarTexture.image = canvas;
+			}
+			avatarTexture.needsUpdate = true;
+			avatarLoaded = true;
+
+			if (avatarSprite) {
+				(avatarSprite.material as THREE.SpriteMaterial).map = avatarTexture;
+				(avatarSprite.material as THREE.SpriteMaterial).needsUpdate = true;
+			}
+		};
+		img.src = url;
+	}
 
 	// Canvas label system
 	const CANVAS_W = 256;
@@ -273,6 +325,12 @@
 		rootGroup.position.copy(world.player.position);
 		rootGroup.quaternion.copy(getPlayerOrientation());
 
+		// Load avatar once available
+		const avatarUrl = authState.avatarUrl;
+		if (avatarUrl && !avatarLoaded) {
+			loadAvatar(avatarUrl);
+		}
+
 		// Blink during invincibility
 		const isInvincible = Date.now() < world.player.damageCooldownUntil;
 		if (isInvincible) {
@@ -377,8 +435,20 @@
 		<T.MeshBasicMaterial color="#44ffaa" transparent opacity={0.5} />
 	</T.Mesh>
 
+	<!-- Speed lines (visible when speed buff active and moving) -->
+	<SpeedLines />
+
 	<!-- Shield bubble (visible when shield buff active) -->
 	<ShieldBubble />
+
+	<!-- Discord avatar centered on ship -->
+	<T.Sprite
+		position.z={0.15}
+		scale={[AVATAR_SIZE, AVATAR_SIZE, 1]}
+		bind:ref={avatarSprite}
+	>
+		<T.SpriteMaterial transparent depthTest={true} depthWrite={false} opacity={0.9} />
+	</T.Sprite>
 
 	<!-- Username + health label: ALWAYS above ship, does NOT rotate -->
 	<T.Sprite 

@@ -126,6 +126,14 @@ class GameStore {
 		return this.health > 0;
 	}
 
+	get hasMultishot(): boolean {
+		return this.activeBuffs.some(b => b.type === 'multishot' && Date.now() < b.expiresAt);
+	}
+
+	get hasSpeed(): boolean {
+		return this.activeBuffs.some(b => b.type === 'speed' && Date.now() < b.expiresAt);
+	}
+
 	get hasShield(): boolean {
 		return this.shieldHealth > 0 && this.activeBuffs.some(b => b.type === 'shield' && Date.now() < b.expiresAt);
 	}
