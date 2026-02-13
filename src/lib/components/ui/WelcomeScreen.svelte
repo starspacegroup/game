@@ -15,8 +15,8 @@
 	import { page } from '$app/stores';
 
 	let creatingRoom = $state(false);
-	let roomCodeInput = $state('');
-	let joiningByCode = $state(false);
+
+
 	let deletingRoomId = $state<string | null>(null);
 
 	onMount(async () => {
@@ -180,13 +180,7 @@
 		startGame('multiplayer', roomId);
 	}
 
-	function joinByCode(): void {
-		const code = roomCodeInput.trim();
-		if (!code) return;
-		joiningByCode = true;
-		startGame('multiplayer', code);
-		joiningByCode = false;
-	}
+
 </script>
 
 {#if gameState.phase === 'welcome' || gameState.phase === 'gameover'}
@@ -226,20 +220,7 @@
 					</button>
 				</div>
 
-				<div class="join-code-section">
-					<div class="join-code-row">
-						<input
-							type="text"
-							class="room-code-input"
-							placeholder="Enter room code..."
-							bind:value={roomCodeInput}
-							onkeydown={(e) => e.key === 'Enter' && joinByCode()}
-						/>
-						<button class="join-code-btn" onclick={joinByCode} disabled={!roomCodeInput.trim() || joiningByCode}>
-							{joiningByCode ? '...' : 'JOIN'}
-						</button>
-					</div>
-				</div>
+
 
 				<div class="rooms-section">
 						<h3 class="rooms-header"><span class="live-dot" class:connected={lobbyState.connected}></span> ACTIVE GAMES</h3>
@@ -558,69 +539,7 @@
 		box-shadow: 0 0 40px rgba(68, 136, 255, 0.5);
 	}
 
-	/* Join by code section */
-	.join-code-section {
-		width: 100%;
-		max-width: 320px;
-		margin: 0 auto var(--spacing-md, 12px);
-	}
 
-	.join-code-row {
-		display: flex;
-		gap: var(--spacing-xs, 4px);
-	}
-
-	.room-code-input {
-		flex: 1;
-		min-height: var(--touch-target-min, 44px);
-		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-		font-family: var(--hud-font, monospace);
-		font-size: var(--font-sm, 0.7rem);
-		letter-spacing: 2px;
-		text-transform: uppercase;
-		color: #00ff88;
-		background: rgba(0, 20, 40, 0.8);
-		border: 1px solid rgba(68, 136, 255, 0.3);
-		border-radius: 4px;
-		outline: none;
-		transition: border-color 0.2s;
-	}
-
-	.room-code-input::placeholder {
-		color: #446688;
-		text-transform: none;
-		letter-spacing: 1px;
-	}
-
-	.room-code-input:focus {
-		border-color: #4488ff;
-		box-shadow: 0 0 10px rgba(68, 136, 255, 0.3);
-	}
-
-	.join-code-btn {
-		min-height: var(--touch-target-min, 44px);
-		min-width: 70px;
-		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-		font-family: var(--hud-font, monospace);
-		font-size: var(--font-sm, 0.7rem);
-		letter-spacing: 2px;
-		color: #00ff88;
-		background: rgba(0, 40, 60, 0.8);
-		border: 1px solid rgba(0, 255, 136, 0.4);
-		border-radius: 4px;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.join-code-btn:hover:not(:disabled) {
-		background: rgba(0, 255, 136, 0.2);
-		box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
-	}
-
-	.join-code-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
 
 	/* Rooms section */
 	.rooms-section {
