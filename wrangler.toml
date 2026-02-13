@@ -1,12 +1,13 @@
 name = "game"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".svelte-kit/cloudflare"
+main = "dist/_worker.js"
+
+[assets]
+directory = ".svelte-kit/cloudflare"
 
 [dev]
 port = 4201
-
-# Build: "npm run build" runs vite build + esbuild to produce _worker.js with GameRoom export
 
 # Durable Objects for real-time multiplayer
 [[durable_objects.bindings]]
