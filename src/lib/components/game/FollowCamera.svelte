@@ -2,14 +2,30 @@
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
 	import { world, SPHERE_RADIUS } from '$lib/game/world';
+	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 
 	let camera: THREE.PerspectiveCamera | undefined = $state();
 
 	// Camera height above the sphere surface
 	const CAMERA_HEIGHT = 25;
 
+	const _tempPos = new THREE.Vector3();
+	const _tempUp = new THREE.Vector3();
+
 	useTask(() => {
 		if (!camera) return;
+
+		// During death replay, follow the recorded positions
+		if (deathReplay.active && deathReplay.replayPosition && deathReplay.replayUp) {
+			_tempPos.set(deathReplay.replayPosition.x, deathReplay.replayPosition.y, deathReplay.replayPosition.z);
+			_tempUp.set(deathReplay.replayUp.x, deathReplay.replayUp.y, deathReplay.replayUp.z).normalize();
+
+			const normal = _tempPos.clone().normalize();
+			camera.position.copy(_tempPos).addScaledVector(normal, CAMERA_HEIGHT);
+			camera.up.copy(_tempUp);
+			camera.lookAt(_tempPos);
+			return;
+		}
 
 		const normal = world.player.position.clone().normalize();
 

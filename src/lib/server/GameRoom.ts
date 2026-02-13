@@ -15,7 +15,8 @@ import type {
   Vector3,
   ClientMessage,
   ServerMessage,
-  InputMessage
+  InputMessage,
+  RoomEvent
 } from '../shared/protocol';
 
 import {
@@ -177,6 +178,11 @@ export class GameRoom implements DurableObject {
   private lastTickTime: number = 0;
   private worldInitialized: boolean = false;
   private roomCode: string = '';
+  private roomStartTime: number = 0;
+  private roomEnded: boolean = false;
+
+  /** Event log for post-game review */
+  private eventLog: RoomEvent[] = [];
 
   constructor(state: DurableObjectState, env?: Record<string, unknown>) {
     this.state = state;
@@ -298,6 +304,7 @@ export class GameRoom implements DurableObject {
     this.puzzleNodes = world.puzzleNodes;
     this.powerUps = world.powerUps;
     this.worldInitialized = true;
+    this.roomStartTime = Date.now();
 
     // Persist initial state
     this.saveState();
@@ -327,6 +334,8 @@ export class GameRoom implements DurableObject {
    * Main game tick - runs at 20 ticks/sec
    */
   private gameTick(): void {
+    if (this.roomEnded) return;
+
     const now = Date.now();
     const deltaTime = (now - this.lastTickTime) / 1000;
     this.lastTickTime = now;
@@ -471,6 +480,8 @@ export class GameRoom implements DurableObject {
           npc.conversionProgress = 1;
           npc.velocity = { x: 0, y: 0, z: 0 };
           npc.targetNodeId = this.findBestNodeForNpc(npc);
+
+          this.logEvent('npc-converted', undefined, `NPC ${npc.id} converted to ally`);
 
           this.broadcast({
             type: 'npc-converted',
@@ -821,6 +832,8 @@ export class GameRoom implements DurableObject {
         playerCount: this.sessions.size
       } as ServerMessage);
 
+      this.logEvent('player-left', session.username, `left the game`);
+
       // Notify lobby of updated player count
       this.notifyLobby();
 
@@ -915,6 +928,8 @@ export class GameRoom implements DurableObject {
           player,
           playerCount: this.sessions.size
         }, ws);
+
+        this.logEvent('player-joined', username, `joined the crew`);
 
         // Notify lobby of updated player count
         this.notifyLobby();
@@ -1082,13 +1097,16 @@ export class GameRoom implements DurableObject {
     });
 
     if (player.health <= 0) {
+      this.logEvent('player-died', player.username, `eliminated (took ${damage} damage)`);
+
       // Check if all active (connected) players are now dead
       const allDead = this.getActivePlayers().every(p => p.health <= 0);
 
       if (allDead && this.sessions.size > 0) {
-        // Last player died — terminate the room after a short delay
-        // so clients can see the death before disconnecting
-        setTimeout(() => this.terminateRoom('All players eliminated'), 2000);
+        // Last player died — end the room after a short delay
+        // (keep connections open so clients see the end screen)
+        this.logEvent('all-eliminated', undefined, 'All crew eliminated');
+        setTimeout(() => this.endRoom('All players eliminated'), 2000);
       } else {
         // Other players still alive — send room stats so dead player sees death screen
         // Player can manually request respawn via 'respawn-request' message
@@ -1155,6 +1173,8 @@ export class GameRoom implements DurableObject {
       playerId: player.id,
       powerUpType: powerUp.type
     });
+
+    this.logEvent('power-up', player.username, `collected ${powerUp.type}`);
   }
 
   private interactPuzzleNode(node: PuzzleNodeState): void {
@@ -1262,6 +1282,10 @@ export class GameRoom implements DurableObject {
     if (this.puzzleSolved) {
       // Advance wave
       this.wave++;
+      this.logEvent('wave-advance', undefined, `Wave ${this.wave} reached — puzzle solved!`);
+    } else if (connectedCount > 0 && connectedCount % 3 === 0) {
+      // Log milestone progress (every 3 nodes)
+      this.logEvent('puzzle-progress', undefined, `${connectedCount}/${this.puzzleNodes.length} nodes aligned (${Math.round(this.puzzleProgress)}%)`);
     }
   }
 
@@ -1366,6 +1390,57 @@ export class GameRoom implements DurableObject {
     };
 
     await this.state.storage.put('worldState', state);
+  }
+
+  // ==========================================
+  // Event log
+  // ==========================================
+
+  /** Record a timestamped event for the post-game log */
+  private logEvent(event: string, actor?: string, detail?: string): void {
+    this.eventLog.push({
+      time: Date.now(),
+      event,
+      actor,
+      detail
+    });
+  }
+
+  /**
+   * End the room gracefully: stop simulation, broadcast the full event log
+   * and final stats to all connected clients. The room stays alive so
+   * clients can review the log at their leisure.
+   */
+  private endRoom(reason: string): void {
+    if (this.roomEnded) return;
+    this.roomEnded = true;
+    this.stopGameLoop();
+
+    this.logEvent('room-ended', undefined, reason);
+
+    const duration = this.roomStartTime > 0
+      ? Math.round((Date.now() - this.roomStartTime) / 1000)
+      : 0;
+
+    // Build the room-ended payload
+    const msg: ServerMessage = {
+      type: 'room-ended',
+      reason,
+      duration,
+      finalWave: this.wave,
+      finalPuzzleProgress: this.puzzleProgress,
+      players: Array.from(this.players.values()).map(p => ({
+        id: p.id,
+        username: p.username,
+        score: p.score
+      })),
+      eventLog: this.eventLog
+    };
+
+    this.broadcast(msg);
+
+    // Notify lobby that this room is no longer joinable
+    this.notifyLobbyDelete();
   }
 
   /**

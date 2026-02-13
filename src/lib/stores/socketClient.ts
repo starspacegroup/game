@@ -1,5 +1,6 @@
 import { gameState } from './gameState.svelte';
 import { authState } from './authState.svelte';
+import { deathReplay } from './deathReplay.svelte';
 import { world, projectToSphere, sphereDistance, getPlayerFrame, transportTangent, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
 import * as THREE from 'three';
 import type {
@@ -266,6 +267,7 @@ function handleMessage(data: ServerMessage): void {
         world.player.position.set(data.player.position.x, data.player.position.y, data.player.position.z);
         inputHistory.length = 0; // Clear stale predictions
         // Clear death screen state
+        deathReplay.reset();
         gameState.multiplayerDead = false;
         gameState.roomStats = null;
       }
@@ -376,6 +378,35 @@ function handleMessage(data: ServerMessage): void {
         gameState.multiplayerDead = false;
         gameState.roomStats = null;
         gameState.phase = 'gameover';
+      }
+      break;
+    }
+
+    case 'room-ended': {
+      console.log(`[Starspace] Room ended: ${data.reason}`);
+      // Prevent reconnection attempts
+      reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+      currentRoomCode = null;
+      stopInputLoop();
+
+      // Store the full room-end payload for the death screen
+      gameState.roomEndData = {
+        reason: data.reason,
+        duration: data.duration,
+        finalWave: data.finalWave,
+        finalPuzzleProgress: data.finalPuzzleProgress,
+        players: data.players,
+        eventLog: data.eventLog
+      };
+
+      // Ensure death screen is showing
+      if (!gameState.multiplayerDead) {
+        gameState.multiplayerDead = true;
+      }
+      // Mark room as closed so rejoin button disappears
+      if (gameState.roomStats) {
+        gameState.roomStats.canRejoin = false;
+        gameState.roomStats.roomClosed = true;
       }
       break;
     }

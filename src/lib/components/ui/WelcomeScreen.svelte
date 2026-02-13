@@ -2,6 +2,7 @@
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { authState } from '$lib/stores/authState.svelte';
 	import { resetWorld, world } from '$lib/game/world';
+	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -126,6 +127,7 @@
 		// Reset everything
 		resetIdCounter();
 		resetWorld();
+		deathReplay.fullReset();
 
 		// Only generate world locally for solo mode
 		// For multiplayer, server will send full world state

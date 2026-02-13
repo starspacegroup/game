@@ -12,6 +12,7 @@
 	import PowerUp from './PowerUp.svelte';
 	import HexGrid from './HexGrid.svelte';
 	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
+	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -80,6 +81,18 @@
 	useTask((delta) => {
 		if (gameState.phase !== 'playing') return;
 
+		// During death replay, only tick the replay and keep entities animating
+		if (deathReplay.active) {
+			const dt = Math.min(delta, 0.1);
+			deathReplay.tick();
+			// Keep entities moving for visual continuity during replay
+			updateLasers(dt);
+			updateAsteroids(dt, gameState.mode === 'multiplayer' && isConnected());
+			updateNpcs(dt, gameState.mode === 'multiplayer' && isConnected());
+			updateEntityLists(dt);
+			return;
+		}
+
 		// Clamp delta to avoid physics explosions on tab-switch
 		const dt = Math.min(delta, 0.1);
 
@@ -122,6 +135,13 @@
 			respawnEntities(dt);
 			spawnNewPowerUps(dt);
 		}
+
+		// Record frame for death replay buffer
+		deathReplay.record(
+			world.player.position.x, world.player.position.y, world.player.position.z,
+			world.playerUp.x, world.playerUp.y, world.playerUp.z,
+			world.player.rotation.z
+		);
 
 		checkGameOver();
 	});
@@ -728,13 +748,16 @@
 		if (gameState.health <= 0) {
 			gameState.health = 0;
 
+			// Start death replay — camera will replay last 5 seconds while overlay fades in
+			deathReplay.startReplay();
+
 			if (gameState.mode === 'multiplayer') {
 				// In multiplayer, show the death screen instead of full game-over.
 				// Stay connected so we receive room-stats and can rejoin.
 				gameState.multiplayerDead = true;
 			} else {
-				// Solo mode: full game over
-				gameState.phase = 'gameover';
+				// Solo mode: flag death for the replay, phase changes after replay
+				gameState.multiplayerDead = true;
 			}
 		}
 	}

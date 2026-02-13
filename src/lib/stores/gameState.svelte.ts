@@ -86,6 +86,16 @@ class GameStore {
 		roomClosed?: boolean;
 	} | null>(null);
 
+	/** Room-ended data sent when the entire room is over (all players dead). */
+	roomEndData = $state<{
+		reason: string;
+		duration: number;
+		finalWave: number;
+		finalPuzzleProgress: number;
+		players: Array<{ id: string; username: string; score: number; }>;
+		eventLog: Array<{ time: number; event: string; actor?: string; detail?: string; }>;
+	} | null>(null);
+
 	// Conversion system
 	convertedNpcCount = $state(0);
 	hints = $state<{ nodeId: string; hint: string; timestamp: number; }[]>([]);
@@ -261,6 +271,7 @@ class GameStore {
 		this.shieldHitFlash = 0;
 		this.multiplayerDead = false;
 		this.roomStats = null;
+		this.roomEndData = null;
 	}
 }
 

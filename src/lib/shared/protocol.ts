@@ -286,6 +286,25 @@ export interface RoomTerminatedMessage {
   reason: string;
 }
 
+/** Event that happened during a room's lifetime, for the post-game log */
+export interface RoomEvent {
+  time: number;       // timestamp ms
+  event: string;      // e.g. 'player-joined', 'player-died', 'npc-converted', 'puzzle-progress'
+  actor?: string;     // username or entity id
+  detail?: string;    // human-readable detail
+}
+
+/** Sent when all players die — room is archived, not deleted */
+export interface RoomEndedMessage {
+  type: 'room-ended';
+  reason: string;
+  duration: number;   // total room duration in seconds
+  finalWave: number;
+  finalPuzzleProgress: number;
+  players: Array<{ id: string; username: string; score: number; }>;
+  eventLog: RoomEvent[];
+}
+
 export interface ErrorMessage {
   type: 'error';
   code: string;
@@ -306,6 +325,7 @@ export type ServerMessage =
   | ChatBroadcastMessage
   | RoomStatsMessage
   | RoomTerminatedMessage
+  | RoomEndedMessage
   | ErrorMessage;
 
 // ============================================
