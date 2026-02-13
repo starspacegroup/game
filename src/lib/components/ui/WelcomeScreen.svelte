@@ -188,13 +188,6 @@
 {#if gameState.phase === 'welcome' || gameState.phase === 'gameover'}
 	<div class="welcome-overlay" role="dialog" aria-label="Welcome screen">
 		<div class="welcome-content">
-			{#if gameState.phase === 'gameover'}
-				<div class="gameover-badge">SIGNAL LOST</div>
-				<div class="final-score">
-					FINAL SCORE: <span class="score-value">{gameState.score.toLocaleString()}</span>
-				</div>
-			{/if}
-
 			<div class="org-line">
 				<img src="/logo.png" alt="*Space logo" class="org-logo" />
 				<span class="org-name">*SPACE</span>
@@ -309,12 +302,14 @@
 		inset: 0;
 		background: radial-gradient(ellipse at center, rgba(0, 10, 30, 0.92) 0%, rgba(0, 0, 10, 0.98) 100%);
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: center;
 		z-index: 100;
 		/* Mobile-first padding with safe areas */
 		padding: calc(var(--safe-top, 0px) + 16px) calc(var(--safe-right, 0px) + 16px) calc(var(--safe-bottom, 0px) + 16px) calc(var(--safe-left, 0px) + 16px);
 		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		touch-action: pan-y;
 	}
 
 	.welcome-content {
@@ -323,6 +318,8 @@
 		width: 100%;
 		/* Ensure content doesn't touch edges on small screens */
 		padding: 0 var(--spacing-md, 12px);
+		/* Center vertically when content is shorter than viewport */
+		margin: auto 0;
 	}
 
 	.gameover-badge {

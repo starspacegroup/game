@@ -267,11 +267,13 @@
 		inset: 0;
 		background: radial-gradient(ellipse at center, rgba(20, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.95) 100%);
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: center;
 		z-index: 90;
 		padding: 16px;
 		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		touch-action: pan-y;
 		/* Opacity is driven by deathReplay.overlayOpacity via inline style */
 		pointer-events: none;
 	}
@@ -287,6 +289,7 @@
 		width: 100%;
 		opacity: 0;
 		transform: translateY(8px);
+		margin: auto 0;
 	}
 
 	.death-content.fade-in {
