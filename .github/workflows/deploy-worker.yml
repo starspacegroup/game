@@ -1,0 +1,32 @@
+name: Deploy Game Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'game-worker/**'
+      - 'src/lib/server/**'
+      - 'src/lib/shared/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Game Worker (Durable Objects)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: game-worker
+        run: npm install
+
+      - name: Deploy Worker
+        working-directory: game-worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

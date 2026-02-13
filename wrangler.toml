@@ -1,22 +1,16 @@
 name = "game"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
-main = "dist/_worker.js"
-
-[assets]
-directory = ".svelte-kit/cloudflare"
+pages_build_output_dir = ".svelte-kit/cloudflare"
 
 [dev]
 port = 4201
 
-# Durable Objects for real-time multiplayer
+# Durable Object binding — hosted by the separate "game-worker" Worker
 [[durable_objects.bindings]]
 name = "GAME_ROOM"
 class_name = "GameRoom"
-
-[[migrations]]
-tag = "v1"
-new_classes = ["GameRoom"]
+script_name = "game-worker"
 
 # KV namespace for persistent game data (leaderboards, etc.)
 [[kv_namespaces]]
