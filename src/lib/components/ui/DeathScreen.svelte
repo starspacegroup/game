@@ -2,6 +2,7 @@
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import { sendRespawnRequest, disconnect } from '$lib/stores/socketClient';
+	import { world, randomSpherePosition, getTangentFrame, SPHERE_RADIUS } from '$lib/game/world';
 
 	let respawnCooldown = $state(3);
 	let cooldownInterval: ReturnType<typeof setInterval> | null = null;
@@ -39,6 +40,28 @@
 		gameState.roomEndData = null;
 		gameState.phase = 'gameover';
 		disconnect();
+	}
+
+	function handleSoloContinue(): void {
+		deathReplay.reset();
+
+		// Respawn player at a random position on the sphere
+		const spawnPos = randomSpherePosition();
+		world.player.position.copy(spawnPos);
+		world.player.velocity.set(0, 0, 0);
+		world.player.rotation.set(0, 0, 0);
+		world.player.health = world.player.maxHealth;
+		world.player.shootCooldown = 0;
+		world.player.damageCooldownUntil = Date.now() + 3000; // 3s invincibility
+
+		// Re-initialize playerUp from the tangent frame at the new spawn
+		const { north } = getTangentFrame(spawnPos);
+		world.playerUp.copy(north);
+
+		// Restore UI health and clear death flag
+		gameState.health = world.player.maxHealth;
+		gameState.shieldHealth = 0;
+		gameState.multiplayerDead = false;
 	}
 
 	function handleSoloLeave(): void {
@@ -182,8 +205,11 @@
 
 					{#if isSolo}
 						<div class="actions">
-							<button class="action-btn rejoin-btn" onclick={handleSoloLeave}>
+							<button class="action-btn rejoin-btn" onclick={handleSoloContinue}>
 								CONTINUE
+							</button>
+							<button class="action-btn leave-btn" onclick={handleSoloLeave}>
+								QUIT
 							</button>
 						</div>
 					{:else}

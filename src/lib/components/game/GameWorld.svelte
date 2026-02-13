@@ -469,7 +469,7 @@
 				const hint = generateHint(targetNode, world.puzzleNodes);
 				npc.hintData = hint;
 				gameState.addHint(targetNode.id, hint);
-				gameState.score += 5;
+				if (gameState.isAlive) gameState.score += 5;
 				
 				// Help push the node toward its target inside the sphere
 				if (!targetNode.connected) {
@@ -498,7 +498,7 @@
 					laser.life = 0;
 					npc.conversionProgress = 0.01;
 					const points = 25;
-					gameState.score += points;
+					if (gameState.isAlive) gameState.score += points;
 					spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
 					break; // This laser is consumed, move to next
 				}
@@ -585,7 +585,7 @@
 							}
 							case 'multishot': {
 								const multiDuration = 10000;
-								gameState.score += 25;
+								if (gameState.isAlive) gameState.score += 25;
 								gameState.addBuff('multishot', multiDuration);
 								gameState.notifyPickup('multishot', `+25 points & multi-shot for ${multiDuration / 1000}s`);
 								break;
@@ -637,7 +637,7 @@
 		gameState.puzzleProgress = checkPuzzleProgress(world.puzzleNodes);
 		if (isPuzzleSolved(world.puzzleNodes) && !gameState.puzzleSolved) {
 			gameState.puzzleSolved = true;
-			gameState.score += 1000;
+			if (gameState.isAlive) gameState.score += 1000;
 		}
 	}
 

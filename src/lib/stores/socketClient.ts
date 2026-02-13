@@ -320,7 +320,7 @@ function handleMessage(data: ServerMessage): void {
       }
 
       // Award score if we destroyed it
-      if (data.destroyedBy === playerId) {
+      if (data.destroyedBy === playerId && gameState.isAlive) {
         gameState.score += data.entityType === 'asteroid' ? 10 : 25;
       }
       break;
