@@ -309,7 +309,7 @@
               <button
                 class="room-card archived"
                 class:selected={selectedArchivedId === room.id}
-                onclick={() => { selectedArchivedId = room.id; selectedRoomId = null; archivedTab = 'players'; }}}
+                onclick={() => { selectedArchivedId = room.id; selectedRoomId = null; archivedTab = 'players'; }}
               >
                 <div class="room-card-header">
                   <span class="badge badge-ended">ended</span>

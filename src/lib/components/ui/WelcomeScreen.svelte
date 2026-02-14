@@ -344,9 +344,10 @@
 
 				<!-- Invite link -->
 				<div class="invite-section">
-					<label class="invite-label">INVITE LINK</label>
+					<label class="invite-label" for="invite-link-input">INVITE LINK</label>
 					<div class="invite-row">
 						<input
+							id="invite-link-input"
 							type="text"
 							class="invite-input"
 							value={getInviteLink()}
