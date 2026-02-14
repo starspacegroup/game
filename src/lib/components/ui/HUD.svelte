@@ -1,52 +1,50 @@
 <script lang="ts">
 	import { gameState } from '$lib/stores/gameState.svelte';
-	import { world, SPHERE_RADIUS } from '$lib/game/world';
-	import { toSpherical } from '$lib/game/chunk';
+	import { resetWorld } from '$lib/game/world';
+	import { disconnect } from '$lib/stores/socketClient';
+	import { resetIdCounter } from '$lib/game/procedural';
 
-	// Reactive position info for sphere coordinates
-	let latDisplay = $state('0.0');
-	let lonDisplay = $state('0.0');
-	let altDisplay = $state('0');
-	let hemisphere = $state('N');
+	let showQuitConfirm = $state(false);
 
-	// Update coordinates periodically (every ~200ms via rAF)
-	let coordTimer = 0;
-	function updateCoords() {
-		coordTimer++;
-		if (coordTimer % 12 === 0) { // Every ~12 frames
-			const { lat, lon } = toSpherical(world.player.position);
-			const latDeg = (lat * 180) / Math.PI;
-			const lonDeg = (lon * 180) / Math.PI;
-			latDisplay = Math.abs(latDeg).toFixed(1);
-			lonDisplay = Math.abs(lonDeg).toFixed(1);
-			hemisphere = latDeg >= 0 ? 'N' : 'S';
-			altDisplay = (world.player.position.length() - SPHERE_RADIUS).toFixed(0);
-		}
-		requestAnimationFrame(updateCoords);
+	function handleQuit(): void {
+		showQuitConfirm = false;
+		disconnect();
+		resetIdCounter();
+		resetWorld();
+		gameState.reset();
+		gameState.phase = 'welcome';
 	}
-	if (typeof window !== 'undefined') requestAnimationFrame(updateCoords);
 </script>
 
 <div class="hud">
 	<!-- Top bar -->
 	<div class="hud-top">
-		<div class="score">
-			<span class="label">SCORE</span>
-			<span class="value">{gameState.score.toLocaleString()}</span>
+		<div class="top-left">
+			<div class="score">
+				<span class="label">SCORE</span>
+				<span class="value">{gameState.score.toLocaleString()}</span>
+			</div>
+			<div class="mode-badge" class:multiplayer={gameState.mode === 'multiplayer'}>
+				{#if gameState.mode === 'multiplayer'}
+					<span class="mode-label">ONLINE</span>
+					<span class="player-count">{gameState.playerCount}</span>
+				{:else}
+					SOLO
+				{/if}
+			</div>
 		</div>
 
-		<div class="mode-badge" class:multiplayer={gameState.mode === 'multiplayer'}>
-			{#if gameState.mode === 'multiplayer'}
-				<span class="mode-label">MULTIPLAYER</span>
-				<span class="player-count">{gameState.playerCount} online</span>
-			{:else}
-				SOLO
-			{/if}
-		</div>
+		<!-- center gap for minimap -->
+		<div class="top-spacer"></div>
 
-		<div class="wave">
-			<span class="label">WAVE</span>
-			<span class="value">{gameState.wave}</span>
+		<div class="top-right">
+			<div class="wave">
+				<span class="label">WAVE</span>
+				<span class="value">{gameState.wave}</span>
+			</div>
+			<button class="quit-btn" onclick={() => showQuitConfirm = true} aria-label="Quit game">
+				✕
+			</button>
 		</div>
 	</div>
 
@@ -68,16 +66,6 @@
 		</div>
 	{/if}
 
-	<!-- Converted satellites counter -->
-	{#if gameState.convertedNpcCount > 0}
-		<div class="converted-counter">
-			<span class="converted-icon">◈</span>
-			<span class="converted-value">{gameState.convertedNpcCount}</span>
-			<span class="converted-label">SATELLITES CONVERTED</span>
-			<span class="data-collected">+{gameState.dataCollected} DATA</span>
-		</div>
-	{/if}
-
 	<!-- Latest hint display -->
 	{#if gameState.latestHint}
 		<div class="hint-display">
@@ -96,12 +84,18 @@
 		</div>
 	{/if}
 
-	<!-- Sphere coordinates -->
-	<div class="sphere-coords">
-		<span class="coord-label">LAT</span> <span class="coord-val">{latDisplay}°{hemisphere}</span>
-		<span class="coord-sep">&bull;</span>
-		<span class="coord-label">LON</span> <span class="coord-val">{lonDisplay}°</span>
-	</div>
+	<!-- Quit confirmation dialog -->
+	{#if showQuitConfirm}
+		<div class="quit-overlay">
+			<div class="quit-dialog">
+				<p>Quit to menu?</p>
+				<div class="quit-actions">
+					<button class="quit-confirm" onclick={handleQuit}>QUIT</button>
+					<button class="quit-cancel" onclick={() => showQuitConfirm = false}>CANCEL</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -120,9 +114,21 @@
 	.hud-top {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: flex-start;
 		padding: var(--spacing-xs, 4px) 0;
 		gap: var(--spacing-xs, 4px);
+	}
+
+	.top-left,
+	.top-right {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm, 8px);
+	}
+
+	.top-spacer {
+		width: 140px;
+		flex-shrink: 0;
 	}
 
 	.score,
@@ -147,10 +153,10 @@
 	}
 
 	.mode-badge {
-		padding: 3px 8px;
+		padding: 2px 6px;
 		border: 1px solid #335;
 		border-radius: 4px;
-		font-size: var(--font-xs, 0.6rem);
+		font-size: var(--font-xs, 0.55rem);
 		color: #8899aa;
 		letter-spacing: 1px;
 		white-space: nowrap;
@@ -161,21 +167,20 @@
 		color: #4488ff;
 		background: rgba(68, 136, 255, 0.1);
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 2px;
-		padding: 4px 10px;
+		gap: 4px;
+		padding: 2px 8px;
 	}
 
 	.mode-label {
 		font-weight: bold;
 		letter-spacing: 1px;
+		font-size: var(--font-xs, 0.55rem);
 	}
 
 	.player-count {
 		font-size: 0.5rem;
 		color: #66aaff;
-		letter-spacing: 0;
 	}
 
 	.puzzle-progress {
@@ -265,49 +270,94 @@
 		}
 	}
 
-	/* Converted satellites counter */
-	.converted-counter {
-		margin-top: var(--spacing-sm, 8px);
+	/* Quit button */
+	.quit-btn {
+		width: 28px;
+		height: 28px;
+		background: rgba(0, 8, 24, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 6px;
+		color: #8899aa;
+		font-size: 0.85rem;
+		cursor: pointer;
+		pointer-events: all;
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-xs, 4px);
-		padding: 4px 8px;
-		background: rgba(0, 255, 170, 0.1);
-		border: 1px solid rgba(0, 255, 170, 0.3);
-		border-radius: 4px;
+		justify-content: center;
+		transition: all 0.15s ease;
+		flex-shrink: 0;
 	}
 
-	.converted-icon {
-		color: #00ffaa;
-		font-size: var(--font-sm, 0.8rem);
-		animation: orbit 2s linear infinite;
+	.quit-btn:hover {
+		background: rgba(255, 50, 50, 0.2);
+		border-color: rgba(255, 50, 50, 0.5);
+		color: #ff5555;
 	}
 
-	@keyframes orbit {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
+	.quit-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+		pointer-events: all;
+		backdrop-filter: blur(4px);
 	}
 
-	.converted-value {
-		color: #00ffaa;
-		font-size: var(--font-md, 0.9rem);
-		font-weight: bold;
-		text-shadow: 0 0 8px rgba(0, 255, 170, 0.6);
+	.quit-dialog {
+		background: rgba(0, 12, 30, 0.95);
+		border: 1px solid rgba(68, 136, 255, 0.3);
+		border-radius: 12px;
+		padding: 24px 32px;
+		text-align: center;
+		font-family: 'Courier New', monospace;
 	}
 
-	.converted-label {
-		color: #6699aa;
-		font-size: var(--font-xs, 0.6rem);
-		letter-spacing: 0.5px;
+	.quit-dialog p {
+		color: #ccddee;
+		font-size: 1.1rem;
+		margin: 0 0 20px;
+		letter-spacing: 1px;
 	}
 
-	.data-collected {
-		color: #00ffcc;
-		font-size: var(--font-xs, 0.6rem);
-		padding: 1px 4px;
-		background: rgba(0, 255, 204, 0.15);
-		border-radius: 2px;
-		margin-left: auto;
+	.quit-actions {
+		display: flex;
+		gap: 12px;
+		justify-content: center;
+	}
+
+	.quit-confirm,
+	.quit-cancel {
+		padding: 8px 24px;
+		border-radius: 6px;
+		font-family: 'Courier New', monospace;
+		font-size: 0.8rem;
+		letter-spacing: 1px;
+		cursor: pointer;
+		border: 1px solid;
+		transition: all 0.15s ease;
+	}
+
+	.quit-confirm {
+		background: rgba(255, 50, 50, 0.15);
+		border-color: rgba(255, 50, 50, 0.5);
+		color: #ff5555;
+	}
+
+	.quit-confirm:hover {
+		background: rgba(255, 50, 50, 0.3);
+	}
+
+	.quit-cancel {
+		background: rgba(68, 136, 255, 0.1);
+		border-color: rgba(68, 136, 255, 0.3);
+		color: #6699cc;
+	}
+
+	.quit-cancel:hover {
+		background: rgba(68, 136, 255, 0.2);
 	}
 
 	/* Hint display */
@@ -379,37 +429,6 @@
 		.hint-text {
 			font-size: 0.85rem;
 		}
-
-		.converted-counter {
-			padding: 5px 12px;
-			gap: 8px;
-		}
-	}
-
-	.sphere-coords {
-		position: fixed;
-		bottom: 16px;
-		left: 16px;
-		font-family: 'Courier New', monospace;
-		font-size: 0.65rem;
-		color: rgba(100, 160, 220, 0.6);
-		letter-spacing: 1px;
-		pointer-events: none;
-	}
-
-	.coord-label {
-		color: rgba(100, 160, 220, 0.4);
-		font-size: 0.55rem;
-	}
-
-	.coord-val {
-		color: rgba(0, 255, 200, 0.7);
-		font-weight: bold;
-	}
-
-	.coord-sep {
-		margin: 0 4px;
-		opacity: 0.3;
 	}
 
 </style>

@@ -151,17 +151,16 @@
 
 <div class="minimap">
 	<canvas bind:this={canvas} width={SIZE} height={SIZE}></canvas>
-	<span class="minimap-label">SPHERE MAP</span>
 </div>
 
 <style>
 	.minimap {
 		position: fixed;
-		bottom: 16px;
+		top: 8px;
 		left: 50%;
 		transform: translateX(-50%);
 		width: 120px;
-		height: 140px;
+		height: 130px;
 		pointer-events: none;
 		z-index: 15;
 		display: flex;
@@ -173,13 +172,5 @@
 		border: 1px solid rgba(68, 136, 255, 0.2);
 		border-radius: 50%;
 		background: rgba(0, 8, 24, 0.7);
-	}
-
-	.minimap-label {
-		font-family: 'Courier New', monospace;
-		font-size: 0.55rem;
-		color: rgba(100, 160, 220, 0.5);
-		letter-spacing: 2px;
-		margin-top: 4px;
 	}
 </style>
