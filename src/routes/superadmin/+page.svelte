@@ -1,10 +1,21 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
-
   let { data } = $props();
 
-  let autoRefresh = $state(true);
-  let refreshInterval = $state(10);
+  // ── Realtime state (populated via WebSocket) ──
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rooms = $state<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let archivedRooms = $state<any[]>([]);
+  let lobbyClients = $state(0);
+  let kvKeyCount = $state(0);
+  let fetchedAt = $state(Date.now());
+  let errors = $state<string[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let roomDetails = $state<Record<string, any>>({});
+
+  let connected = $state(false);
+  let reconnecting = $state(false);
   let deleting = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
 
@@ -13,22 +24,122 @@
   let selectedArchivedId = $state<string | null>(null);
   let activeTab = $state<'players' | 'entities' | 'puzzle' | 'events'>('players');
 
+  // ── WebSocket connection ──
+
+  let ws: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/api/game/admin-ws`);
+
+    ws.onopen = () => {
+      connected = true;
+      reconnecting = false;
+      errors = [];
+      // Re-subscribe to currently selected room
+      if (selectedRoomId) {
+        ws?.send(JSON.stringify({ type: 'subscribe-room', roomId: selectedRoomId }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+      } catch { /* ignore malformed */ }
+    };
+
+    ws.onclose = () => {
+      connected = false;
+      scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      connected = false;
+    };
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    reconnecting = true;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, 2000);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleMessage(msg: any) {
+    switch (msg.type) {
+      case 'admin-rooms':
+        rooms = msg.rooms ?? [];
+        archivedRooms = msg.archivedRooms ?? archivedRooms;
+        lobbyClients = msg.lobbyClients ?? 0;
+        kvKeyCount = msg.kvKeyCount ?? 0;
+        fetchedAt = msg.fetchedAt ?? Date.now();
+        break;
+
+      case 'room-detail':
+        roomDetails = { ...roomDetails, [msg.roomId]: msg.detail };
+        fetchedAt = msg.fetchedAt ?? Date.now();
+        break;
+
+      case 'room-detail-error':
+        errors = [...errors.filter(e => !e.startsWith(`Room ${msg.roomId}`)),
+          `Room ${msg.roomId}: ${msg.error}`];
+        break;
+
+      case 'archived-rooms':
+        archivedRooms = msg.rooms ?? [];
+        break;
+    }
+  }
+
+  // Connect on mount, disconnect on destroy
   $effect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(() => invalidateAll(), refreshInterval * 1000);
-    return () => clearInterval(id);
+    connect();
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      if (ws) { ws.onclose = null; ws.close(); ws = null; }
+    };
   });
 
+  // Subscribe / unsubscribe to room detail when selection changes
+  $effect(() => {
+    const roomId = selectedRoomId;
+    if (!roomId || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    ws.send(JSON.stringify({ type: 'subscribe-room', roomId }));
+
+    return () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'unsubscribe-room', roomId }));
+      }
+    };
+  });
+
+  // ── Derived state ──
+
+  // Merge room list with any fetched detail
+  const roomsWithDetails = $derived(
+    rooms.map(r => ({ ...r, detail: roomDetails[r.id] ?? null }))
+  );
+
   const totalPlayers = $derived(
-    data.rooms.reduce((sum, r) => sum + (r.detail?.players?.length ?? r.playerCount), 0)
+    roomsWithDetails.reduce((sum: number, r: { detail?: { players?: unknown[] }; playerCount?: number }) =>
+      sum + (r.detail?.players?.length ?? r.playerCount ?? 0), 0)
   );
 
   const selectedRoom = $derived(
-    selectedRoomId ? data.rooms.find(r => r.id === selectedRoomId) : null
+    selectedRoomId ? roomsWithDetails.find((r: { id: string }) => r.id === selectedRoomId) : null
   );
 
   const selectedArchived = $derived(
-    selectedArchivedId ? data.archivedRooms.find(r => r.id === selectedArchivedId) : null
+    selectedArchivedId ? archivedRooms.find((r: { id: string }) => r.id === selectedArchivedId) : null
   );
 
   async function deleteRoom(roomId: string) {
@@ -46,7 +157,7 @@
         deleteError = err.error || 'Failed to delete';
       } else {
         if (selectedRoomId === roomId) selectedRoomId = null;
-        await invalidateAll();
+        // Room removal will arrive via WebSocket
       }
     } catch (e) {
       deleteError = String(e);
@@ -98,25 +209,18 @@
       <span class="user-info">{data.user.username}</span>
     </div>
     <div class="controls">
-      <label>
-        <input type="checkbox" bind:checked={autoRefresh} />
-        Auto-refresh
-      </label>
-      <select bind:value={refreshInterval} disabled={!autoRefresh}>
-        <option value={5}>5s</option>
-        <option value={10}>10s</option>
-        <option value={30}>30s</option>
-        <option value={60}>60s</option>
-      </select>
-      <button class="btn-refresh" onclick={() => invalidateAll()}>Refresh Now</button>
-      <span class="timestamp">Updated: {formatTime(data.fetchedAt)}</span>
+      <span class="connection-status" class:connected class:reconnecting>
+        {connected ? 'LIVE' : reconnecting ? 'RECONNECTING...' : 'DISCONNECTED'}
+      </span>
+      <button class="btn-refresh" onclick={() => ws?.send(JSON.stringify({ type: 'refresh' }))} disabled={!connected}>Refresh</button>
+      <span class="timestamp">Updated: {formatTime(fetchedAt)}</span>
     </div>
   </header>
 
   <!-- Summary Stats -->
   <div class="stats">
     <div class="stat-card">
-      <div class="stat-value">{data.rooms.length}</div>
+      <div class="stat-value">{rooms.length}</div>
       <div class="stat-label">Active Rooms</div>
     </div>
     <div class="stat-card">
@@ -124,24 +228,24 @@
       <div class="stat-label">Players Online</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">{data.kvKeyCount}</div>
+      <div class="stat-value">{kvKeyCount}</div>
       <div class="stat-label">KV Keys</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">{data.lobbyClients}</div>
+      <div class="stat-value">{lobbyClients}</div>
       <div class="stat-label">Lobby WS Clients</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">{data.archivedRooms.length}</div>
+      <div class="stat-value">{archivedRooms.length}</div>
       <div class="stat-label">Archived Games</div>
     </div>
   </div>
 
   <!-- Errors -->
-  {#if data.errors.length > 0}
+  {#if errors.length > 0}
     <section class="errors">
-      <h2>Errors ({data.errors.length})</h2>
-      {#each data.errors as error}
+      <h2>Errors ({errors.length})</h2>
+      {#each errors as error}
         <div class="error-item">{error}</div>
       {/each}
     </section>
@@ -156,12 +260,12 @@
     <div class="room-lists">
       <!-- Active Rooms -->
       <section>
-        <h2>Active Rooms ({data.rooms.length})</h2>
-        {#if data.rooms.length === 0}
+        <h2>Active Rooms ({roomsWithDetails.length})</h2>
+        {#if roomsWithDetails.length === 0}
           <p class="empty">No active rooms</p>
         {:else}
           <div class="room-list">
-            {#each data.rooms as room}
+            {#each roomsWithDetails as room}
               {@const d = room.detail}
               <button
                 class="room-card"
@@ -195,12 +299,12 @@
 
       <!-- Archived Games -->
       <section>
-        <h2>Archived Games ({data.archivedRooms.length})</h2>
-        {#if data.archivedRooms.length === 0}
+        <h2>Archived Games ({archivedRooms.length})</h2>
+        {#if archivedRooms.length === 0}
           <p class="empty">No archived games yet</p>
         {:else}
           <div class="room-list">
-            {#each data.archivedRooms as room}
+            {#each archivedRooms as room}
               <button
                 class="room-card archived"
                 class:selected={selectedArchivedId === room.id}
@@ -226,11 +330,11 @@
       </section>
 
       <!-- Lobby Rooms -->
-      {#if data.lobbyRooms.length > 0}
+      {#if rooms.length > 0}
         <section>
-          <h2>Lobby Tracker ({data.lobbyRooms.length})</h2>
+          <h2>Lobby Tracker ({rooms.length})</h2>
           <div class="room-list">
-            {#each data.lobbyRooms as room}
+            {#each rooms as room}
               <div class="room-card mini">
                 <span class="badge {phaseBadge(room.phase ?? '')}">{room.phase ?? '?'}</span>
                 <span>{room.name}</span>
@@ -587,9 +691,14 @@
   .controls {
     display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap;
   }
-  .controls label { display: flex; align-items: center; gap: var(--spacing-xs); color: var(--color-text-dim); font-size: var(--font-xs); }
-  .controls select { background: rgba(255,255,255,0.1); color: var(--color-text); border: 1px solid var(--color-text-dim); padding: 2px 6px; font-family: var(--hud-font); font-size: var(--font-xs); }
   .timestamp { color: var(--color-text-dim); font-size: var(--font-xs); margin-left: auto; }
+
+  /* Connection status */
+  .connection-status { font-size: var(--font-xs); font-weight: bold; padding: 2px 10px; border: 1px solid; text-transform: uppercase; letter-spacing: 0.05em; }
+  .connection-status.connected { color: var(--color-primary); border-color: var(--color-primary); }
+  .connection-status.reconnecting { color: var(--color-warning); border-color: var(--color-warning); animation: pulse 1s ease-in-out infinite; }
+  .connection-status:not(.connected):not(.reconnecting) { color: var(--color-danger); border-color: var(--color-danger); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
   /* Stats */
   .stats { display: flex; gap: var(--spacing-md); flex-wrap: wrap; margin-bottom: var(--spacing-lg); }

@@ -27,6 +27,14 @@ export default {
       return lobby.fetch(request);
     }
 
+    // Route /admin-ws to GameLobby with admin flag (local dev bypass — auth is handled by SvelteKit in prod)
+    if (url.pathname === '/admin-ws') {
+      const id = env.GAME_LOBBY.idFromName('global');
+      const lobby = env.GAME_LOBBY.get(id);
+      url.searchParams.set('admin', '1');
+      return lobby.fetch(new Request(url.toString(), request));
+    }
+
     // Route /ws WebSocket upgrades to the appropriate GameRoom DO
     if (url.pathname === '/ws') {
       const roomId = url.searchParams.get('room') || 'default';

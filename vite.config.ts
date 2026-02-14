@@ -19,6 +19,11 @@ export default defineConfig({
 				target: WORKER_URL,
 				ws: true,
 				rewrite: (path) => path.replace('/api/game', '')
+			},
+			'/api/game/admin-ws': {
+				target: WORKER_URL,
+				ws: true,
+				rewrite: () => '/admin-ws'
 			}
 		}
 	},
