@@ -69,6 +69,21 @@
 		// If still not logged in, try localStorage
 		if (!authState.isLoggedIn) {
 			authState.loadFromStorage();
+
+			// Verify localStorage auth against server — if server session is gone,
+			// clear stale client-side auth to prevent "ghost" login state
+			if (authState.isLoggedIn) {
+				try {
+					const res = await fetch('/api/auth/me');
+					const data = await res.json() as { user?: { id: string; username: string; avatar: string | null } | null };
+					if (!data.user) {
+						// Server has no session — localStorage is stale
+						authState.logout();
+					}
+				} catch {
+					// Server unreachable — keep localStorage auth as fallback
+				}
+			}
 		}
 
 		// Final fallback: ask the server directly (covers edge cases

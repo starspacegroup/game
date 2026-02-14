@@ -91,7 +91,7 @@ export const load: PageServerLoad = async ({ locals, platform }) => {
     throw redirect(302, '/');
   }
 
-  const rooms: Array<RoomInfo & { detail: RoomDetail | null }> = [];
+  const rooms: Array<RoomInfo & { detail: RoomDetail | null; }> = [];
   let archivedRooms: ArchivedRoomInfo[] = [];
   let lobbyRooms: LobbyRoomInfo[] = [];
   let lobbyClients = 0;

@@ -9,7 +9,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"dev:worker": "cd game-worker && npx wrangler dev",
-		"dev:full": "vite build && concurrently -n vite,worker,pages -c yellow,blue,green \"vite build --watch\" \"cd game-worker && npx wrangler dev\" \"npx wrangler pages dev .svelte-kit/cloudflare\"",
+		"dev:full": "concurrently -n vite,worker -c yellow,blue \"vite dev --port 4201\" \"cd game-worker && npx wrangler dev\"",
 		"build": "vite build",
 		"preview": "wrangler pages dev .svelte-kit/cloudflare",
 		"prepare": "svelte-kit sync || echo ''",
