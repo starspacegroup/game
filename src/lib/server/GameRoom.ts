@@ -1820,7 +1820,8 @@ export class GameRoom implements DurableObject {
             finalWave: this.wave,
             finalPuzzleProgress: this.puzzleProgress,
             players: playerList,
-            playerIds: playerList.map(p => p.id)
+            playerIds: playerList.map(p => p.id),
+            eventLog: this.eventLog
           }
         })
       })).catch(() => { /* best-effort */ });

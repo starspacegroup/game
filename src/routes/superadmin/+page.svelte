@@ -23,6 +23,7 @@
   let selectedRoomId = $state<string | null>(null);
   let selectedArchivedId = $state<string | null>(null);
   let activeTab = $state<'players' | 'entities' | 'puzzle' | 'events'>('players');
+  let archivedTab = $state<'players' | 'events'>('players');
 
   // ── WebSocket connection ──
 
@@ -308,7 +309,7 @@
               <button
                 class="room-card archived"
                 class:selected={selectedArchivedId === room.id}
-                onclick={() => { selectedArchivedId = room.id; selectedRoomId = null; }}
+                onclick={() => { selectedArchivedId = room.id; selectedRoomId = null; archivedTab = 'players'; }}}
               >
                 <div class="room-card-header">
                   <span class="badge badge-ended">ended</span>
@@ -629,27 +630,56 @@
           </div>
         </div>
 
-        <h3>Players</h3>
-        {#each selectedArchived.players as p}
-          <div class="entity-card">
-            <div class="entity-header">
-              <span class="entity-name">{p.username}</span>
-              <span class="entity-id mono">{p.id}</span>
-            </div>
-            <div class="entity-stats">
-              <span>Score: <strong>{p.score}</strong></span>
-            </div>
-          </div>
-        {/each}
+        <!-- Tabs for archived room -->
+        <div class="tabs">
+          <button class="tab" class:active={archivedTab === 'players'} onclick={() => archivedTab = 'players'}>
+            Players ({selectedArchived.players.length})
+          </button>
+          <button class="tab" class:active={archivedTab === 'events'} onclick={() => archivedTab = 'events'}>
+            Event Log ({selectedArchived.eventLog?.length ?? 0})
+          </button>
+        </div>
 
-        {#if selectedArchived.playerIds.length > 0}
-          <h3>Discord IDs</h3>
-          <div class="id-list">
-            {#each selectedArchived.playerIds as pid}
-              <span class="mono">{pid}</span>
+        <div class="tab-content">
+          {#if archivedTab === 'players'}
+            {#each selectedArchived.players as p}
+              <div class="entity-card">
+                <div class="entity-header">
+                  <span class="entity-name">{p.username}</span>
+                  <span class="entity-id mono">{p.id}</span>
+                </div>
+                <div class="entity-stats">
+                  <span>Score: <strong>{p.score}</strong></span>
+                </div>
+              </div>
             {/each}
-          </div>
-        {/if}
+
+            {#if selectedArchived.playerIds.length > 0}
+              <h3>Discord IDs</h3>
+              <div class="id-list">
+                {#each selectedArchived.playerIds as pid}
+                  <span class="mono">{pid}</span>
+                {/each}
+              </div>
+            {/if}
+
+          {:else if archivedTab === 'events'}
+            {#if !selectedArchived.eventLog || selectedArchived.eventLog.length === 0}
+              <p class="empty">No event log available for this game (archived before logging was enabled)</p>
+            {:else}
+              <div class="event-list">
+                {#each [...selectedArchived.eventLog].reverse() as evt}
+                  <div class="event-item">
+                    <span class="event-time">{formatTime(evt.time)}</span>
+                    <span class="event-type">{evt.event}</span>
+                    {#if evt.actor}<span class="event-actor">{evt.actor}</span>{/if}
+                    {#if evt.detail}<span class="event-detail">{evt.detail}</span>{/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          {/if}
+        </div>
 
       {:else}
         <div class="detail-empty">

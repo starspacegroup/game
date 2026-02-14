@@ -32,6 +32,8 @@ export interface ArchivedRoomInfo {
   players: Array<{ id: string; username: string; score: number; }>;
   /** Discord user IDs of players who participated */
   playerIds: string[];
+  /** Complete event log from the game session */
+  eventLog?: Array<{ time: number; event: string; actor?: string; detail?: string; }>;
 }
 
 export class GameLobby implements DurableObject {
