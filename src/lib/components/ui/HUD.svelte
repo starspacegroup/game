@@ -1,18 +1,15 @@
 <script lang="ts">
 	import { gameState } from '$lib/stores/gameState.svelte';
-	import { resetWorld } from '$lib/game/world';
-	import { disconnect } from '$lib/stores/socketClient';
-	import { resetIdCounter } from '$lib/game/procedural';
+	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 
 	let showQuitConfirm = $state(false);
 
 	function handleQuit(): void {
 		showQuitConfirm = false;
-		disconnect();
-		resetIdCounter();
-		resetWorld();
-		gameState.reset();
-		gameState.phase = 'welcome';
+		// Self destruct: kill the player and trigger death sequence
+		gameState.health = 0;
+		deathReplay.startReplay();
+		gameState.multiplayerDead = true;
 	}
 </script>
 
@@ -42,9 +39,22 @@
 				<span class="label">WAVE</span>
 				<span class="value">{gameState.wave}</span>
 			</div>
-			<button class="quit-btn" onclick={() => showQuitConfirm = true} aria-label="Quit game">
-				✕
-			</button>
+			<div class="quit-wrapper">
+				<button class="quit-btn" onclick={() => showQuitConfirm = true} aria-label="Quit game">
+					✕
+				</button>
+				{#if showQuitConfirm}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="quit-backdrop" onclick={() => showQuitConfirm = false} onkeydown={() => {}}></div>
+					<div class="quit-popover">
+						<p>self destruct?</p>
+						<div class="quit-actions">
+							<button class="quit-confirm" onclick={handleQuit}>YES</button>
+							<button class="quit-cancel" onclick={() => showQuitConfirm = false}>NO</button>
+						</div>
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
@@ -84,18 +94,6 @@
 		</div>
 	{/if}
 
-	<!-- Quit confirmation dialog -->
-	{#if showQuitConfirm}
-		<div class="quit-overlay">
-			<div class="quit-dialog">
-				<p>Quit to menu?</p>
-				<div class="quit-actions">
-					<button class="quit-confirm" onclick={handleQuit}>QUIT</button>
-					<button class="quit-cancel" onclick={() => showQuitConfirm = false}>CANCEL</button>
-				</div>
-			</div>
-		</div>
-	{/if}
 </div>
 
 <style>
@@ -271,6 +269,10 @@
 	}
 
 	/* Quit button */
+	.quit-wrapper {
+		position: relative;
+	}
+
 	.quit-btn {
 		width: 28px;
 		height: 28px;
@@ -294,32 +296,42 @@
 		color: #ff5555;
 	}
 
-	.quit-overlay {
+	.quit-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.7);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
+		z-index: 99;
 		pointer-events: all;
-		backdrop-filter: blur(4px);
 	}
 
-	.quit-dialog {
+	.quit-popover {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		margin-top: 6px;
 		background: rgba(0, 12, 30, 0.95);
-		border: 1px solid rgba(68, 136, 255, 0.3);
-		border-radius: 12px;
-		padding: 24px 32px;
+		border: 1px solid rgba(255, 50, 50, 0.4);
+		border-radius: 8px;
+		padding: 12px 16px;
 		text-align: center;
 		font-family: 'Courier New', monospace;
+		z-index: 100;
+		pointer-events: all;
+		white-space: nowrap;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+		animation: popover-in 0.15s ease-out;
 	}
 
-	.quit-dialog p {
-		color: #ccddee;
-		font-size: 1.1rem;
-		margin: 0 0 20px;
+	@keyframes popover-in {
+		from { opacity: 0; transform: translateY(-4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.quit-popover p {
+		color: #ff6666;
+		font-size: 0.8rem;
+		margin: 0 0 10px;
 		letter-spacing: 1px;
+		text-transform: uppercase;
 	}
 
 	.quit-actions {
