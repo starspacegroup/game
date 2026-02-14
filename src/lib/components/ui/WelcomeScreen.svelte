@@ -45,6 +45,7 @@
 			try {
 				const user = JSON.parse(decodeURIComponent(authData));
 				authState.setUser(user);
+				authState.setSuperAdmin(!!$page.data.isSuperAdmin);
 				window.history.replaceState({}, '', '/');
 			} catch {
 				console.error('Failed to parse auth data');
@@ -61,6 +62,7 @@
 					avatar: serverUser.avatar,
 					accessToken: '' // token stays server-side in cookie
 				});
+				authState.setSuperAdmin(!!$page.data.isSuperAdmin);
 			}
 		}
 

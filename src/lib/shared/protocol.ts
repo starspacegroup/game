@@ -395,8 +395,3 @@ export const ASTEROID_COUNT = 100;
 export const POWER_UP_COUNT = 20;
 export const PUZZLE_NODE_COUNT = 13;
 export const BASE_NPC_COUNT = 2;
-
-// Super admin Discord user IDs (can delete rooms, etc.)
-export const SUPER_ADMIN_IDS: ReadonlyArray<string> = [
-  '293484886726279168'
-];

@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { SUPER_ADMIN_IDS } from '$lib/shared/protocol';
+import { SUPER_ADMIN_DISCORD_IDS } from '$env/static/private';
+
+const adminIds = SUPER_ADMIN_DISCORD_IDS?.split(',').map(id => id.trim()) ?? [];
 
 interface RoomInfo {
   id: string;
@@ -159,7 +161,7 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
     }
 
     // Server-side super admin check
-    if (!SUPER_ADMIN_IDS.includes(userId)) {
+    if (!adminIds.includes(userId)) {
       return json({ error: 'Unauthorized' }, { status: 403 });
     }
 

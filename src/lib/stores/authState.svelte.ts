@@ -1,5 +1,3 @@
-import { SUPER_ADMIN_IDS } from '$lib/shared/protocol';
-
 /** Reactive auth state for Discord login */
 class AuthStore {
   isLoggedIn = $state(false);
@@ -7,6 +5,7 @@ class AuthStore {
   username = $state<string | null>(null);
   avatar = $state<string | null>(null);
   accessToken = $state<string | null>(null);
+  isSuperAdmin = $state(false);
 
   setUser(user: { id: string; username: string; avatar: string | null; accessToken: string; }): void {
     this.isLoggedIn = true;
@@ -27,6 +26,7 @@ class AuthStore {
     this.username = null;
     this.avatar = null;
     this.accessToken = null;
+    this.isSuperAdmin = false;
 
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('discord_auth');
@@ -51,8 +51,8 @@ class AuthStore {
     }
   }
 
-  get isSuperAdmin(): boolean {
-    return this.isLoggedIn && this.userId !== null && SUPER_ADMIN_IDS.includes(this.userId);
+  setSuperAdmin(value: boolean): void {
+    this.isSuperAdmin = value;
   }
 
   get avatarUrl(): string | null {

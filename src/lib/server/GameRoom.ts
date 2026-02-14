@@ -275,6 +275,73 @@ export class GameRoom implements DurableObject {
       });
     }
 
+    // HTTP: full state dump for superadmin dashboard
+    if (url.pathname === '/admin-detail') {
+      return Response.json({
+        roomCode: this.roomCode,
+        phase: this.phase,
+        isPrivate: this.isPrivate,
+        hostId: this.hostId,
+        tick: this.tick,
+        wave: this.wave,
+        puzzleProgress: this.puzzleProgress,
+        puzzleSolved: this.puzzleSolved,
+        connectedSockets: this.state.getWebSockets().length,
+        players: this.phase === 'lobby'
+          ? Array.from(this.lobbyPlayers.values())
+          : Array.from(this.players.values()).map(p => ({
+            id: p.id,
+            username: p.username,
+            avatarUrl: p.avatarUrl,
+            position: p.position,
+            velocity: p.velocity,
+            health: p.health,
+            maxHealth: p.maxHealth,
+            score: p.score,
+            speed: p.speed,
+            damageCooldownUntil: p.damageCooldownUntil,
+            lastProcessedInput: p.lastProcessedInput
+          })),
+        asteroids: this.asteroids.map(a => ({
+          id: a.id,
+          position: a.position,
+          radius: a.radius,
+          health: a.health,
+          maxHealth: a.maxHealth,
+          destroyed: a.destroyed
+        })),
+        npcs: this.npcs.map(n => ({
+          id: n.id,
+          position: n.position,
+          health: n.health,
+          maxHealth: n.maxHealth,
+          destroyed: n.destroyed,
+          converted: n.converted,
+          conversionProgress: n.conversionProgress,
+          targetNodeId: n.targetNodeId
+        })),
+        lasers: this.lasers.map(l => ({
+          id: l.id,
+          ownerId: l.ownerId,
+          life: l.life
+        })),
+        puzzleNodes: this.puzzleNodes.map(pn => ({
+          id: pn.id,
+          position: pn.position,
+          targetPosition: pn.targetPosition,
+          connected: pn.connected,
+          color: pn.color
+        })),
+        powerUps: this.powerUps.map(pu => ({
+          id: pu.id,
+          position: pu.position,
+          type: pu.type,
+          collected: pu.collected
+        })),
+        eventLog: this.eventLog
+      });
+    }
+
     // HTTP: configure room (called by rooms API right after creation)
     if (url.pathname === '/configure' && request.method === 'POST') {
       const body = await request.json() as { hostId?: string; isPrivate?: boolean; roomCode?: string; };

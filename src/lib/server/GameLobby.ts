@@ -135,6 +135,15 @@ export class GameLobby implements DurableObject {
       return Response.json({ ok: true });
     }
 
+    // ── HTTP: admin status (all rooms + archived, for superadmin page) ──
+    if (url.pathname === '/admin-status') {
+      return Response.json({
+        rooms: Array.from(this.rooms.values()),
+        archivedRooms: Array.from(this.archivedRooms.values()),
+        connectedClients: this.state.getWebSockets().length
+      });
+    }
+
     // ── HTTP: get rooms (fallback for non-WS clients) ──
     if (url.pathname === '/rooms') {
       return Response.json({ rooms: Array.from(this.rooms.values()) });
