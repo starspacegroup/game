@@ -181,6 +181,8 @@ export class GameRoom implements DurableObject {
   private roomCode: string = '';
   private roomStartTime: number = 0;
   private roomEnded: boolean = false;
+  /** Tick at which all players died — endRoom triggers after a short delay */
+  private allDeadSinceTick: number = 0;
 
   // Lobby phase
   private phase: RoomPhase = 'lobby';
@@ -234,6 +236,14 @@ export class GameRoom implements DurableObject {
 
       const phase = await this.state.storage.get<RoomPhase>('phase');
       if (phase) this.phase = phase;
+
+      const roomEnded = await this.state.storage.get<boolean>('roomEnded');
+      if (roomEnded) {
+        this.roomEnded = true;
+        // Room was ended before DO hibernated — clean up on restore
+        this.notifyLobbyDelete();
+        this.state.storage.deleteAll();
+      }
     });
   }
 
@@ -475,6 +485,11 @@ export class GameRoom implements DurableObject {
     // Send room stats to dead players every 10 ticks (~333ms)
     if (this.tick % 10 === 0) {
       this.broadcastRoomStats();
+    }
+
+    // Check if all active players are dead (failsafe for endRoom)
+    if (this.tick % 20 === 0) {
+      this.checkAllDead();
     }
 
     // Periodic save (every 100 ticks = 5 seconds)
@@ -954,14 +969,34 @@ export class GameRoom implements DurableObject {
 
       this.logEvent('player-left', session.username, `left the game`);
 
-      // Notify lobby of updated player count
-      this.notifyLobby();
-
-      // If no players remain, remove from lobby and clean up
       if (this.sessions.size === 0) {
+        // No players remain — end the room properly
         this.stopGameLoop();
-        this.saveState();
-        this.notifyLobbyDelete();
+
+        if (!this.roomEnded) {
+          // Check if all players were dead (game over but endRoom hadn't fired yet)
+          const anyAlive = Array.from(this.players.values()).some(p => p.health > 0);
+          if (!anyAlive && this.players.size > 0 && this.phase === 'playing') {
+            // End the room (which archives it in the lobby)
+            this.endRoom('All players eliminated');
+          } else {
+            // Players left voluntarily — just delete from lobby
+            this.saveState();
+            this.notifyLobbyDelete();
+          }
+        } else {
+          // Room already ended — ensure lobby knows (archive may have failed earlier)
+          const duration = this.roomStartTime > 0
+            ? Math.round((Date.now() - this.roomStartTime) / 1000)
+            : 0;
+          const playerList = Array.from(this.players.values()).map(p => ({
+            id: p.id, username: p.username, score: p.score
+          }));
+          this.notifyLobbyArchive(duration, playerList);
+        }
+      } else if (!this.roomEnded) {
+        // Still players remaining — notify lobby of updated count
+        this.notifyLobby();
       }
     }
   }
@@ -1332,10 +1367,12 @@ export class GameRoom implements DurableObject {
       const allDead = this.getActivePlayers().every(p => p.health <= 0);
 
       if (allDead && this.sessions.size > 0) {
-        // Last player died — end the room after a short delay
-        // (keep connections open so clients see the end screen)
-        this.logEvent('all-eliminated', undefined, 'All crew eliminated');
-        setTimeout(() => this.endRoom('All players eliminated'), 2000);
+        // Mark the tick when all players died; endRoom will fire after a delay
+        // checked in gameTick via checkAllDead()
+        if (this.allDeadSinceTick === 0) {
+          this.allDeadSinceTick = this.tick;
+          this.logEvent('all-eliminated', undefined, 'All crew eliminated');
+        }
       } else {
         // Other players still alive — send room stats so dead player sees death screen
         // Player can manually request respawn via 'respawn-request' message
@@ -1672,6 +1709,36 @@ export class GameRoom implements DurableObject {
 
     // Archive the room in the lobby (instead of deleting)
     this.notifyLobbyArchive(duration, playerList);
+
+    // Persist ended flag so restoration doesn't revive the room
+    this.state.storage.put('roomEnded', true);
+  }
+
+  /**
+   * Periodic check: if all active players are dead for ~2 seconds (40 ticks),
+   * end the room. This is a robust fallback that doesn't rely on setTimeout.
+   */
+  private checkAllDead(): void {
+    if (this.roomEnded || this.sessions.size === 0) return;
+
+    const activePlayers = this.getActivePlayers();
+    if (activePlayers.length === 0) return;
+
+    const allDead = activePlayers.every(p => p.health <= 0);
+
+    if (allDead) {
+      if (this.allDeadSinceTick === 0) {
+        // First detection — start the countdown
+        this.allDeadSinceTick = this.tick;
+        this.logEvent('all-eliminated', undefined, 'All crew eliminated');
+      } else if (this.tick - this.allDeadSinceTick >= 40) {
+        // ~2 seconds have passed since all players died
+        this.endRoom('All players eliminated');
+      }
+    } else {
+      // Someone is alive (e.g. respawned) — reset the counter
+      this.allDeadSinceTick = 0;
+    }
   }
 
   /**

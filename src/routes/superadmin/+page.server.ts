@@ -1,11 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { SUPER_ADMIN_DISCORD_IDS } from '$env/static/private';
-import type { LobbyRoomInfo, ArchivedRoomInfo } from '$lib/server/GameLobby';
 
 const adminIds = SUPER_ADMIN_DISCORD_IDS?.split(',').map(id => id.trim()) ?? [];
 
-interface RoomInfo {
+interface KvRoomInfo {
   id: string;
   name: string;
   playerCount: number;
@@ -13,167 +12,93 @@ interface RoomInfo {
   createdBy: string;
   createdById?: string;
   isPrivate: boolean;
-  phase: 'lobby' | 'playing' | 'ended';
-}
-
-interface Vector3 { x: number; y: number; z: number; }
-
-interface RoomDetail {
-  roomCode: string;
   phase: string;
-  isPrivate: boolean;
-  hostId: string;
-  tick: number;
-  wave: number;
-  puzzleProgress: number;
-  puzzleSolved: boolean;
-  connectedSockets: number;
-  players: Array<{
-    id: string;
-    username: string;
-    avatarUrl?: string;
-    position?: Vector3;
-    velocity?: Vector3;
-    health: number;
-    maxHealth?: number;
-    score: number;
-    speed?: number;
-    damageCooldownUntil?: number;
-    lastProcessedInput?: number;
-  }>;
-  asteroids: Array<{
-    id: string;
-    position: Vector3;
-    radius: number;
-    health: number;
-    maxHealth: number;
-    destroyed: boolean;
-  }>;
-  npcs: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth: number;
-    destroyed: boolean;
-    converted: boolean;
-    conversionProgress: number;
-    targetNodeId: string | null;
-  }>;
-  lasers: Array<{
-    id: string;
-    ownerId: string;
-    life: number;
-  }>;
-  puzzleNodes: Array<{
-    id: string;
-    position: Vector3;
-    targetPosition: Vector3;
-    connected: boolean;
-    color: string;
-  }>;
-  powerUps: Array<{
-    id: string;
-    position: Vector3;
-    type: string;
-    collected: boolean;
-  }>;
-  eventLog: Array<{
-    time: number;
-    event: string;
-    actor?: string;
-    detail?: string;
-  }>;
 }
 
 export const load: PageServerLoad = async ({ locals, platform }) => {
-  // Auth guard — only super admins can access
+  // Auth guard - only super admins can access
   if (!locals.user || !adminIds.includes(locals.user.id)) {
     throw redirect(302, '/');
   }
 
-  const rooms: Array<RoomInfo & { detail: RoomDetail | null; }> = [];
-  let archivedRooms: ArchivedRoomInfo[] = [];
-  let lobbyRooms: LobbyRoomInfo[] = [];
-  let lobbyClients = 0;
-  let kvKeyCount = 0;
   const errors: string[] = [];
 
-  if (platform?.env?.GAME_DATA && platform?.env?.GAME_ROOM) {
-    try {
-      const roomList = await platform.env.GAME_DATA.list({ prefix: 'room:' });
-      kvKeyCount = roomList.keys.length;
+  // If platform APIs aren't available (local dev), return empty defaults
+  if (!platform?.env?.GAME_LOBBY || !platform?.env?.GAME_DATA || !platform?.env?.GAME_ROOM) {
+    return {
+      user: locals.user,
+      rooms: [] as Array<KvRoomInfo & { detail: unknown; }>,
+      archivedRooms: [] as unknown[],
+      lobbyRooms: [] as unknown[],
+      lobbyClients: 0,
+      kvKeyCount: 0,
+      fetchedAt: Date.now(),
+      errors: ['Platform APIs not available (local dev mode)']
+    };
+  }
 
-      // Fetch full detail for all rooms in parallel
-      const detailPromises = roomList.keys.map(async (key) => {
-        const roomData = await platform.env.GAME_DATA.get(key.name, 'json') as RoomInfo | null;
-        if (!roomData) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lobbyRooms: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let archivedRooms: any[] = [];
+  let lobbyClients = 0;
+  let kvKeyCount = 0;
 
-        let detail: RoomDetail | null = null;
+  // 1. Fetch lobby status (rooms, archived, WS client count)
+  try {
+    const id = platform.env.GAME_LOBBY.idFromName('global');
+    const lobby = platform.env.GAME_LOBBY.get(id);
+    const res = await lobby.fetch('https://internal/admin-status');
+    const data = await res.json() as {
+      rooms: unknown[];
+      archivedRooms: unknown[];
+      connectedClients: number;
+    };
+    lobbyRooms = data.rooms ?? [];
+    archivedRooms = data.archivedRooms ?? [];
+    lobbyClients = data.connectedClients ?? 0;
+  } catch (e) {
+    errors.push(`Lobby fetch failed: ${e}`);
+  }
+
+  // 2. List KV room keys and fetch per-room detail from GameRoom DOs
+  const rooms: Array<KvRoomInfo & { detail: unknown; }> = [];
+  try {
+    const roomList = await platform.env.GAME_DATA.list({ prefix: 'room:' });
+    kvKeyCount = roomList.keys.length;
+
+    for (const key of roomList.keys) {
+      try {
+        const roomData = await platform.env.GAME_DATA.get(key.name, 'json') as KvRoomInfo | null;
+        if (!roomData) continue;
+
+        let detail: unknown = null;
         try {
           const doId = platform.env.GAME_ROOM.idFromName(roomData.id);
           const room = platform.env.GAME_ROOM.get(doId);
-          const response = await room.fetch('https://internal/admin-detail');
-          detail = await response.json() as RoomDetail;
+          const detailRes = await room.fetch('https://internal/admin-detail');
+          detail = await detailRes.json();
         } catch (e) {
-          errors.push(`Room ${roomData.id}: ${e}`);
+          errors.push(`Room ${roomData.id} detail: ${e}`);
         }
 
-        return { ...roomData, detail };
-      });
-
-      const results = await Promise.allSettled(detailPromises);
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-          rooms.push(result.value);
-        }
+        rooms.push({ ...roomData, detail });
+      } catch (e) {
+        errors.push(`KV read ${key.name}: ${e}`);
       }
-    } catch (e) {
-      errors.push(`KV list failed: ${e}`);
     }
-  } else {
-    errors.push('Platform bindings not available (GAME_DATA / GAME_ROOM)');
+  } catch (e) {
+    errors.push(`KV list failed: ${e}`);
   }
-
-  // Fetch lobby data (all rooms + archived)
-  if (platform?.env?.GAME_LOBBY) {
-    try {
-      const lobbyId = platform.env.GAME_LOBBY.idFromName('global');
-      const lobby = platform.env.GAME_LOBBY.get(lobbyId);
-      const response = await lobby.fetch('https://internal/admin-status');
-      const data = await response.json() as {
-        rooms: LobbyRoomInfo[];
-        archivedRooms: ArchivedRoomInfo[];
-        connectedClients: number;
-      };
-      lobbyRooms = data.rooms;
-      archivedRooms = data.archivedRooms;
-      lobbyClients = data.connectedClients;
-    } catch (e) {
-      errors.push(`Lobby fetch failed: ${e}`);
-    }
-  } else {
-    errors.push('Platform binding not available (GAME_LOBBY)');
-  }
-
-  // Sort rooms: playing first, then lobby, then ended
-  const phaseOrder = { playing: 0, lobby: 1, ended: 2 };
-  rooms.sort((a, b) => {
-    const pa = phaseOrder[a.detail?.phase as keyof typeof phaseOrder ?? a.phase] ?? 2;
-    const pb = phaseOrder[b.detail?.phase as keyof typeof phaseOrder ?? b.phase] ?? 2;
-    return pa - pb || b.createdAt - a.createdAt;
-  });
-
-  // Sort archived by most recent first
-  archivedRooms.sort((a, b) => b.endedAt - a.endedAt);
 
   return {
     user: locals.user,
     rooms,
-    lobbyRooms,
     archivedRooms,
+    lobbyRooms,
     lobbyClients,
     kvKeyCount,
-    errors,
-    fetchedAt: Date.now()
+    fetchedAt: Date.now(),
+    errors
   };
 };
