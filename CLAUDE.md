@@ -71,6 +71,10 @@ Simple distance-based (sum of radii vs chord distance). Uses `sphereDistance()` 
 
 12 puzzle nodes placed randomly. Players and converted NPCs push nodes toward target positions. NPCs convert from hostile to allied via repeated laser hits, then orbit puzzle nodes and generate hints.
 
+## Platform Notes
+
+**Very important:** When you are on Windows (dev or otherwise) → never use `/dev/null`. Use `>nul` or `> NUL` or `1>nul 2>&1` instead.
+
 ## Key Conventions
 
 - SSR is disabled on the game page (`+page.ts: export const ssr = false`)
