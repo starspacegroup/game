@@ -763,6 +763,9 @@
 		if (gameState.health <= 0) {
 			gameState.health = 0;
 
+			// Reset score to 0 on death
+			gameState.score = 0;
+
 			// Start death replay — camera will replay last 5 seconds while overlay fades in
 			deathReplay.startReplay();
 

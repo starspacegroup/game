@@ -50,8 +50,8 @@
 	function handleSoloContinue(): void {
 		deathReplay.reset();
 
-		// Apply 50% score penalty on respawn
-		gameState.score = Math.floor(gameState.score / 2);
+		// Score already reset to 0 on death
+		gameState.score = 0;
 
 		// Respawn player at a random position on the sphere
 		const spawnPos = randomSpherePosition();
@@ -126,10 +126,10 @@
 	const canRejoin = $derived(stats?.canRejoin ?? false);
 	const isSolo = $derived(gameState.mode === 'solo');
 	const isRoomEnded = $derived(!!endData);
-	// Use replay-driven opacity: starts at 0 during replay, fades to 1
-	const overlayOpacity = $derived(deathReplay.active ? deathReplay.overlayOpacity : 1);
-	// Show content only after the overlay is mostly visible
-	const contentVisible = $derived(overlayOpacity > 0.6);
+	// Use replay-driven opacity for the background overlay
+	const overlayOpacity = $derived(deathReplay.active ? Math.max(deathReplay.overlayOpacity, 0.3) : 1);
+	// Always show content immediately so death screen is interactive right away
+	const contentVisible = $derived(true);
 	// Compute event log start time for relative timestamps
 	const logStartTime = $derived(
 		endData?.eventLog?.length ? endData.eventLog[0].time : 0
@@ -138,7 +138,7 @@
 
 {#if gameState.multiplayerDead && gameState.phase === 'playing'}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: {contentVisible ? 'auto' : 'none'};" onmousedown={(e) => e.stopPropagation()} onmouseup={(e) => e.stopPropagation()}>
+	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: auto;" onmousedown={(e) => e.stopPropagation()} onmouseup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
 		{#if contentVisible}
 			<div class="death-content" class:fade-in={contentVisible}>
 
@@ -219,7 +219,6 @@
 					</div>
 
 					{#if isSolo}
-						<div class="death-penalty">Score penalty: −50%</div>
 						<div class="actions">
 							<button class="action-btn rejoin-btn" onclick={handleSoloContinue}>
 							RESTART
@@ -311,7 +310,7 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: center;
-		z-index: 90;
+		z-index: 200;
 		padding: 16px;
 		overflow-y: auto;
 		-webkit-overflow-scrolling: touch;

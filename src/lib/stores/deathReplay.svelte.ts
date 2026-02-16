@@ -19,10 +19,10 @@ const BUFFER_DURATION = 5;
 const MAX_FRAMES = BUFFER_DURATION * 80; // slightly over to handle variance
 
 /** How long the replay plays (seconds) — slowed down for dramatic effect */
-const REPLAY_PLAYBACK_DURATION = 4;
+const REPLAY_PLAYBACK_DURATION = 3;
 
 /** How long the death overlay takes to fully fade in (seconds) */
-const FADE_IN_DURATION = 4;
+const FADE_IN_DURATION = 2;
 
 class DeathReplayStore {
   // --- Recording ---
@@ -110,13 +110,8 @@ class DeathReplayStore {
     // Progress through the replay
     this.progress = Math.min(elapsed / this.replayDuration, 1);
 
-    // Overlay fades in starting from 30% of the way through the replay
-    const fadeStart = this.replayDuration * 0.3;
-    if (elapsed > fadeStart) {
-      this.overlayOpacity = Math.min((elapsed - fadeStart) / this.fadeDuration, 1);
-    } else {
-      this.overlayOpacity = 0;
-    }
+    // Overlay fades in immediately (starts right away for instant death screen visibility)
+    this.overlayOpacity = Math.min(elapsed / this.fadeDuration, 1);
 
     // Interpolate position from buffer
     const bufferT = this.progress; // 0..1 through the frozen buffer

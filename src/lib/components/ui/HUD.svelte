@@ -8,6 +8,7 @@
 		showQuitConfirm = false;
 		// Self destruct: kill the player and trigger death sequence
 		gameState.health = 0;
+		gameState.score = 0;
 		deathReplay.startReplay();
 		gameState.multiplayerDead = true;
 	}
