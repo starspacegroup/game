@@ -1304,6 +1304,7 @@ export class GameRoom implements DurableObject {
 
         // Respawn the player
         player.health = player.maxHealth;
+        player.score = 0;
         player.position = { x: 0, y: 0, z: SPHERE_RADIUS };
         player.velocity = { x: 0, y: 0, z: 0 };
 

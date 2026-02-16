@@ -272,6 +272,7 @@ function handleMessage(data: ServerMessage): void {
 
     case 'player-respawn': {
       if (data.player.id === playerId) {
+        gameState.score = 0;
         gameState.health = data.player.health;
         world.player.health = data.player.health;
         world.player.position.set(data.player.position.x, data.player.position.y, data.player.position.z);

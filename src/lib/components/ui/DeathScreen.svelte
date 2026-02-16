@@ -45,6 +45,9 @@
 	function handleSoloContinue(): void {
 		deathReplay.reset();
 
+		// Reset score on respawn
+		gameState.score = 0;
+
 		// Respawn player at a random position on the sphere
 		const spawnPos = randomSpherePosition();
 		world.player.position.copy(spawnPos);
@@ -67,6 +70,10 @@
 	function handleSoloLeave(): void {
 		deathReplay.reset();
 		gameState.multiplayerDead = false;
+		// Clear active buffs/effects before returning to menu
+		gameState.activeBuffs = [];
+		gameState.shieldHealth = 0;
+		gameState.pickupNotifications = [];
 		gameState.phase = 'gameover';
 	}
 
@@ -123,7 +130,7 @@
 </script>
 
 {#if gameState.multiplayerDead && gameState.phase === 'playing'}
-	<div class="death-overlay" style="opacity: {overlayOpacity};">
+	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: {contentVisible ? 'auto' : 'none'};">
 		{#if contentVisible}
 			<div class="death-content" class:fade-in={contentVisible}>
 
@@ -204,12 +211,13 @@
 					</div>
 
 					{#if isSolo}
+						<div class="death-penalty">Score penalty: −50%</div>
 						<div class="actions">
 							<button class="action-btn rejoin-btn" onclick={handleSoloContinue}>
-								CONTINUE
+							RESTART
 							</button>
 							<button class="action-btn leave-btn" onclick={handleSoloLeave}>
-								QUIT
+								QUIT TO MENU
 							</button>
 						</div>
 					{:else}
@@ -300,13 +308,7 @@
 		overflow-y: auto;
 		-webkit-overflow-scrolling: touch;
 		touch-action: pan-y;
-		/* Opacity is driven by deathReplay.overlayOpacity via inline style */
-		pointer-events: none;
-	}
-
-	/* Once content is visible, enable pointer events */
-	.death-overlay:has(.death-content) {
-		pointer-events: auto;
+		/* pointer-events controlled via inline style based on contentVisible */
 	}
 
 	.death-content {
@@ -361,6 +363,15 @@
 		color: #00ff88;
 		font-size: 1.1rem;
 		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+	}
+
+	.death-penalty {
+		font-family: var(--hud-font, monospace);
+		font-size: 0.65rem;
+		color: #ff8844;
+		letter-spacing: 1px;
+		margin-bottom: 16px;
+		opacity: 0.8;
 	}
 
 	/* Stats panel */
