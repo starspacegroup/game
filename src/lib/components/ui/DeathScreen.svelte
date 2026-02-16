@@ -34,12 +34,17 @@
 	}
 
 	function handleLeave(): void {
+		// Disconnect first to prevent any incoming messages from overriding state
+		disconnect();
 		deathReplay.reset();
 		gameState.multiplayerDead = false;
 		gameState.roomStats = null;
 		gameState.roomEndData = null;
+		gameState.health = gameState.maxHealth;
+		gameState.activeBuffs = [];
+		gameState.shieldHealth = 0;
+		gameState.pickupNotifications = [];
 		gameState.phase = 'gameover';
-		disconnect();
 	}
 
 	function handleSoloContinue(): void {
@@ -70,6 +75,8 @@
 	function handleSoloLeave(): void {
 		deathReplay.reset();
 		gameState.multiplayerDead = false;
+		// Reset health to prevent checkGameOver from re-triggering
+		gameState.health = gameState.maxHealth;
 		// Clear active buffs/effects before returning to menu
 		gameState.activeBuffs = [];
 		gameState.shieldHealth = 0;

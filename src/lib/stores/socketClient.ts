@@ -189,6 +189,13 @@ export function connectToServer(room: string = 'default'): void {
         return;
       }
 
+      // Don't attempt to reconnect if the user has already left the game
+      if (gameState.phase !== 'playing') {
+        currentRoomCode = null;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        return;
+      }
+
       // Try to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentRoomCode) {
         reconnectAttempts++;
@@ -217,6 +224,11 @@ export function connectToServer(room: string = 'default'): void {
 }
 
 function handleMessage(data: ServerMessage): void {
+  // Ignore messages if we've already left the game (prevents stale messages from overriding state)
+  if (gameState.phase === 'gameover' || gameState.phase === 'welcome') {
+    return;
+  }
+
   switch (data.type) {
     case 'welcome': {
       // Received when joining - contains full world state
@@ -956,6 +968,10 @@ export function sendStartGame(): void {
 }
 
 export function disconnect(): void {
+  // Prevent any reconnection attempts
+  reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+  currentRoomCode = null;
+
   if (reconnectTimeout) {
     clearTimeout(reconnectTimeout);
     reconnectTimeout = null;
@@ -965,7 +981,6 @@ export function disconnect(): void {
   socket?.close();
   socket = null;
   playerId = null;
-  currentRoomCode = null;
 }
 
 export function isConnected(): boolean {
