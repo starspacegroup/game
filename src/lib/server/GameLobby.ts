@@ -55,6 +55,9 @@ export class GameLobby implements DurableObject {
   /** Room IDs that admin clients are subscribed to for detail */
   private adminSubscribedRooms: Set<string> = new Set();
 
+  /** Whether admin clients want auto-polling of ALL rooms */
+  private adminAutoSubscribeAll: boolean = false;
+
   /** Admin detail refresh rate (ms) */
   private static readonly ADMIN_DETAIL_INTERVAL = 2000;
 
@@ -196,7 +199,18 @@ export class GameLobby implements DurableObject {
       const tags = this.state.getTags(ws);
       if (!tags.includes('admin')) return; // Only admin clients send messages
 
-      if (msg.type === 'subscribe-room' && msg.roomId) {
+      if (msg.type === 'subscribe-all') {
+        // Admin wants real-time detail for ALL active rooms
+        this.adminAutoSubscribeAll = true;
+        // Fetch details for all rooms immediately
+        await this.fetchAndBroadcastAllRoomDetails();
+        this.maybeStartAdminPolling();
+      } else if (msg.type === 'unsubscribe-all') {
+        this.adminAutoSubscribeAll = false;
+        if (this.adminSubscribedRooms.size === 0) {
+          this.maybeStopAdminPolling();
+        }
+      } else if (msg.type === 'subscribe-room' && msg.roomId) {
         this.adminSubscribedRooms.add(msg.roomId);
         // Fetch detail immediately for the requested room
         await this.fetchAndSendRoomDetail(msg.roomId);
@@ -221,6 +235,7 @@ export class GameLobby implements DurableObject {
     const adminSockets = this.state.getWebSockets('admin');
     if (adminSockets.length === 0) {
       this.adminSubscribedRooms.clear();
+      this.adminAutoSubscribeAll = false;
       this.maybeStopAdminPolling();
     }
   }
@@ -303,7 +318,8 @@ export class GameLobby implements DurableObject {
   private maybeStartAdminPolling(): void {
     if (this.adminDetailInterval) return;
     const adminSockets = this.state.getWebSockets('admin');
-    if (adminSockets.length === 0 || this.adminSubscribedRooms.size === 0) return;
+    if (adminSockets.length === 0) return;
+    if (!this.adminAutoSubscribeAll && this.adminSubscribedRooms.size === 0) return;
 
     this.adminDetailInterval = setInterval(() => {
       this.pollAdminDetails();
@@ -327,8 +343,47 @@ export class GameLobby implements DurableObject {
       return;
     }
 
-    for (const roomId of this.adminSubscribedRooms) {
-      await this.fetchAndSendRoomDetail(roomId);
+    if (this.adminAutoSubscribeAll) {
+      // Poll ALL active rooms
+      await this.fetchAndBroadcastAllRoomDetails();
+    } else {
+      // Poll only explicitly subscribed rooms
+      for (const roomId of this.adminSubscribedRooms) {
+        await this.fetchAndSendRoomDetail(roomId);
+      }
+    }
+  }
+
+  private async fetchAndBroadcastAllRoomDetails(): Promise<void> {
+    const adminSockets = this.state.getWebSockets('admin');
+    if (adminSockets.length === 0) return;
+
+    const gameRoomNs = this.env.GAME_ROOM as DurableObjectNamespace | undefined;
+    if (!gameRoomNs) return;
+
+    const allDetails: Record<string, unknown> = {};
+
+    for (const [roomId] of this.rooms) {
+      try {
+        const doId = gameRoomNs.idFromName(roomId);
+        const room = gameRoomNs.get(doId);
+        const response = await room.fetch('https://internal/admin-detail');
+        allDetails[roomId] = await response.json();
+      } catch (e) {
+        allDetails[roomId] = { error: String(e) };
+      }
+    }
+
+    const payload = JSON.stringify({
+      type: 'admin-all-details',
+      details: allDetails,
+      fetchedAt: Date.now()
+    });
+
+    for (const ws of adminSockets) {
+      try {
+        ws.send(payload);
+      } catch { /* dead socket */ }
     }
   }
 
