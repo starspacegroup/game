@@ -45,8 +45,8 @@
 	function handleSoloContinue(): void {
 		deathReplay.reset();
 
-		// Reset score on respawn
-		gameState.score = 0;
+		// Apply 50% score penalty on respawn
+		gameState.score = Math.floor(gameState.score / 2);
 
 		// Respawn player at a random position on the sphere
 		const spawnPos = randomSpherePosition();
@@ -130,7 +130,8 @@
 </script>
 
 {#if gameState.multiplayerDead && gameState.phase === 'playing'}
-	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: {contentVisible ? 'auto' : 'none'};">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: {contentVisible ? 'auto' : 'none'};" onmousedown={(e) => e.stopPropagation()} onmouseup={(e) => e.stopPropagation()}>
 		{#if contentVisible}
 			<div class="death-content" class:fade-in={contentVisible}>
 

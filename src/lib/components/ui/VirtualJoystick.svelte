@@ -19,6 +19,9 @@
 	const DEAD_ZONE = 0.1;
 
 	function handleTouchStart(e: TouchEvent): void {
+		// Don't intercept touches on UI overlays (e.g. death screen buttons)
+		const target = e.target as HTMLElement;
+		if (target.closest('.death-overlay') || target.closest('.welcome-screen')) return;
 		e.preventDefault();
 		const screenMid = window.innerWidth / 2;
 
