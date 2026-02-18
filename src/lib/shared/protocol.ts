@@ -85,6 +85,10 @@ export interface PuzzleNodeState {
   radius: number;
   connected: boolean;
   color: string;
+  /** Which wave this node belongs to (1-based) */
+  wave: number;
+  /** Index into the E8 root array (for edge lookup) */
+  e8Index: number;
 }
 
 export type PowerUpType = 'health' | 'speed' | 'multishot' | 'shield';
@@ -225,6 +229,7 @@ export interface StateMessage {
   puzzleNodes?: PuzzleNodeState[];
   puzzleProgress: number;
   puzzleSolved: boolean;
+  wave: number;
 }
 
 export interface PlayerJoinedMessage {

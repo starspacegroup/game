@@ -18,10 +18,11 @@ import type {
 import {
   ASTEROID_COUNT,
   POWER_UP_COUNT,
-  PUZZLE_NODE_COUNT,
   BASE_NPC_COUNT,
   SPHERE_RADIUS
 } from '../shared/protocol';
+
+import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from '../game/e8';
 
 let nextId = 0;
 
@@ -220,52 +221,81 @@ export function generateNpcs(
 const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
 
 /**
- * Generate puzzle nodes INSIDE the sphere
- * The icosahedral structure is visible through the semi-transparent shell
+ * Generate puzzle nodes from the E8 root system projected to 3D.
+ *
+ * The 240 roots of E8 are projected into the interior sphere using
+ * the H3 (icosahedral) symmetry basis. Nodes are grouped into waves
+ * (concentric shells of the 421 polytope).
+ *
+ * Past-wave nodes start connected at their target position.
+ * Current-wave nodes are scattered and need to be nudged into place.
+ * Future-wave nodes are not created yet.
+ *
+ * @param currentWave  The current wave number (1-based). All roots up to and
+ *                     including this wave will be generated.
  */
 export function generatePuzzleNodes(
-  count: number = PUZZLE_NODE_COUNT
+  currentWave: number = 1
 ): PuzzleNodeState[] {
-  const phi = (1 + Math.sqrt(5)) / 2;
-  const scale = PUZZLE_INTERIOR_RADIUS * 0.65;
+  const e8Roots = getE8Roots();
+  const maxR = getE8MaxRadius();
+  const scale = PUZZLE_INTERIOR_RADIUS * 0.85 / (maxR || 1);
 
-  const basePositions: [number, number, number][] = [
-    [0, 0, 1],   // North pole — guarantees a node near player spawn area
-    [0, 1, phi], [0, -1, phi], [0, 1, -phi], [0, -1, -phi],
-    [1, phi, 0], [-1, phi, 0], [1, -phi, 0], [-1, -phi, 0],
-    [phi, 0, 1], [-phi, 0, 1], [phi, 0, -1], [-phi, 0, -1]
-  ];
+  // Wave-based HSL colour palette
+  const WAVE_HUES = [200, 280, 50, 120, 340, 30];
 
-  return basePositions.slice(0, count).map((pos, i) => {
-    // Normalize icosahedron vertex and scale to interior radius
-    const len = Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
-    const target = vec3(
-      (pos[0] / len) * scale,
-      (pos[1] / len) * scale,
-      (pos[2] / len) * scale
-    );
+  const nodes: PuzzleNodeState[] = [];
 
-    // Current position: scattered from target, still inside sphere
-    // First node (polar) gets less scatter to stay near spawn area
-    const scatterFactor = i === 0 ? 0.15 : 0.6;
-    let cx = target.x + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
-    let cy = target.y + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
-    let cz = target.z + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
-    const clen = Math.sqrt(cx * cx + cy * cy + cz * cz);
-    if (clen > PUZZLE_INTERIOR_RADIUS) {
-      const clamp = (PUZZLE_INTERIOR_RADIUS * 0.9) / clen;
-      cx *= clamp; cy *= clamp; cz *= clamp;
+  for (let i = 0; i < e8Roots.length; i++) {
+    const root = e8Roots[i];
+    if (root.wave > currentWave) continue; // future-wave nodes are hidden
+
+    const targetX = root.x * scale;
+    const targetY = root.y * scale;
+    const targetZ = root.z * scale;
+
+    // Clamp to interior radius
+    let tx = targetX, ty = targetY, tz = targetZ;
+    const tlen = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    if (tlen > PUZZLE_INTERIOR_RADIUS * 0.95) {
+      const clamp = (PUZZLE_INTERIOR_RADIUS * 0.95) / tlen;
+      tx *= clamp; ty *= clamp; tz *= clamp;
     }
 
-    return {
+    const isPastWave = root.wave < currentWave;
+    const hue = WAVE_HUES[(root.wave - 1) % WAVE_HUES.length];
+
+    let cx: number, cy: number, cz: number;
+    if (isPastWave) {
+      // Already solved — sits at target
+      cx = tx; cy = ty; cz = tz;
+    } else {
+      // Current wave — scatter from target
+      const scatterFactor = 0.4 + root.wave * 0.05;
+      cx = tx + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+      cy = ty + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+      cz = tz + (Math.random() - 0.5) * PUZZLE_INTERIOR_RADIUS * scatterFactor;
+      // Keep inside the sphere
+      const clen = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      if (clen > PUZZLE_INTERIOR_RADIUS) {
+        const clampC = (PUZZLE_INTERIOR_RADIUS * 0.9) / clen;
+        cx *= clampC; cy *= clampC; cz *= clampC;
+      }
+    }
+
+    nodes.push({
       id: genId('pzl'),
       position: vec3(cx, cy, cz),
-      targetPosition: target,
-      radius: 2.5,
-      connected: false,
-      color: `hsl(${(i / count) * 360}, 70%, 60%)`
-    };
-  });
+      targetPosition: vec3(tx, ty, tz),
+      radius: 2.0,
+      connected: isPastWave,
+      color: `hsl(${hue}, 70%, ${isPastWave ? 50 : 60}%)`,
+      wave: root.wave,
+      e8Index: i
+    });
+  }
+
+  return nodes;
 }
 
 /**

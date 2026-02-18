@@ -544,15 +544,15 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
   }));
 
   // Apply puzzle nodes
-  world.puzzleNodes = state.puzzleNodes.map((n, i) => ({
+  world.puzzleNodes = state.puzzleNodes.map((n) => ({
     id: n.id,
     position: new THREE.Vector3(n.position.x, n.position.y, n.position.z),
     targetPosition: new THREE.Vector3(n.targetPosition.x, n.targetPosition.y, n.targetPosition.z),
     radius: n.radius,
     connected: n.connected,
     color: n.color,
-    wave: (n as any).wave as number ?? 1,
-    e8Index: (n as any).e8Index as number ?? i
+    wave: n.wave,
+    e8Index: n.e8Index
   }));
 
   // Apply power-ups
@@ -714,6 +714,7 @@ function applyStateUpdate(data: StateMessage): void {
   }
 
   gameState.puzzleProgress = data.puzzleProgress;
+  gameState.wave = data.wave;
 
   // Detect puzzle solve transition (false → true) to trigger fragment unlock
   if (data.puzzleSolved && !gameState.puzzleSolved) {
@@ -846,6 +847,24 @@ function syncPowerUps(serverPowerUps: PowerUpState[]): void {
 }
 
 function syncPuzzleNodes(serverNodes: PuzzleNodeState[]): void {
+  // Detect wave advance or structural change (new IDs = regenerated nodes)
+  if (serverNodes.length !== world.puzzleNodes.length ||
+    serverNodes.some(sn => !world.puzzleNodes.find(n => n.id === sn.id))) {
+    // Full rebuild — new wave or first sync with different node set
+    world.puzzleNodes = serverNodes.map((n) => ({
+      id: n.id,
+      position: new THREE.Vector3(n.position.x, n.position.y, n.position.z),
+      targetPosition: new THREE.Vector3(n.targetPosition.x, n.targetPosition.y, n.targetPosition.z),
+      radius: n.radius,
+      connected: n.connected,
+      color: n.color,
+      wave: n.wave,
+      e8Index: n.e8Index
+    }));
+    return;
+  }
+
+  // Incremental update — lerp positions and sync connected state
   for (const sn of serverNodes) {
     const local = world.puzzleNodes.find(n => n.id === sn.id);
     if (local) {

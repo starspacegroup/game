@@ -30,11 +30,14 @@ import {
 
 import {
   generateWorld,
+  generatePuzzleNodes,
   createPlayerState,
   respawnAsteroid,
   respawnPowerUp,
   respawnNpc
 } from './worldGenerator';
+
+import { E8_TOTAL_WAVES } from '../game/e8';
 
 interface PlayerSession {
   id: string;
@@ -347,7 +350,9 @@ export class GameRoom implements DurableObject {
           position: pn.position,
           targetPosition: pn.targetPosition,
           connected: pn.connected,
-          color: pn.color
+          color: pn.color,
+          wave: pn.wave,
+          e8Index: pn.e8Index
         })),
         powerUps: this.powerUps.map(pu => ({
           id: pu.id,
@@ -1578,17 +1583,34 @@ export class GameRoom implements DurableObject {
   }
 
   private checkPuzzleProgress(): void {
-    const connectedCount = this.puzzleNodes.filter(n => n.connected).length;
-    this.puzzleProgress = (connectedCount / this.puzzleNodes.length) * 100;
-    this.puzzleSolved = this.puzzleProgress >= 100;
+    // Check progress for the current wave only
+    const waveNodes = this.puzzleNodes.filter(n => n.wave === this.wave);
+    const waveConnected = waveNodes.filter(n => n.connected).length;
+    const totalConnected = this.puzzleNodes.filter(n => n.connected).length;
 
-    if (this.puzzleSolved) {
-      // Advance wave
-      this.wave++;
-      this.logEvent('wave-advance', undefined, `Wave ${this.wave} reached — puzzle solved!`);
-    } else if (connectedCount > 0 && connectedCount % 3 === 0) {
-      // Log milestone progress (every 3 nodes)
-      this.logEvent('puzzle-progress', undefined, `${connectedCount}/${this.puzzleNodes.length} nodes aligned (${Math.round(this.puzzleProgress)}%)`);
+    if (waveNodes.length > 0) {
+      this.puzzleProgress = (waveConnected / waveNodes.length) * 100;
+    } else {
+      this.puzzleProgress = 100;
+    }
+
+    // Check if current wave is fully solved
+    const waveSolved = waveNodes.length > 0 && waveNodes.every(n => n.connected);
+
+    if (waveSolved) {
+      if (this.wave < E8_TOTAL_WAVES) {
+        // Advance to next wave — regenerate puzzle nodes
+        this.wave++;
+        this.puzzleNodes = generatePuzzleNodes(this.wave);
+        this.puzzleProgress = 0;
+        this.logEvent('wave-advance', undefined, `Wave ${this.wave} reached — E8 shell ${this.wave} activated!`);
+      } else {
+        // All E8 waves complete
+        this.puzzleSolved = true;
+        this.logEvent('puzzle-complete', undefined, 'E8 LATTICE COMPLETE — 240 vertices aligned!');
+      }
+    } else if (totalConnected > 0 && totalConnected % 3 === 0) {
+      this.logEvent('puzzle-progress', undefined, `${waveConnected}/${waveNodes.length} wave-${this.wave} nodes aligned (${Math.round(this.puzzleProgress)}%)`);
     }
   }
 
@@ -1622,7 +1644,8 @@ export class GameRoom implements DurableObject {
           puzzleNodes: this.puzzleNodes
         }),
         puzzleProgress: this.puzzleProgress,
-        puzzleSolved: this.puzzleSolved
+        puzzleSolved: this.puzzleSolved,
+        wave: this.wave
       };
 
       this.send(ws, stateMsg);
