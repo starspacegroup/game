@@ -76,6 +76,9 @@
 	let pulsePhase = 0;
 	let ringSpin = 0;
 
+	// Cached normal vector for bob effect
+	const _bobNormal = new THREE.Vector3();
+
 	useTask((delta) => {
 		if (cachedIndex < 0) cachedIndex = world.powerUps.findIndex((p) => p.id === id);
 		const d = world.powerUps[cachedIndex];
@@ -85,8 +88,8 @@
 		group.position.copy(d.position);
 		group.quaternion.copy(getSphereOrientation(d.position));
 		// Bob effect: offset along sphere normal
-		const normal = d.position.clone().normalize();
-		group.position.addScaledVector(normal, Math.sin(d.bobPhase) * 0.5 + 1.2);
+		_bobNormal.copy(d.position).normalize();
+		group.position.addScaledVector(_bobNormal, Math.sin(d.bobPhase) * 0.5 + 1.2);
 		group.rotateZ(delta * 2);
 
 		// Pulse glow

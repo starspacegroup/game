@@ -19,6 +19,12 @@
 	let isConverted = $state(false);
 	let conversionProgress = $state(0);
 
+	// Cached objects for per-frame updates (avoid allocations)
+	const _facingAxis = new THREE.Vector3(0, 0, 1);
+	const _facingQuat = new THREE.Quaternion();
+	const _debugPositions = new Float32Array(6);
+	let _debugAttr: THREE.BufferAttribute | null = null;
+
 	// Debug: line from converted NPC to target node
 	let debugLineGeometry: THREE.BufferGeometry | undefined = $state();
 	let hasTargetLine = $state(false);
@@ -32,8 +38,8 @@
 		group.position.copy(data.position);
 		group.quaternion.copy(getSphereOrientation(data.position));
 		// Apply facing rotation in tangent plane
-		const facingQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), data.rotation.z);
-		group.quaternion.multiply(facingQ);
+		_facingQuat.setFromAxisAngle(_facingAxis, data.rotation.z);
+		group.quaternion.multiply(_facingQuat);
 
 		// Update conversion state
 		isConverted = data.converted;
@@ -51,16 +57,18 @@
 			// Debug: draw line to target node
 			const targetNode = data.targetNodeId ? world.puzzleNodes.find(n => n.id === data.targetNodeId) : null;
 			if (targetNode) {
-				// Point directly to the actual node position (inside the sphere)
-				const positions = new Float32Array([
-					data.position.x, data.position.y, data.position.z,
-					targetNode.position.x, targetNode.position.y, targetNode.position.z
-				]);
+				_debugPositions[0] = data.position.x;
+				_debugPositions[1] = data.position.y;
+				_debugPositions[2] = data.position.z;
+				_debugPositions[3] = targetNode.position.x;
+				_debugPositions[4] = targetNode.position.y;
+				_debugPositions[5] = targetNode.position.z;
 				if (!debugLineGeometry) {
 					debugLineGeometry = new THREE.BufferGeometry();
+					_debugAttr = new THREE.BufferAttribute(_debugPositions, 3);
+					debugLineGeometry.setAttribute('position', _debugAttr);
 				}
-				debugLineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-				debugLineGeometry.attributes.position.needsUpdate = true;
+				_debugAttr!.needsUpdate = true;
 				hasTargetLine = true;
 			} else {
 				hasTargetLine = false;
@@ -75,7 +83,8 @@
 	});
 
 	// Derive colors based on conversion state
-	let bodyColor = $derived(isConverted ? '#00cc88' : (conversionProgress > 0 ? '#88aa44' : `hsl(${Math.random() * 30}, 80%, 45%)`));
+	const hostileHue = Math.random() * 30;
+	let bodyColor = $derived(isConverted ? '#00cc88' : (conversionProgress > 0 ? '#88aa44' : `hsl(${hostileHue}, 80%, 45%)`));
 	let emissiveColor = $derived(isConverted ? '#00ffaa' : (conversionProgress > 0 ? '#aaff00' : '#ff2200'));
 	let wireframeColor = $derived(isConverted ? '#00ffcc' : (conversionProgress > 0 ? '#ccff00' : '#ff4422'));
 </script>

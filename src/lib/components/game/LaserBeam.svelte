@@ -18,9 +18,14 @@
 	const coreColor = isPlayer ? '#00ffcc' : '#ff4444';
 	const glowColor = isPlayer ? '#00ff88' : '#ff2222';
 
+	// Cached objects for per-frame facing (avoid allocations)
+	const _lfAxis = new THREE.Vector3(0, 0, 1);
+	const _lfQuat = new THREE.Quaternion();
+	// Keep direct reference to laser data object (O(1) vs O(n) find per frame)
+	const cachedLaser = initialData;
+
 	useTask((delta) => {
-		// Always find by ID to avoid stale index after array modifications
-		const d = world.lasers.find((l) => l.id === id);
+		const d = cachedLaser;
 		if (!group || !d) return;
 		// Position on sphere and orient tangent
 		group.position.copy(d.position);
@@ -29,8 +34,8 @@
 		const { east, north } = getTangentFrame(d.position);
 		const localDirX = d.direction.dot(east);
 		const localDirY = d.direction.dot(north);
-		const facingQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan2(localDirY, localDirX));
-		group.quaternion.multiply(facingQ);
+		_lfQuat.setFromAxisAngle(_lfAxis, Math.atan2(localDirY, localDirX));
+		group.quaternion.multiply(_lfQuat);
 		
 		// Pulse animation for data stream effect
 		pulsePhase += delta * 20;

@@ -18,6 +18,10 @@
 	const grayColor = new THREE.Color(`hsl(0, 0%, ${lit}%)`);
 	const grayEmissive = new THREE.Color('#222222');
 
+	// Cached objects for per-frame spin (avoid allocations)
+	const _spinQuat = new THREE.Quaternion();
+	const _spinEuler = new THREE.Euler();
+
 	useTask(() => {
 		if (cachedIndex < 0) cachedIndex = world.asteroids.findIndex((a) => a.id === id);
 		const data = world.asteroids[cachedIndex];
@@ -27,10 +31,9 @@
 		group.position.copy(data.position);
 		group.quaternion.copy(getSphereOrientation(data.position));
 		// Add spin rotation on top of sphere orientation
-		const spin = new THREE.Quaternion().setFromEuler(
-			new THREE.Euler(data.rotation.x, data.rotation.y, 0)
-		);
-		group.quaternion.multiply(spin);
+		_spinEuler.set(data.rotation.x, data.rotation.y, 0);
+		_spinQuat.setFromEuler(_spinEuler);
+		group.quaternion.multiply(_spinQuat);
 	});
 
 	const data = world.asteroids[cachedIndex];

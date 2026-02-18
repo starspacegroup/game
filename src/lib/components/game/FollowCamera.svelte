@@ -30,8 +30,8 @@
 			}
 
 			if (deathPos && deathUp) {
-				const normal = deathPos.clone().normalize();
-				camera.position.copy(deathPos).addScaledVector(normal, CAMERA_HEIGHT);
+				_tempPos.copy(deathPos).normalize();
+				camera.position.copy(deathPos).addScaledVector(_tempPos, CAMERA_HEIGHT);
 				camera.up.copy(deathUp);
 				camera.lookAt(deathPos);
 			}
@@ -45,13 +45,12 @@
 			deathUp = null;
 		}
 
-		const normal = world.player.position.clone().normalize();
+		_tempPos.copy(world.player.position).normalize();
 
 		// SNAP camera position exactly above player
-		camera.position.copy(world.player.position).addScaledVector(normal, CAMERA_HEIGHT);
+		camera.position.copy(world.player.position).addScaledVector(_tempPos, CAMERA_HEIGHT);
 
-		// Use playerUp directly — it must match the control frame exactly,
-		// otherwise "right" on screen ≠ "right" in physics → uncontrollable.
+		// Use playerUp directly
 		camera.up.copy(world.playerUp);
 
 		// Look at the player on the sphere surface

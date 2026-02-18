@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { T, useTask } from '@threlte/core';
+	import { T } from '@threlte/core';
 	import * as THREE from 'three';
-	import { SPHERE_RADIUS, world } from '$lib/game/world';
+	import { SPHERE_RADIUS } from '$lib/game/world';
 
 	/**
 	 * SphereSurface — renders a visible planetary surface that players fly over.
@@ -91,13 +91,7 @@
 	detailGeom.setAttribute('position', new THREE.BufferAttribute(detailPositions, 3));
 	detailGeom.setAttribute('color', new THREE.BufferAttribute(detailColors, 3));
 
-	// Surface material — custom shader for distance-based fade
-	// Shows grid near the player, fades at the horizon
 	let surfaceGroup: THREE.Group | undefined = $state();
-
-	useTask(() => {
-		// No per-frame update needed — surface is static at origin
-	});
 </script>
 
 <T.Group bind:ref={surfaceGroup}>

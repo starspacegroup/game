@@ -165,41 +165,76 @@ export function randomSpherePositionNear(center: THREE.Vector3, minDist: number,
 	return pos;
 }
 
+// ==========================================
+// Pooled temp objects — avoid per-frame GC pressure.
+// Functions below return refs to these; callers must
+// consume results before the next call to the same fn.
+// ==========================================
+const _tfNormal = new THREE.Vector3();
+const _tfEast = new THREE.Vector3();
+const _tfNorth = new THREE.Vector3();
+const _tfRef = new THREE.Vector3();
+const _tfResult: { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } = { normal: _tfNormal, east: _tfEast, north: _tfNorth };
+
+const _pfNormal = new THREE.Vector3();
+const _pfEast = new THREE.Vector3();
+const _pfNorth = new THREE.Vector3();
+const _pfResult: { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } = { normal: _pfNormal, east: _pfEast, north: _pfNorth };
+
+const _soMat = new THREE.Matrix4();
+const _soQuat = new THREE.Quaternion();
+const _poMat = new THREE.Matrix4();
+const _poQuat = new THREE.Quaternion();
+
+const _ptNormal = new THREE.Vector3();
+const _sdNormal = new THREE.Vector3();
+const _sdD = new THREE.Vector3();
+const _spProjected = new THREE.Vector3();
+const _roNormal = new THREE.Vector3();
+
+const _ttN2 = new THREE.Vector3();
+const _ttN1 = new THREE.Vector3();
+const _ttAxis = new THREE.Vector3();
+const _ttKCrossT = new THREE.Vector3();
+
 /**
  * Get tangent frame at a point on the sphere.
  * Returns orthonormal {normal, east, north} where normal points outward.
- * Uses Y-up as the reference, which is well-conditioned everywhere except
- * the two Y-axis poles (0, ±R, 0). At the poles, falls back to Z-up.
- * Player spawns at (0, 0, R) which is far from the Y-poles.
+ * WARNING: returns refs to pooled vectors — consume before the next call.
  */
 export function getTangentFrame(position: THREE.Vector3): { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } {
-	const normal = position.clone().normalize();
+	_tfNormal.copy(position).normalize();
 
-	// Primary reference: Y-axis. Perpendicularity = sqrt(1 - ny²).
-	// Near Y-poles (|ny| > 0.99), switch to Z-axis.
-	const ref = Math.abs(normal.y) > 0.99
-		? new THREE.Vector3(0, 0, 1)
-		: new THREE.Vector3(0, 1, 0);
+	if (Math.abs(_tfNormal.y) > 0.99) {
+		_tfRef.set(0, 0, 1);
+	} else {
+		_tfRef.set(0, 1, 0);
+	}
 
-	const east = new THREE.Vector3().crossVectors(ref, normal).normalize();
-	const north = new THREE.Vector3().crossVectors(normal, east).normalize();
-	return { normal, east, north };
+	_tfEast.crossVectors(_tfRef, _tfNormal).normalize();
+	_tfNorth.crossVectors(_tfNormal, _tfEast).normalize();
+	return _tfResult;
 }
 
 /**
  * Build a quaternion that orients an object tangent to the sphere,
  * with local Z pointing along the sphere outward normal.
+ * WARNING: returns a ref to a pooled Quaternion — copy before the next call.
  */
 export function getSphereOrientation(position: THREE.Vector3): THREE.Quaternion {
 	const { normal, east, north } = getTangentFrame(position);
-	const m = new THREE.Matrix4();
-	m.makeBasis(east, north, normal);
-	return new THREE.Quaternion().setFromRotationMatrix(m);
+	_soMat.makeBasis(east, north, normal);
+	return _soQuat.setFromRotationMatrix(_soMat);
 }
 
 /** Chord distance between two points (works for collision detection) */
 export function sphereDistance(a: THREE.Vector3, b: THREE.Vector3): number {
 	return a.distanceTo(b);
+}
+
+/** Squared chord distance — use for comparisons to avoid sqrt */
+export function sphereDistanceSq(a: THREE.Vector3, b: THREE.Vector3): number {
+	return a.distanceToSquared(b);
 }
 
 /**
@@ -208,9 +243,9 @@ export function sphereDistance(a: THREE.Vector3, b: THREE.Vector3): number {
  * Used for puzzle node interaction — player on surface interacts with nodes inside.
  */
 export function surfaceProximity(surfacePoint: THREE.Vector3, interiorPoint: THREE.Vector3): number {
-	const projected = interiorPoint.clone();
-	projectToSphere(projected); // project interior point to surface
-	return surfacePoint.distanceTo(projected);
+	_spProjected.copy(interiorPoint);
+	projectToSphere(_spProjected);
+	return surfacePoint.distanceTo(_spProjected);
 }
 
 /**
@@ -232,18 +267,18 @@ export function projectToInterior(position: THREE.Vector3): void {
  * tangential part (does NOT re-normalise).
  */
 export function projectToTangent(vec: THREE.Vector3, position: THREE.Vector3): void {
-	const normal = position.clone().normalize();
-	vec.addScaledVector(normal, -vec.dot(normal));
+	_ptNormal.copy(position).normalize();
+	vec.addScaledVector(_ptNormal, -vec.dot(_ptNormal));
 }
 
 /** Direction from one point to another, projected onto tangent plane at 'from' */
 export function sphereDirection(from: THREE.Vector3, to: THREE.Vector3): { dx: number; dy: number; dz: number; dist: number; } {
-	const normal = from.clone().normalize();
-	const d = new THREE.Vector3().subVectors(to, from);
-	const normalComp = d.dot(normal);
-	d.addScaledVector(normal, -normalComp);
-	const dist = d.length();
-	return { dx: d.x, dy: d.y, dz: d.z, dist };
+	_sdNormal.copy(from).normalize();
+	_sdD.subVectors(to, from);
+	const normalComp = _sdD.dot(_sdNormal);
+	_sdD.addScaledVector(_sdNormal, -normalComp);
+	const dist = _sdD.length();
+	return { dx: _sdD.x, dy: _sdD.y, dz: _sdD.z, dist };
 }
 
 /** Move a position along the sphere surface */
@@ -263,38 +298,31 @@ export function moveSphere(position: THREE.Vector3, velocity: THREE.Vector3, dt:
  * @param newPosition The new position on the sphere (after movement)
  */
 export function transportTangent(tangent: THREE.Vector3, newPosition: THREE.Vector3, oldPosition?: THREE.Vector3): void {
-	const n2 = newPosition.clone().normalize();
+	_ttN2.copy(newPosition).normalize();
 
 	if (oldPosition) {
-		const n1 = oldPosition.clone().normalize();
-		// Rotation axis = n1 × n2
-		const axis = new THREE.Vector3().crossVectors(n1, n2);
-		const sinAngle = axis.length();
-		const cosAngle = n1.dot(n2);
+		_ttN1.copy(oldPosition).normalize();
+		_ttAxis.crossVectors(_ttN1, _ttN2);
+		const sinAngle = _ttAxis.length();
+		const cosAngle = _ttN1.dot(_ttN2);
 
 		if (sinAngle > 1e-10) {
-			// Rodrigues rotation: rotate tangent by the same rotation that maps n1→n2
-			axis.multiplyScalar(1 / sinAngle); // normalize axis
-			const kCrossT = new THREE.Vector3().crossVectors(axis, tangent);
-			const kDotT = axis.dot(tangent);
-			// v' = v*cos(θ) + (k×v)*sin(θ) + k*(k·v)*(1-cos(θ))
+			_ttAxis.multiplyScalar(1 / sinAngle);
+			_ttKCrossT.crossVectors(_ttAxis, tangent);
+			const kDotT = _ttAxis.dot(tangent);
 			tangent.multiplyScalar(cosAngle);
-			tangent.addScaledVector(kCrossT, sinAngle);
-			tangent.addScaledVector(axis, kDotT * (1 - cosAngle));
+			tangent.addScaledVector(_ttKCrossT, sinAngle);
+			tangent.addScaledVector(_ttAxis, kDotT * (1 - cosAngle));
 		}
-		// If sinAngle ≈ 0, positions are the same or antipodal; no transport needed
 	} else {
-		// Legacy fallback: project onto tangent plane (less accurate)
-		tangent.addScaledVector(n2, -tangent.dot(n2));
+		tangent.addScaledVector(_ttN2, -tangent.dot(_ttN2));
 	}
 
-	// Ensure tangent stays unit-length and exactly tangent
-	tangent.addScaledVector(n2, -tangent.dot(n2));
+	tangent.addScaledVector(_ttN2, -tangent.dot(_ttN2));
 	const len = tangent.length();
 	if (len > 1e-6) {
 		tangent.multiplyScalar(1 / len);
 	} else {
-		// Degenerate – fall back to geographic frame
 		const { north } = getTangentFrame(newPosition);
 		tangent.copy(north);
 	}
@@ -305,23 +333,18 @@ export function transportTangent(tangent: THREE.Vector3, newPosition: THREE.Vect
  * playerUp vector rather than the fixed geographic poles.
  */
 export function getPlayerFrame(position: THREE.Vector3): { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } {
-	const normal = position.clone().normalize();
-	// north = playerUp (already orthogonal to normal after transport)
-	const north = world.playerUp.clone();
-	// east = playerUp × normal  →  matches camera screen-right
-	const east = new THREE.Vector3().crossVectors(north, normal);
-	const eastLen = east.length();
+	_pfNormal.copy(position).normalize();
+	_pfNorth.copy(world.playerUp);
+	_pfEast.crossVectors(_pfNorth, _pfNormal);
+	const eastLen = _pfEast.length();
 
-	// Safety: if playerUp has degenerated, return a temp geographic frame
-	// but do NOT overwrite world.playerUp — let transport/reorth fix it naturally
 	if (eastLen < 1e-4) {
 		return getTangentFrame(position);
 	}
 
-	east.multiplyScalar(1 / eastLen);
-	// Re-derive north to guarantee orthonormality (normal × east = screen-up)
-	north.crossVectors(normal, east).normalize();
-	return { normal, east, north };
+	_pfEast.multiplyScalar(1 / eastLen);
+	_pfNorth.crossVectors(_pfNormal, _pfEast).normalize();
+	return _pfResult;
 }
 
 // ==========================================
@@ -348,9 +371,8 @@ export function getRelativeToPlayer(position: THREE.Vector3): THREE.Vector3 {
  */
 export function getPlayerOrientation(): THREE.Quaternion {
 	const { normal, east, north } = getPlayerFrame(world.player.position);
-	const m = new THREE.Matrix4();
-	m.makeBasis(east, north, normal);
-	return new THREE.Quaternion().setFromRotationMatrix(m);
+	_poMat.makeBasis(east, north, normal);
+	return _poQuat.setFromRotationMatrix(_poMat);
 }
 
 /**
@@ -358,8 +380,8 @@ export function getPlayerOrientation(): THREE.Quaternion {
  * Call periodically to prevent numerical drift over long play sessions.
  */
 export function reorthogonalizePlayerUp(): void {
-	const normal = world.player.position.clone().normalize();
-	world.playerUp.addScaledVector(normal, -world.playerUp.dot(normal));
+	_roNormal.copy(world.player.position).normalize();
+	world.playerUp.addScaledVector(_roNormal, -world.playerUp.dot(_roNormal));
 	const len = world.playerUp.length();
 	if (len > 1e-6) {
 		world.playerUp.multiplyScalar(1 / len);

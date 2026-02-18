@@ -11,7 +11,7 @@
 	import PuzzleStructure from './PuzzleStructure.svelte';
 	import PowerUp from './PowerUp.svelte';
 	import HexGrid from './HexGrid.svelte';
-	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';import ShipExplosion from './ShipExplosion.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
+	import SphereSurface from './SphereSurface.svelte';import ScorePopup from './ScorePopup.svelte';import ShipExplosion from './ShipExplosion.svelte';	import { world, resetWorld, projectToSphere, projectToTangent, sphereDistance, sphereDistanceSq, sphereDirection, getTangentFrame, getPlayerFrame, transportTangent, randomSpherePositionNear, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
 	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import {
 		generateAsteroids,
@@ -208,6 +208,15 @@
 	const NPC_SPEED = 6;
 	const NPC_SHOOT_RATE = 5;
 
+	// Pooled temp vectors for game loop (avoid per-frame allocations)
+	const _oldPos = new THREE.Vector3();
+	const _npcNormal = new THREE.Vector3();
+	const _npcUnitDir = new THREE.Vector3();
+	const _npcPerp = new THREE.Vector3();
+	const _npcTangent = new THREE.Vector3();
+	const _surfaceTarget = new THREE.Vector3();
+	const RENDER_DISTANCE_SQ = RENDER_DISTANCE * RENDER_DISTANCE;
+
 	// Main game loop
 	useTask((delta) => {
 		if (gameState.phase !== 'playing') return;
@@ -297,12 +306,12 @@
 		world.player.velocity.copy(east).multiplyScalar(mx * speed).addScaledVector(north, my * speed);
 
 		// Save old position for accurate parallel transport via Rodrigues rotation
-		const oldPos = world.player.position.clone();
+		_oldPos.copy(world.player.position);
 		world.player.position.addScaledVector(world.player.velocity, dt);
 		projectToSphere(world.player.position);
 
 		// Parallel-transport the player's "up" using exact Rodrigues rotation
-		transportTangent(world.playerUp, world.player.position, oldPos);
+		transportTangent(world.playerUp, world.player.position, _oldPos);
 
 		// Re-orthogonalize every frame to prevent any drift accumulation
 		reorthogonalizePlayerUp();
@@ -469,19 +478,6 @@
 					const takenNodeIds = getTargetedNodeIds(npc);
 					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds, gameState.wave);
 					npc.targetNodeId = nearestNode?.id || null;
-
-					// Debug: log ALL node distances for verification
-					const allDists = world.puzzleNodes
-						.filter(n => !n.connected)
-						.map(n => {
-							const sp = n.position.clone();
-							projectToSphere(sp);
-							return { id: n.id, dist: sphereDistance(npc.position, sp) };
-						})
-						.sort((a, b) => a.dist - b.dist);
-					console.log(`[NPC ${npc.id}] Converted at (${npc.position.x.toFixed(0)},${npc.position.y.toFixed(0)},${npc.position.z.toFixed(0)}) → target ${nearestNode?.id || 'NONE'}`);
-					console.log(`  All node distances: ${allDists.map(d => `${d.id}=${d.dist.toFixed(1)}`).join(', ')}`);
-					console.log(`  Taken: [${[...takenNodeIds].join(', ')}]`);
 				}
 				// During conversion, spin in place
 				npc.rotation.z += dt * 10;
@@ -500,17 +496,17 @@
 					npc.velocity.set(dx / dist * NPC_SPEED, dy / dist * NPC_SPEED, dz / dist * NPC_SPEED);
 				} else {
 					// Circle: perpendicular to chase direction in tangent plane
-					const normal = npc.position.clone().normalize();
-					const unitDir = new THREE.Vector3(dx / dist, dy / dist, dz / dist);
-					const perp = new THREE.Vector3().crossVectors(normal, unitDir);
-					npc.velocity.copy(perp).multiplyScalar(NPC_SPEED * 0.8);
+					_npcNormal.copy(npc.position).normalize();
+					_npcUnitDir.set(dx / dist, dy / dist, dz / dist);
+					_npcPerp.crossVectors(_npcNormal, _npcUnitDir);
+					npc.velocity.copy(_npcPerp).multiplyScalar(NPC_SPEED * 0.8);
 				}
 
 				// Facing: decompose tangent into local frame via dot products
 				const { east, north } = getTangentFrame(npc.position);
-				const tangent = new THREE.Vector3(dx, dy, dz);
-				const eastComp = tangent.dot(east);
-				const northComp = tangent.dot(north);
+				_npcTangent.set(dx, dy, dz);
+				const eastComp = _npcTangent.dot(east);
+				const northComp = _npcTangent.dot(north);
 				npc.rotation.z = Math.atan2(eastComp, -northComp);
 			}
 
@@ -567,27 +563,27 @@
 
 		// NPC stays on the sphere surface.
 		// Orbit the surface point directly above the puzzle node.
-		const surfaceTarget = targetNode.position.clone();
-		projectToSphere(surfaceTarget);
-		const dist = sphereDistance(npc.position, surfaceTarget);
+		_surfaceTarget.copy(targetNode.position);
+		projectToSphere(_surfaceTarget);
+		const dist = sphereDistance(npc.position, _surfaceTarget);
 
 		if (dist > npc.orbitDistance + 2) {
 			// Navigate on sphere surface toward the point above the node
-			const { dx, dy, dz, dist: dMag } = sphereDirection(npc.position, surfaceTarget);
+			const { dx, dy, dz, dist: dMag } = sphereDirection(npc.position, _surfaceTarget);
 			const navSpeed = NPC_SPEED * 3;
 			if (dMag > 0.01) {
 				npc.velocity.set(dx / dMag * navSpeed, dy / dMag * navSpeed, dz / dMag * navSpeed);
 				const { east, north } = getTangentFrame(npc.position);
-				const tangent = new THREE.Vector3(dx, dy, dz);
-				npc.rotation.z = Math.atan2(tangent.dot(east), -tangent.dot(north));
+				_npcTangent.set(dx, dy, dz);
+				npc.rotation.z = Math.atan2(_npcTangent.dot(east), -_npcTangent.dot(north));
 			}
 			npc.position.addScaledVector(npc.velocity, dt);
 			projectToSphere(npc.position);
 		} else {
 			// Orbit on sphere surface above the node
 			npc.orbitAngle += dt * 1.5;
-			const { east: te, north: tn } = getTangentFrame(surfaceTarget);
-			npc.position.copy(surfaceTarget)
+			const { east: te, north: tn } = getTangentFrame(_surfaceTarget);
+			npc.position.copy(_surfaceTarget)
 				.addScaledVector(te, Math.cos(npc.orbitAngle) * npc.orbitDistance)
 				.addScaledVector(tn, Math.sin(npc.orbitAngle) * npc.orbitDistance);
 			projectToSphere(npc.position);
@@ -622,16 +618,15 @@
 		for (const laser of world.lasers) {
 			if (laser.life <= 0 || laser.owner !== 'player') continue;
 			for (const npc of world.npcs) {
-				// Skip destroyed, converted, or already-converting NPCs (don't waste lasers)
 				if (npc.destroyed || npc.converted || npc.conversionProgress > 0) continue;
-				// Use generous hit radius: sum of radii + extra tolerance for fast projectiles
-				if (sphereDistance(laser.position, npc.position) < laser.radius + npc.radius + 1.0) {
+				const hitDist = laser.radius + npc.radius + 1.0;
+				if (sphereDistanceSq(laser.position, npc.position) < hitDist * hitDist) {
 					laser.life = 0;
 					npc.conversionProgress = 0.01;
 					const points = 25;
 					if (gameState.isAlive) gameState.score += points;
 					spawnScorePopup(npc.position.x, npc.position.y, npc.position.z, points);
-					break; // This laser is consumed, move to next
+					break;
 				}
 			}
 		}
@@ -827,26 +822,62 @@
 		if (listUpdateTimer < 0.15) return; // Update lists ~7 times/sec
 		listUpdateTimer = 0;
 
-		// Helper to check if entity is in view range using sphere chord distance
-		const isVisible = (pos: THREE.Vector3): boolean => 
-			sphereDistance(world.player.position, pos) <= RENDER_DISTANCE;
+		const pp = world.player.position;
 
-		// Asteroids: filter by view distance
-		asteroidIds = world.asteroids.filter((a) => !a.destroyed && isVisible(a.position)).map((a) => a.id);
+		// Build new ID lists in single passes (avoids filter+map double iteration)
+		const newAsteroidIds: string[] = [];
+		for (const a of world.asteroids) {
+			if (!a.destroyed && sphereDistanceSq(pp, a.position) <= RENDER_DISTANCE_SQ) {
+				newAsteroidIds.push(a.id);
+			}
+		}
 
-		// NPCs: filter by view distance (always show converted allies)
-		npcIds = world.npcs.filter((n) => !n.destroyed && (n.converted || isVisible(n.position))).map((n) => n.id);
+		const newNpcIds: string[] = [];
+		for (const n of world.npcs) {
+			if (!n.destroyed && (n.converted || sphereDistanceSq(pp, n.position) <= RENDER_DISTANCE_SQ)) {
+				newNpcIds.push(n.id);
+			}
+		}
 
-		// Lasers: filter by view distance
-		laserIds = world.lasers.filter((l) => l.life > 0 && isVisible(l.position)).map((l) => l.id);
+		const newLaserIds: string[] = [];
+		for (const l of world.lasers) {
+			if (l.life > 0 && sphereDistanceSq(pp, l.position) <= RENDER_DISTANCE_SQ) {
+				newLaserIds.push(l.id);
+			}
+		}
 
-		// Power-ups: filter by view distance
-		powerUpIds = world.powerUps.filter((p) => !p.collected && isVisible(p.position)).map((p) => p.id);
-		
+		const newPowerUpIds: string[] = [];
+		for (const p of world.powerUps) {
+			if (!p.collected && sphereDistanceSq(pp, p.position) <= RENDER_DISTANCE_SQ) {
+				newPowerUpIds.push(p.id);
+			}
+		}
+
+		// Only reassign (trigger Svelte reactivity) if contents actually changed
+		if (!idsEqual(newAsteroidIds, asteroidIds)) asteroidIds = newAsteroidIds;
+		if (!idsEqual(newNpcIds, npcIds)) npcIds = newNpcIds;
+		if (!idsEqual(newLaserIds, laserIds)) laserIds = newLaserIds;
+		if (!idsEqual(newPowerUpIds, powerUpIds)) powerUpIds = newPowerUpIds;
+
 		// Update other players and remove stale ones (no update in 5 seconds)
 		const now = Date.now();
 		world.otherPlayers = world.otherPlayers.filter((p) => now - p.lastUpdate < 5000);
-		otherPlayerIds = world.otherPlayers.filter((p) => isVisible(p.position)).map((p) => p.id);
+		const newOtherPlayerIds: string[] = [];
+		for (const p of world.otherPlayers) {
+			if (sphereDistanceSq(pp, p.position) <= RENDER_DISTANCE_SQ) {
+				newOtherPlayerIds.push(p.id);
+			}
+		}
+		if (!idsEqual(newOtherPlayerIds, otherPlayerIds)) otherPlayerIds = newOtherPlayerIds;
+	}
+
+	/** Fast shallow array comparison for ID lists */
+	function idsEqual(a: string[], b: string[]): boolean {
+		if (a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) {
+			if (a[i] !== b[i]) return false;
+		}
+		return true;
 	}
 
 	function syncMultiplayer(dt: number): void {

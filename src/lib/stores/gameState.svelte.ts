@@ -267,16 +267,20 @@ class GameStore {
 	/** Prune expired buffs (call from game loop) */
 	tickBuffs(): void {
 		const now = Date.now();
-		const before = this.activeBuffs.length;
-		const hadShield = this.activeBuffs.some(b => b.type === 'shield');
-		this.activeBuffs = this.activeBuffs.filter(b => now < b.expiresAt);
-		const hasShieldNow = this.activeBuffs.some(b => b.type === 'shield');
-		if (hadShield && !hasShieldNow) {
-			this.shieldHealth = 0;
+		const buffs = this.activeBuffs;
+
+		// Quick scan: any expired? (common case: nothing expired → zero allocs)
+		let hasExpired = false;
+		for (let i = 0; i < buffs.length; i++) {
+			if (now >= buffs[i].expiresAt) { hasExpired = true; break; }
 		}
-		if (this.activeBuffs.length !== before) {
-			// Trigger reactivity
-			this.activeBuffs = [...this.activeBuffs];
+
+		if (hasExpired) {
+			const hadShield = buffs.some(b => b.type === 'shield');
+			this.activeBuffs = buffs.filter(b => now < b.expiresAt);
+			if (hadShield && !this.activeBuffs.some(b => b.type === 'shield')) {
+				this.shieldHealth = 0;
+			}
 		}
 
 		// Decay shield hit flash
