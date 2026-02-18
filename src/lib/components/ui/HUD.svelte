@@ -1,16 +1,15 @@
 <script lang="ts">
 	import { gameState } from '$lib/stores/gameState.svelte';
-	import { deathReplay } from '$lib/stores/deathReplay.svelte';
+	import { world } from '$lib/game/world';
 
 	let showQuitConfirm = $state(false);
 
 	function handleQuit(): void {
 		showQuitConfirm = false;
-		// Self destruct: kill the player and trigger death sequence
+		// Self destruct: set health to 0 on both UI state and world object
+		// so checkGameOver captures the score on the next game loop frame
 		gameState.health = 0;
-		gameState.score = 0;
-		deathReplay.startReplay();
-		gameState.multiplayerDead = true;
+		world.player.health = 0;
 	}
 </script>
 

@@ -3,6 +3,17 @@
 	import { deathReplay } from '$lib/stores/deathReplay.svelte';
 	import { sendRespawnRequest, disconnect } from '$lib/stores/socketClient';
 	import { world, randomSpherePosition, getTangentFrame, SPHERE_RADIUS } from '$lib/game/world';
+	import { authState } from '$lib/stores/authState.svelte';
+
+	// Resolve user ID for highlighting in leaderboard
+	function getCurrentUserId(): string | null {
+		if (authState.isLoggedIn && authState.userId) return authState.userId;
+		if (typeof localStorage !== 'undefined') {
+			const guestId = localStorage.getItem('starspace_guest_id');
+			if (guestId) return `guest_${guestId}`;
+		}
+		return null;
+	}
 
 	let respawnCooldown = $state(3);
 	let cooldownInterval: ReturnType<typeof setInterval> | null = null;
@@ -134,6 +145,10 @@
 	const logStartTime = $derived(
 		endData?.eventLog?.length ? endData.eventLog[0].time : 0
 	);
+
+	// Leaderboard context for solo death screen
+	const currentUserId = $derived(getCurrentUserId());
+	const userInTop5 = $derived(gameState.leaderboardTop.some(e => e.userId === currentUserId));
 </script>
 
 {#if gameState.multiplayerDead && gameState.phase === 'playing'}
@@ -215,10 +230,57 @@
 					<div class="death-subtitle">Your ship has been destroyed</div>
 
 					<div class="your-score">
-						YOUR SCORE: <span class="score-value">{gameState.score.toLocaleString()}</span>
+						YOUR SCORE: <span class="score-value">{gameState.finalScore.toLocaleString()}</span>
 					</div>
 
 					{#if isSolo}
+						<!-- Mini leaderboard -->
+						<div class="leaderboard-result">
+							{#if gameState.leaderboardSubmitted && gameState.leaderboardTop.length > 0}
+									{#if gameState.leaderboardNewHighScore && gameState.finalScore > 0}
+									<div class="new-highscore">★ NEW PERSONAL BEST ★</div>
+								{/if}
+								<div class="mini-leaderboard">
+									<div class="mini-lb-header">TOP SCORES</div>
+									<div class="mini-lb-list">
+										{#each gameState.leaderboardTop as entry, i (entry.userId)}
+											<div class="mini-lb-row" class:is-you={entry.userId === currentUserId}>
+												<span class="mini-lb-rank">#{i + 1}</span>
+												<span class="mini-lb-name">{entry.username}{entry.userId === currentUserId ? ' (you)' : ''}</span>
+												<span class="mini-lb-score">{entry.score.toLocaleString()}</span>
+											</div>
+										{/each}
+										{#if !userInTop5 && gameState.leaderboardRank}
+											<div class="mini-lb-separator">⋯</div>
+											<div class="mini-lb-row is-you">
+												<span class="mini-lb-rank">#{gameState.leaderboardRank}</span>
+												<span class="mini-lb-name">{authState.username ?? 'Guest'} (you)</span>
+												<span class="mini-lb-score">{gameState.finalScore.toLocaleString()}</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+							{:else if gameState.leaderboardSubmitted && gameState.leaderboardTop.length === 0}
+								<!-- Submitted (or score was 0) but no scores exist yet -->
+								{#if gameState.personalBest > 0}
+									<div class="personal-best">
+										BEST: <span class="best-value">{gameState.personalBest.toLocaleString()}</span>
+									</div>
+								{:else}
+									<div class="leaderboard-offline">No scores yet — keep playing!</div>
+								{/if}
+							{:else if gameState.leaderboardError}
+								<div class="leaderboard-offline">Score saved locally</div>
+								{#if gameState.personalBest > 0}
+									<div class="personal-best">
+										BEST: <span class="best-value">{gameState.personalBest.toLocaleString()}</span>
+									</div>
+								{/if}
+							{:else}
+								<div class="leaderboard-pending">Loading leaderboard...</div>
+							{/if}
+						</div>
+
 						<div class="actions">
 							<button class="action-btn rejoin-btn" onclick={handleSoloContinue}>
 							RESTART
@@ -363,13 +425,128 @@
 		font-family: var(--hud-font, monospace);
 		font-size: 0.85rem;
 		color: #8899aa;
-		margin-bottom: 20px;
+		margin-bottom: 12px;
 	}
 
 	.score-value {
 		color: #00ff88;
 		font-size: 1.1rem;
 		text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+	}
+
+	/* Leaderboard result section */
+	.leaderboard-result {
+		margin-bottom: 20px;
+		font-family: var(--hud-font, monospace);
+	}
+
+	.new-highscore {
+		font-size: 0.85rem;
+		color: #ffdd00;
+		letter-spacing: 2px;
+		text-shadow: 0 0 15px rgba(255, 221, 0, 0.6);
+		animation: highscorePulse 1.5s ease-in-out infinite;
+		margin-bottom: 8px;
+	}
+
+	@keyframes highscorePulse {
+		0%, 100% { opacity: 1; text-shadow: 0 0 15px rgba(255, 221, 0, 0.6); }
+		50% { opacity: 0.8; text-shadow: 0 0 25px rgba(255, 221, 0, 0.9); }
+	}
+
+	/* Mini leaderboard table */
+	.mini-leaderboard {
+		background: rgba(10, 15, 25, 0.6);
+		border: 1px solid rgba(68, 136, 255, 0.15);
+		border-radius: 6px;
+		padding: 10px 12px;
+		text-align: left;
+	}
+
+	.mini-lb-header {
+		font-size: 0.6rem;
+		color: #556677;
+		letter-spacing: 2px;
+		margin-bottom: 8px;
+		text-align: center;
+	}
+
+	.mini-lb-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.mini-lb-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 3px 6px;
+		border-radius: 3px;
+		font-size: 0.72rem;
+		color: #8899aa;
+		transition: background 0.2s;
+	}
+
+	.mini-lb-row.is-you {
+		background: rgba(0, 255, 136, 0.08);
+		color: #00ff88;
+		border: 1px solid rgba(0, 255, 136, 0.15);
+	}
+
+	.mini-lb-rank {
+		width: 28px;
+		flex-shrink: 0;
+		color: #556677;
+		font-size: 0.65rem;
+	}
+
+	.mini-lb-row.is-you .mini-lb-rank {
+		color: #00cc66;
+	}
+
+	.mini-lb-name {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.mini-lb-score {
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+		color: #aabbcc;
+	}
+
+	.mini-lb-row.is-you .mini-lb-score {
+		color: #00ff88;
+		text-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+	}
+
+	.mini-lb-separator {
+		text-align: center;
+		color: #334455;
+		font-size: 0.7rem;
+		padding: 2px 0;
+	}
+
+	.leaderboard-offline,
+	.leaderboard-pending {
+		font-size: 0.65rem;
+		color: #556666;
+		letter-spacing: 1px;
+		margin-bottom: 4px;
+	}
+
+	.personal-best {
+		font-size: 0.7rem;
+		color: #667788;
+		letter-spacing: 1px;
+		margin-top: 4px;
+	}
+
+	.best-value {
+		color: #aabbcc;
 	}
 
 	.death-penalty {

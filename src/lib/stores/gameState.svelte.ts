@@ -118,6 +118,18 @@ class GameStore {
 	healthChange = $state<'heal' | 'damage' | null>(null);
 	previousHealth = $state(100);
 
+	// Final stats captured at death (before score reset) for death screen + leaderboard
+	finalScore = $state(0);
+	finalWave = $state(1);
+
+	// Leaderboard result after death submission
+	leaderboardRank = $state<number | null>(null);
+	leaderboardNewHighScore = $state(false);
+	leaderboardSubmitted = $state(false);
+	leaderboardError = $state<string | null>(null);
+	personalBest = $state(0);
+	leaderboardTop = $state<{ userId: string; username: string; score: number; wave: number; }[]>([]);
+
 	// Lobby (waiting room) state
 	lobbyState = $state<{
 		roomCode: string;
@@ -289,6 +301,13 @@ class GameStore {
 		this.roomStats = null;
 		this.roomEndData = null;
 		this.lobbyState = null;
+		this.finalScore = 0;
+		this.finalWave = 1;
+		this.leaderboardRank = null;
+		this.leaderboardNewHighScore = false;
+		this.leaderboardSubmitted = false;
+		this.leaderboardError = null;
+		this.leaderboardTop = [];
 	}
 }
 

@@ -16,8 +16,17 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
+	interface LeaderboardEntry {
+		userId: string;
+		username: string;
+		score: number;
+		wave: number;
+		date: string;
+	}
+
 	let creatingRoom = $state(false);
 	let linkCopied = $state(false);
+	let topScores = $state<LeaderboardEntry[]>([]);
 
 	const pastGames = $derived(getMyPastGames(authState.userId || ''));
 
@@ -108,6 +117,14 @@
 
 		// Fetch available multiplayer rooms
 		connectLobby();
+
+		// Fetch top leaderboard scores for preview
+		fetch('/api/leaderboard?limit=5')
+			.then(r => r.json() as Promise<{ entries?: LeaderboardEntry[] }>)
+			.then((data) => {
+				topScores = data.entries ?? [];
+			})
+			.catch(() => {/* best-effort */});
 
 		// Check for invite link (?join=ROOM_ID)
 		const joinRoom = params.get('join');
@@ -513,6 +530,25 @@
 							</div>
 						{/each}
 					</div>
+				</div>
+			{/if}
+
+			<!-- Leaderboard preview (visible to all, logged in or not) -->
+			{#if topScores.length > 0}
+				<div class="rooms-section leaderboard-preview-section">
+					<h3 class="rooms-header leaderboard-preview-header">TOP SOLO SCORES</h3>
+					<div class="leaderboard-preview-list">
+						{#each topScores as entry, i (entry.userId + '-' + i)}
+							{@const rank = i + 1}
+							<div class="lb-row" class:lb-gold={rank === 1} class:lb-silver={rank === 2} class:lb-bronze={rank === 3}>
+								<span class="lb-rank">#{rank}</span>
+								<span class="lb-name">{entry.username}</span>
+								<span class="lb-score">{entry.score.toLocaleString()}</span>
+								<span class="lb-wave">W{entry.wave}</span>
+							</div>
+						{/each}
+					</div>
+					<a href="/leaderboard" class="leaderboard-view-all">VIEW FULL LEADERBOARD →</a>
 				</div>
 			{/if}
 
@@ -1585,5 +1621,86 @@
 	.leave-btn:hover {
 		background: rgba(255, 68, 68, 0.1);
 		border-color: rgba(255, 68, 68, 0.5);
+	}
+
+	/* ===== LEADERBOARD PREVIEW ===== */
+	.leaderboard-preview-section {
+		margin-top: var(--spacing-lg, 16px);
+	}
+
+	.leaderboard-preview-header {
+		color: #00ff88 !important;
+	}
+
+	.leaderboard-preview-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.lb-row {
+		display: grid;
+		grid-template-columns: 36px 1fr auto 40px;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 10px;
+		font-family: var(--hud-font, monospace);
+		font-size: 0.7rem;
+		border-radius: 4px;
+		transition: background 0.15s;
+	}
+
+	.lb-row:hover {
+		background: rgba(0, 255, 136, 0.04);
+	}
+
+	.lb-rank {
+		color: #556677;
+		font-size: 0.65rem;
+	}
+
+	.lb-name {
+		color: #aabbcc;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		text-align: left;
+	}
+
+	.lb-score {
+		color: #00ff88;
+		text-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+		text-align: right;
+	}
+
+	.lb-wave {
+		color: #556677;
+		font-size: 0.6rem;
+		text-align: right;
+	}
+
+	.lb-gold .lb-rank,
+	.lb-gold .lb-name { color: #ffdd00; }
+	.lb-gold .lb-score { color: #ffdd00; text-shadow: 0 0 8px rgba(255, 221, 0, 0.4); }
+
+	.lb-silver .lb-rank,
+	.lb-silver .lb-name { color: #c0c0c0; }
+
+	.lb-bronze .lb-rank,
+	.lb-bronze .lb-name { color: #cd7f32; }
+
+	.leaderboard-view-all {
+		display: inline-block;
+		margin-top: 10px;
+		font-family: var(--hud-font, monospace);
+		font-size: 0.6rem;
+		letter-spacing: 2px;
+		color: #4488ff;
+		text-decoration: none;
+		transition: color 0.2s;
+	}
+
+	.leaderboard-view-all:hover {
+		color: #00ff88;
 	}
 </style>

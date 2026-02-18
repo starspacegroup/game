@@ -25,6 +25,97 @@
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
+	import { authState } from '$lib/stores/authState.svelte';
+
+	// Get or create a persistent guest ID for anonymous leaderboard entries
+	function getGuestId(): string {
+		if (typeof localStorage === 'undefined') return crypto.randomUUID();
+		let id = localStorage.getItem('starspace_guest_id');
+		if (!id) {
+			id = crypto.randomUUID();
+			localStorage.setItem('starspace_guest_id', id);
+		}
+		return id;
+	}
+
+	// Load personal best from localStorage
+	function loadPersonalBest(): number {
+		if (typeof localStorage === 'undefined') return 0;
+		const stored = localStorage.getItem('starspace_personal_best');
+		return stored ? parseInt(stored, 10) || 0 : 0;
+	}
+
+	// Save personal best to localStorage
+	function savePersonalBest(score: number): void {
+		if (typeof localStorage === 'undefined') return;
+		const current = loadPersonalBest();
+		if (score > current) {
+			localStorage.setItem('starspace_personal_best', String(score));
+			gameState.personalBest = score;
+		}
+	}
+
+	// Initialize personal best from storage
+	gameState.personalBest = loadPersonalBest();
+
+	// Submit solo score to leaderboard and capture the result
+	async function submitSoloScore(score: number, wave: number): Promise<void> {
+		// Always save personal best locally
+		if (score > 0) savePersonalBest(score);
+
+		// Reset leaderboard state for this death
+		gameState.leaderboardSubmitted = false;
+		gameState.leaderboardRank = null;
+		gameState.leaderboardNewHighScore = false;
+		gameState.leaderboardError = null;
+		gameState.leaderboardTop = [];
+
+		try {
+			// Only submit if score > 0
+			if (score > 0) {
+				const payload: Record<string, unknown> = { score, wave };
+
+				// Include guest identity if not logged in
+				if (!authState.isLoggedIn) {
+					payload.guestId = getGuestId();
+					payload.guestName = 'Guest';
+				}
+
+				const postRes = await fetch('/api/leaderboard', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				});
+
+				if (postRes.ok) {
+					const data = await postRes.json() as { success: boolean; rank?: number; newHighScore?: boolean };
+					if (data.success) {
+						gameState.leaderboardSubmitted = true;
+						gameState.leaderboardRank = data.rank ?? null;
+						gameState.leaderboardNewHighScore = data.newHighScore ?? false;
+					} else {
+						gameState.leaderboardError = 'Failed to submit';
+					}
+				} else {
+					gameState.leaderboardError = 'Server error';
+				}
+			} else {
+				// Score is 0 — nothing to submit, mark as handled
+				gameState.leaderboardSubmitted = true;
+			}
+
+			// Always fetch top scores so the death screen shows the leaderboard
+			try {
+				const topRes = await fetch('/api/leaderboard?limit=5');
+				if (topRes.ok) {
+					const topData = await topRes.json() as { entries: { userId: string; username: string; score: number; wave: number }[] };
+					gameState.leaderboardTop = topData.entries ?? [];
+				}
+			} catch { /* best effort */ }
+		} catch {
+			gameState.leaderboardError = 'Could not reach server';
+		}
+	}
 
 	// Render distance for entities - beyond this they're culled (chord distance on sphere)
 	// On a sphere with R=200, chord dist ~100 covers about 29° of arc
@@ -760,8 +851,17 @@
 	}
 
 	function checkGameOver(): void {
-		if (gameState.health <= 0) {
+		if (gameState.health <= 0 && !gameState.multiplayerDead) {
 			gameState.health = 0;
+
+			// Capture final stats before reset (for death screen + leaderboard)
+			gameState.finalScore = gameState.score;
+			gameState.finalWave = gameState.wave;
+
+			// Submit solo high score to leaderboard (also fetches top scores even if score is 0)
+			if (gameState.mode === 'solo') {
+				submitSoloScore(gameState.score, gameState.wave);
+			}
 
 			// Reset score to 0 on death
 			gameState.score = 0;
