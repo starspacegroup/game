@@ -3,6 +3,7 @@
 	import { authState } from '$lib/stores/authState.svelte';
 	import { resetWorld, world } from '$lib/game/world';
 	import { deathReplay } from '$lib/stores/deathReplay.svelte';
+	import logoUrl from '$lib/assets/logo.png';
 	import {
 		generateAsteroids,
 		generateNpcs,
@@ -311,7 +312,7 @@
 	<div class="welcome-overlay" role="dialog" aria-label="Waiting room">
 		<div class="welcome-content">
 			<div class="org-line">
-				<img src="/logo.png" alt="*Space logo" class="org-logo" />
+				<img src={logoUrl} alt="*Space logo" class="org-logo" />
 				<span class="org-name">*SPACE</span>
 			</div>
 			<h1 class="title">
@@ -414,7 +415,7 @@
 	<div class="welcome-overlay" role="dialog" aria-label="Welcome screen">
 		<div class="welcome-content">
 			<div class="org-line">
-				<img src="/logo.png" alt="*Space logo" class="org-logo" />
+				<img src={logoUrl} alt="*Space logo" class="org-logo" />
 				<span class="org-name">*SPACE</span>
 			</div>
 			<h1 class="title">

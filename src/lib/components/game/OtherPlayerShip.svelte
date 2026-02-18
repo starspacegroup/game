@@ -2,6 +2,7 @@
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
 	import { world, getSphereOrientation } from '$lib/game/world';
+	import shipTextureUrl from '$lib/assets/ship-64.png';
 
 	const BUFF_COLORS: Record<string, string> = {
 		speed: '#ffdd00',
@@ -92,7 +93,7 @@
 
 	// Load the ship texture
 	const textureLoader = new THREE.TextureLoader();
-	const shipTexture = textureLoader.load('/ship-64.png');
+	const shipTexture = textureLoader.load(shipTextureUrl);
 	shipTexture.colorSpace = THREE.SRGBColorSpace;
 
 	/** Draw a speed buff icon (lightning bolt shape) */

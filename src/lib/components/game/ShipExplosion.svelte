@@ -4,6 +4,7 @@
 	import { world, getPlayerFrame, projectToSphere, SPHERE_RADIUS } from '$lib/game/world';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { authState } from '$lib/stores/authState.svelte';
+	import shipTextureUrl from '$lib/assets/ship-64.png';
 
 	const PIECE_COUNT = 9;
 	const EXPLOSION_SPEED = 8;       // outward velocity
@@ -30,7 +31,7 @@
 
 	// Shared textures
 	const textureLoader = new THREE.TextureLoader();
-	const shipTexture = textureLoader.load('/ship-64.png');
+	const shipTexture = textureLoader.load(shipTextureUrl);
 	shipTexture.colorSpace = THREE.SRGBColorSpace;
 
 	let avatarTexture: THREE.Texture | undefined;

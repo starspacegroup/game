@@ -6,6 +6,7 @@
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import ShieldBubble from './ShieldBubble.svelte';
 	import SpeedLines from './SpeedLines.svelte';
+	import shipTextureUrl from '$lib/assets/ship-64.png';
 
 	const BUFF_COLORS: Record<string, string> = {
 		speed: '#ffdd00',
@@ -93,7 +94,7 @@
 
 	// Load the ship texture
 	const textureLoader = new THREE.TextureLoader();
-	const shipTexture = textureLoader.load('/ship-64.png');
+	const shipTexture = textureLoader.load(shipTextureUrl);
 	shipTexture.colorSpace = THREE.SRGBColorSpace;
 
 	/** Draw a speed buff icon (lightning bolt shape) */
