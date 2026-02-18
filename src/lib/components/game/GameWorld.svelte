@@ -21,7 +21,8 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { checkCollisions } from '$lib/game/collision';
-	import { checkPuzzleProgress, isPuzzleSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
+	import { checkPuzzleProgress, isPuzzleSolved, isWaveSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
+	import { E8_TOTAL_WAVES } from '$lib/game/e8';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
@@ -126,7 +127,7 @@
 	resetWorld();
 	world.asteroids = generateAsteroids(100);
 	world.npcs = generateNpcs(gameState.npcCount);
-	world.puzzleNodes = generatePuzzleNodes(13);
+	world.puzzleNodes = generatePuzzleNodes(gameState.wave);
 	world.powerUps = generatePowerUps(50);
 
 	// Reactive entity lists (controls which components are rendered)
@@ -427,7 +428,7 @@
 					gameState.convertedNpcCount++;
 					// Find nearest puzzle node (prefer untargeted ones)
 					const takenNodeIds = getTargetedNodeIds(npc);
-					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds);
+					const nearestNode = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds, gameState.wave);
 					npc.targetNodeId = nearestNode?.id || null;
 
 					// Debug: log ALL node distances for verification
@@ -515,7 +516,7 @@
 		// Reassign if no target or current target is already connected
 		if (!targetNode || targetNode.connected) {
 			const takenNodeIds = getTargetedNodeIds(npc);
-			const nearest = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds);
+			const nearest = findNearestPuzzleNode(npc.position, world.puzzleNodes, takenNodeIds, gameState.wave);
 			if (nearest) {
 				targetNode = nearest;
 				npc.targetNodeId = nearest.id;
@@ -725,10 +726,53 @@
 	}
 
 	function updatePuzzle(): void {
-		gameState.puzzleProgress = checkPuzzleProgress(world.puzzleNodes);
-		if (isPuzzleSolved(world.puzzleNodes) && !gameState.puzzleSolved) {
-			gameState.puzzleSolved = true;
-			if (gameState.isAlive) gameState.score += 1000;
+		gameState.puzzleProgress = checkPuzzleProgress(world.puzzleNodes, gameState.wave);
+
+		// Check if the current wave is solved
+		if (isWaveSolved(world.puzzleNodes, gameState.wave) && !gameState.puzzleSolved) {
+			if (gameState.wave < E8_TOTAL_WAVES) {
+				// Wave complete — advance!
+				const waveBonus = gameState.wave * 500;
+				if (gameState.isAlive) gameState.score += waveBonus;
+				gameState.wave++;
+
+				// Generate new puzzle nodes for the next wave
+				// (preserves connected nodes from previous waves)
+				resetIdCounter();
+				world.puzzleNodes = generatePuzzleNodes(gameState.wave);
+
+				// Spawn more hostile NPCs per wave for increased difficulty
+				const extraNpcs = gameState.wave;
+				for (let i = 0; i < extraNpcs; i++) {
+					const pos = randomSpherePositionNear(world.player.position, 40, 90);
+					world.npcs.push({
+						id: `npc_wave${gameState.wave}_${i}`,
+						position: pos,
+						velocity: new THREE.Vector3(0, 0, 0),
+						rotation: new THREE.Euler(0, 0, 0),
+						radius: 1.2,
+						health: 30 + gameState.wave * 5,
+						maxHealth: 30 + gameState.wave * 5,
+						shootCooldown: Math.max(1, 3 - gameState.wave * 0.2) + Math.random() * 2,
+						destroyed: false,
+						converted: false,
+						conversionProgress: 0,
+						targetNodeId: null,
+						orbitAngle: Math.random() * Math.PI * 2,
+						orbitDistance: 5 + Math.random() * 3,
+						hintTimer: 3 + Math.random() * 2,
+						hintData: null
+					});
+				}
+
+				// Add wave-advance message
+				gameState.addHint('system', `⬡ Wave ${gameState.wave} — E8 shell ${gameState.wave} activated! +${waveBonus} points`);
+			} else {
+				// All E8 waves complete — full lattice solved!
+				gameState.puzzleSolved = true;
+				if (gameState.isAlive) gameState.score += 5000;
+				gameState.addHint('system', '✦ E8 LATTICE COMPLETE — 240 vertices aligned! +5000 points');
+			}
 		}
 	}
 
@@ -788,9 +832,10 @@
 			ast.position.copy(pos);
 		}
 
-		// Spawn new hostile NPCs if too few hostile ones remain
+		// Spawn new hostile NPCs if too few hostile ones remain (scales with wave)
+		const minHostile = Math.max(1, gameState.wave);
 		const hostileNpcs = world.npcs.filter((n) => !n.destroyed && !n.converted && n.conversionProgress === 0);
-		if (hostileNpcs.length < 1) {
+		if (hostileNpcs.length < minHostile) {
 			// Add a new hostile NPC far from the player (off-screen)
 			const pos = randomSpherePositionNear(world.player.position, 55, 100);
 			world.npcs.push({

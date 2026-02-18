@@ -544,13 +544,15 @@ function applyFullState(state: import('$lib/shared/protocol').WorldState): void 
   }));
 
   // Apply puzzle nodes
-  world.puzzleNodes = state.puzzleNodes.map(n => ({
+  world.puzzleNodes = state.puzzleNodes.map((n, i) => ({
     id: n.id,
     position: new THREE.Vector3(n.position.x, n.position.y, n.position.z),
     targetPosition: new THREE.Vector3(n.targetPosition.x, n.targetPosition.y, n.targetPosition.z),
     radius: n.radius,
     connected: n.connected,
-    color: n.color
+    color: n.color,
+    wave: (n as any).wave as number ?? 1,
+    e8Index: (n as any).e8Index as number ?? i
   }));
 
   // Apply power-ups

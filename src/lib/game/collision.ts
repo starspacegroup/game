@@ -33,7 +33,9 @@ export function checkCollisions(): CollisionEvent[] {
 	}
 
 	// Player vs Puzzle Nodes (angular proximity — player on surface, nodes inside sphere)
+	// Only interact with nodes from the current wave that aren't yet connected
 	for (const node of world.puzzleNodes) {
+		if (node.connected) continue;
 		if (surfaceProximity(pp, node.position) < pr + node.radius + 20) {
 			events.push({ type: 'player-puzzlenode', entityA: 'player', entityB: node.id });
 		}

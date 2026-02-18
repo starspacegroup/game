@@ -42,7 +42,7 @@
 			<a href="/" class="back-link">
 				<span class="back-arrow">←</span>
 				<img src={logoUrl} alt="*Space logo" class="header-logo" />
-				<span class="header-org">*SPACE</span>
+				<span class="header-org">GAME</span>
 			</a>
 			<h1 class="leaderboard-title">LEADERBOARD</h1>
 			<p class="leaderboard-subtitle">PERSONAL BESTS — SOLO</p>

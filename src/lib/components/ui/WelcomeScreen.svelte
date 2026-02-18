@@ -12,7 +12,7 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { connectToServer, disconnect, sendSetPrivacy, sendStartGame } from '$lib/stores/socketClient';
-	import { connectLobby, disconnectLobby, lobbyState, getMyPastGames, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
+	import { connectLobby, disconnectLobby, lobbyState, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
@@ -28,21 +28,7 @@
 	let linkCopied = $state(false);
 	let topScores = $state<LeaderboardEntry[]>([]);
 
-	const pastGames = $derived(getMyPastGames(authState.userId || ''));
 
-	function formatDuration(seconds: number): string {
-		const m = Math.floor(seconds / 60);
-		const s = seconds % 60;
-		return m > 0 ? `${m}m ${s}s` : `${s}s`;
-	}
-
-	function formatTimeAgo(timestamp: number): string {
-		const diff = Math.round((Date.now() - timestamp) / 1000);
-		if (diff < 60) return 'just now';
-		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-		return `${Math.floor(diff / 86400)}d ago`;
-	}
 
 
 	let deletingRoomId = $state<string | null>(null);
@@ -503,35 +489,7 @@
 				</button>
 			{/if}
 
-			{#if authState.isLoggedIn && pastGames.length > 0}
-				<div class="rooms-section past-games-section">
-					<h3 class="rooms-header past-games-header">YOUR GAME HISTORY</h3>
-					<div class="rooms-list">
-						{#each pastGames.sort((a, b) => b.endedAt - a.endedAt) as game (game.id)}
-							<div class="past-game-card">
-								<div class="past-game-top">
-									<span class="past-game-name">{game.name}</span>
-									<span class="past-game-ago">{formatTimeAgo(game.endedAt)}</span>
-								</div>
-								<div class="past-game-stats">
-									<span class="past-game-stat">Wave {game.finalWave}</span>
-									<span class="past-game-stat">{formatDuration(game.duration)}</span>
-									<span class="past-game-stat">{Math.round(game.finalPuzzleProgress)}% puzzle</span>
-								</div>
-								<div class="past-game-players">
-									{#each game.players.sort((a, b) => b.score - a.score) as player, i (player.id)}
-										<span class="past-game-player">
-											<span class="past-game-rank">#{i + 1}</span>
-											<span class="past-game-player-name">{player.username}</span>
-											<span class="past-game-player-score">{player.score.toLocaleString()}</span>
-										</span>
-									{/each}
-								</div>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
+	
 
 			<!-- Leaderboard preview (visible to all, logged in or not) -->
 			{#if topScores.length > 0}

@@ -58,6 +58,10 @@ export interface PuzzleNodeData {
 	radius: number;
 	connected: boolean;
 	color: string;
+	/** Which wave this node belongs to (1-based) */
+	wave: number;
+	/** Index into the E8 root array (for edge lookup) */
+	e8Index: number;
 }
 
 export interface PowerUpData {

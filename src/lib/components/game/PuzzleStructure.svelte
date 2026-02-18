@@ -2,18 +2,19 @@
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
 	import { world } from '$lib/game/world';
+	import { gameState } from '$lib/stores/gameState.svelte';
 	import { getPuzzleConnections } from '$lib/game/puzzle';
 	import PuzzleNode from './PuzzleNode.svelte';
 
 	let lineGeometry: THREE.BufferGeometry | undefined = $state();
 	let targetLineGeometry: THREE.BufferGeometry | undefined = $state();
+	let connectedLineGeometry: THREE.BufferGeometry | undefined = $state();
 	let updateTimer = 0;
 
-	// Cache connections (they don't change)
+	// Cache connections (recomputed when wave changes)
 	let connections: [number, number][] = [];
-
-	// Track node count so we recompute connections if nodes change
 	let lastNodeCount = 0;
+	let lastWave = 0;
 
 	useTask((delta) => {
 		const nodes = world.puzzleNodes;
@@ -24,52 +25,61 @@
 		if (updateTimer < 0.2) return;
 		updateTimer = 0;
 
-		// Recompute connections if node count changed (e.g. multiplayer sync)
-		if (connections.length === 0 || nodes.length !== lastNodeCount) {
-			connections = getPuzzleConnections(nodes);
+		// Recompute connections if node count or wave changed
+		if (connections.length === 0 || nodes.length !== lastNodeCount || gameState.wave !== lastWave) {
+			connections = getPuzzleConnections(nodes, gameState.wave);
 			lastNodeCount = nodes.length;
+			lastWave = gameState.wave;
 		}
 
-		const positions = new Float32Array(connections.length * 6);
-		const targetPositions = new Float32Array(connections.length * 6);
+		// Separate edges into connected (locked) and active (being aligned)
+		const connectedPositions: number[] = [];
+		const activePositions: number[] = [];
+		const targetPositions: number[] = [];
 
-		for (let i = 0; i < connections.length; i++) {
-			const [a, b] = connections[i];
+		for (const [a, b] of connections) {
 			if (a >= nodes.length || b >= nodes.length) continue;
-			const i6 = i * 6;
-			// Direct 3D positions on sphere surface
+
 			const posA = nodes[a].position;
 			const posB = nodes[b].position;
-			positions[i6] = posA.x;
-			positions[i6 + 1] = posA.y;
-			positions[i6 + 2] = posA.z;
-			positions[i6 + 3] = posB.x;
-			positions[i6 + 4] = posB.y;
-			positions[i6 + 5] = posB.z;
-
 			const targetA = nodes[a].targetPosition;
 			const targetB = nodes[b].targetPosition;
-			targetPositions[i6] = targetA.x;
-			targetPositions[i6 + 1] = targetA.y;
-			targetPositions[i6 + 2] = targetA.z;
-			targetPositions[i6 + 3] = targetB.x;
-			targetPositions[i6 + 4] = targetB.y;
-			targetPositions[i6 + 5] = targetB.z;
+
+			if (nodes[a].connected && nodes[b].connected) {
+				// Both endpoints locked — bright connected edge
+				connectedPositions.push(
+					posA.x, posA.y, posA.z,
+					posB.x, posB.y, posB.z
+				);
+			} else {
+				// At least one active — show as dim active edge
+				activePositions.push(
+					posA.x, posA.y, posA.z,
+					posB.x, posB.y, posB.z
+				);
+			}
+
+			// Ghost target wireframe
+			targetPositions.push(
+				targetA.x, targetA.y, targetA.z,
+				targetB.x, targetB.y, targetB.z
+			);
 		}
 
-		if (!lineGeometry) {
-			lineGeometry = new THREE.BufferGeometry();
-		}
-		lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+		// Active / in-progress edges
+		if (!lineGeometry) lineGeometry = new THREE.BufferGeometry();
+		lineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(activePositions), 3));
 		lineGeometry.attributes.position.needsUpdate = true;
 
-		if (!targetLineGeometry) {
-			targetLineGeometry = new THREE.BufferGeometry();
-		}
-		targetLineGeometry.setAttribute(
-			'position',
-			new THREE.BufferAttribute(targetPositions, 3)
-		);
+		// Locked / completed edges
+		if (!connectedLineGeometry) connectedLineGeometry = new THREE.BufferGeometry();
+		connectedLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(connectedPositions), 3));
+		connectedLineGeometry.attributes.position.needsUpdate = true;
+
+		// Target ghost wireframe
+		if (!targetLineGeometry) targetLineGeometry = new THREE.BufferGeometry();
+		targetLineGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(targetPositions), 3));
+		targetLineGeometry.attributes.position.needsUpdate = true;
 	});
 </script>
 
@@ -79,19 +89,31 @@
 		targetPosition={node.targetPosition}
 		connected={node.connected}
 		color={node.color}
+		nodeWave={node.wave}
+		currentWave={gameState.wave}
 	/>
 {/each}
 
+<!-- Active edges (current wave, not yet locked) -->
 {#if lineGeometry}
 	<T.LineSegments>
 		<T is={lineGeometry} />
-		<T.LineBasicMaterial color="#ffffff" transparent opacity={0.3} />
+		<T.LineBasicMaterial color="#ffffff" transparent opacity={0.2} />
 	</T.LineSegments>
 {/if}
 
+<!-- Connected edges (locked from solved waves) -->
+{#if connectedLineGeometry}
+	<T.LineSegments>
+		<T is={connectedLineGeometry} />
+		<T.LineBasicMaterial color="#44aaff" transparent opacity={0.5} />
+	</T.LineSegments>
+{/if}
+
+<!-- Ghost target wireframe (guides) -->
 {#if targetLineGeometry}
 	<T.LineSegments>
 		<T is={targetLineGeometry} />
-		<T.LineBasicMaterial color="#4488ff" transparent opacity={0.12} />
+		<T.LineBasicMaterial color="#4488ff" transparent opacity={0.08} />
 	</T.LineSegments>
 {/if}

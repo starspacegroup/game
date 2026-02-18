@@ -8,9 +8,11 @@
 		targetPosition: THREE.Vector3;
 		connected: boolean;
 		color: string;
+		nodeWave: number;
+		currentWave: number;
 	}
 
-	let { position, connected, color }: Props = $props();
+	let { position, connected, color, nodeWave, currentWave }: Props = $props();
 	let group: THREE.Group | undefined = $state();
 	let innerMesh: THREE.Mesh | undefined = $state();
 	let outerMesh: THREE.Mesh | undefined = $state();
@@ -24,70 +26,99 @@
 	// Color objects
 	const baseColor = new THREE.Color();
 	const grayColor = new THREE.Color();
+	const lockedColor = new THREE.Color();
 	let colorsInitialized = false;
+	let lastColorStr = '';
 
 	useTask((delta) => {
 		if (!group) return;
-		// Position freely inside the sphere — no sphere orientation needed
+
+		const isPastWave = nodeWave < currentWave;
+		const isCurrentWave = nodeWave === currentWave;
+
+		// Position freely inside the sphere
 		group.position.copy(position);
 
-		// Initialize colors
-		if (!colorsInitialized) {
+		// Initialize / update colors when the color prop changes
+		if (!colorsInitialized || color !== lastColorStr) {
 			baseColor.set(color);
 			const gray = baseColor.r * 0.299 + baseColor.g * 0.587 + baseColor.b * 0.114;
 			grayColor.setRGB(gray, gray, gray);
+			lockedColor.set(color).lerp(new THREE.Color('#44aaff'), 0.5);
 			colorsInitialized = true;
+			lastColorStr = color;
 		}
 
-		// Check angular proximity — project this node to surface, measure from player
+		// Check angular proximity
 		const distance = surfaceProximity(world.player.position, position);
-		canInteract = distance <= INTERACTION_RANGE;
+		canInteract = isCurrentWave && !connected && distance <= INTERACTION_RANGE;
 
-		if (canInteract) {
+		if (isPastWave || connected) {
+			// Locked node — steady glow, slightly larger
+			scale = 1.1;
+			pulsePhase += delta * 0.5;
+		} else if (canInteract) {
+			// Active node the player can reach — pulse faster
 			pulsePhase += delta * 3;
-			scale = connected ? 1.2 : 0.8 + Math.sin(pulsePhase) * 0.3;
+			scale = 0.8 + Math.sin(pulsePhase) * 0.3;
 		} else {
-			scale = connected ? 1.2 : 0.6;
+			// Current wave but out of range — dim and small
+			scale = 0.5;
+			pulsePhase += delta * 1;
 		}
 
-		// Slow rotation for visual interest
+		// Slow rotation
 		group.rotation.x += delta * 0.3;
 		group.rotation.y += delta * 0.5;
 
-		// Update material
+		// Update inner material
 		if (innerMesh?.material && innerMesh.material instanceof THREE.MeshBasicMaterial) {
 			const mat = innerMesh.material;
-			mat.color.copy(canInteract ? baseColor : grayColor);
-			mat.opacity = connected ? 0.9 : (canInteract ? 0.5 : 0.25);
+			if (connected || isPastWave) {
+				mat.color.copy(lockedColor);
+				mat.opacity = 0.85;
+			} else {
+				mat.color.copy(canInteract ? baseColor : grayColor);
+				mat.opacity = canInteract ? 0.5 : 0.2;
+			}
 		}
+
+		// Update outer wireframe material
 		if (outerMesh?.material && outerMesh.material instanceof THREE.MeshBasicMaterial) {
 			const mat = outerMesh.material;
-			mat.color.copy(canInteract ? baseColor : grayColor);
-			mat.opacity = connected ? 0.25 : (canInteract ? 0.12 : 0.04);
+			if (connected || isPastWave) {
+				mat.color.copy(lockedColor);
+				mat.opacity = 0.2;
+			} else {
+				mat.color.copy(canInteract ? baseColor : grayColor);
+				mat.opacity = canInteract ? 0.12 : 0.03;
+			}
 		}
 	});
 </script>
 
-<!-- Interior puzzle node — larger and brighter for visibility inside sphere -->
+<!-- Interior puzzle node — E8 lattice vertex -->
 <T.Group bind:ref={group} scale.x={scale} scale.y={scale} scale.z={scale}>
 	<!-- Core node -->
 	<T.Mesh bind:ref={innerMesh}>
-		<T.IcosahedronGeometry args={[2.5, 1]} />
+		<T.IcosahedronGeometry args={[2.0, 1]} />
 		<T.MeshBasicMaterial transparent />
 	</T.Mesh>
 	<!-- Outer energy field -->
 	<T.Mesh bind:ref={outerMesh}>
-		<T.IcosahedronGeometry args={[4, 0]} />
+		<T.IcosahedronGeometry args={[3.5, 0]} />
 		<T.MeshBasicMaterial
 			{color}
 			transparent
 			wireframe
 		/>
 	</T.Mesh>
-	<!-- Point light so nodes glow inside the sphere -->
-	{#if canInteract}
+	<!-- Point light — brighter for connected / interactive nodes -->
+	{#if connected || nodeWave < currentWave}
+		<T.PointLight color="#44aaff" intensity={1.5} distance={25} />
+	{:else if canInteract}
 		<T.PointLight color={color} intensity={2} distance={40} />
 	{:else}
-		<T.PointLight color={color} intensity={0.5} distance={20} />
+		<T.PointLight color={color} intensity={0.3} distance={12} />
 	{/if}
 </T.Group>
