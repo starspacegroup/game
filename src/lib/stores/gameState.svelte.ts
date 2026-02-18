@@ -114,6 +114,13 @@ class GameStore {
 	maxShieldHealth = $state(100);
 	shieldHitFlash = $state(0); // 0..1 flash intensity when shield absorbs a hit
 
+	// Puzzle solve sequence + fragment system
+	solveSequenceActive = $state(false);
+	solveSequenceProgress = $state(0); // 0..1 animation progress
+	lastUnlockedFragment = $state<import('$lib/game/fragments').FragmentData | null>(null);
+	fragmentCount = $state(0);       // how many fragments the player has collected (this mode)
+	gameSessionId = $state(crypto.randomUUID()); // unique per game session
+
 	// Health change animation: 'heal' | 'damage' | null
 	healthChange = $state<'heal' | 'damage' | null>(null);
 	previousHealth = $state(100);
@@ -308,6 +315,11 @@ class GameStore {
 		this.leaderboardSubmitted = false;
 		this.leaderboardError = null;
 		this.leaderboardTop = [];
+		this.solveSequenceActive = false;
+		this.solveSequenceProgress = 0;
+		this.lastUnlockedFragment = null;
+		this.fragmentCount = 0;
+		this.gameSessionId = crypto.randomUUID();
 	}
 }
 

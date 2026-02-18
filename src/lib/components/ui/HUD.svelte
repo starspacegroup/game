@@ -73,6 +73,9 @@
 			{#if gameState.puzzleSolved}
 				<span class="puzzle-complete">SOLVED</span>
 			{/if}
+			{#if gameState.fragmentCount > 0}
+				<span class="fragment-count">◈ {gameState.fragmentCount}/12</span>
+			{/if}
 		</div>
 	{/if}
 
@@ -209,6 +212,13 @@
 		font-weight: bold;
 		text-shadow: 0 0 8px rgba(255, 221, 0, 0.6);
 		animation: glow 1s ease-in-out infinite alternate;
+	}
+
+	.fragment-count {
+		font-size: var(--font-xs, 0.6rem);
+		color: #4488ff;
+		letter-spacing: 1px;
+		text-shadow: 0 0 6px rgba(68, 136, 255, 0.4);
 	}
 
 	@keyframes glow {

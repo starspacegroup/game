@@ -714,7 +714,17 @@ function applyStateUpdate(data: StateMessage): void {
   }
 
   gameState.puzzleProgress = data.puzzleProgress;
-  gameState.puzzleSolved = data.puzzleSolved;
+
+  // Detect puzzle solve transition (false → true) to trigger fragment unlock
+  if (data.puzzleSolved && !gameState.puzzleSolved) {
+    gameState.puzzleSolved = true;
+    gameState.solveSequenceActive = true;
+    gameState.solveSequenceProgress = 0;
+    // Trigger fragment unlock (multiplayer mode)
+    triggerMultiplayerFragmentUnlock();
+  } else {
+    gameState.puzzleSolved = data.puzzleSolved;
+  }
 }
 
 function syncAsteroids(serverAsteroids: AsteroidState[]): void {
@@ -1001,4 +1011,36 @@ export function getRoomCode(): string | null {
 export function sendPosition(): void {
   // No longer needed - inputs are sent automatically
   // Position is computed server-side
+}
+
+/** Trigger fragment unlock when puzzle is solved in multiplayer */
+async function triggerMultiplayerFragmentUnlock(): Promise<void> {
+  if (!authState.isLoggedIn) {
+    gameState.lastUnlockedFragment = null;
+    return;
+  }
+  try {
+    const res = await fetch('/api/secrets/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'multi',
+        sessionId: gameState.gameSessionId,
+        solveTimestamp: Date.now(),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json() as {
+        success: boolean;
+        fragment: import('$lib/game/fragments').FragmentData | null;
+        fragmentCount: number;
+      };
+      if (data.success) {
+        gameState.lastUnlockedFragment = data.fragment;
+        gameState.fragmentCount = data.fragmentCount;
+      }
+    }
+  } catch {
+    gameState.lastUnlockedFragment = null;
+  }
 }

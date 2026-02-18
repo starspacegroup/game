@@ -12,6 +12,7 @@
 	import SphereMap from '$lib/components/ui/SphereMap.svelte';
 	import PowerUpNotification from '$lib/components/ui/PowerUpNotification.svelte';
 	import DeathScreen from '$lib/components/ui/DeathScreen.svelte';
+	import SolveReveal from '$lib/components/ui/SolveReveal.svelte';
 
 	let gameContainer: HTMLDivElement | undefined = $state();
 	let cleanupKeyboard: (() => void) | undefined;
@@ -71,6 +72,12 @@
 			<VirtualJoystick />
 		{/if}
 		<ChatBox />
+		{#if gameState.solveSequenceActive}
+			<SolveReveal
+				fragment={gameState.lastUnlockedFragment}
+				onComplete={() => { gameState.solveSequenceActive = false; }}
+			/>
+		{/if}
 	{/if}
 
 	<!-- Multiplayer death screen (shown over game while still connected) -->

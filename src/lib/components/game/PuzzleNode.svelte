@@ -2,6 +2,7 @@
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
 	import { world, surfaceProximity } from '$lib/game/world';
+	import { gameState } from '$lib/stores/gameState.svelte';
 
 	interface Props {
 		position: THREE.Vector3;
@@ -27,6 +28,7 @@
 	const baseColor = new THREE.Color();
 	const grayColor = new THREE.Color();
 	const lockedColor = new THREE.Color();
+	const whiteColor = new THREE.Color('#ffffff');
 	let colorsInitialized = false;
 	let lastColorStr = '';
 
@@ -67,6 +69,13 @@
 			pulsePhase += delta * 1;
 		}
 
+		// Solve sequence: override — all nodes pulse white and expand
+		const solving = gameState.solveSequenceActive;
+		if (solving) {
+			pulsePhase += delta * 6;
+			scale = 1.3 + Math.sin(pulsePhase) * 0.4;
+		}
+
 		// Slow rotation
 		group.rotation.x += delta * 0.3;
 		group.rotation.y += delta * 0.5;
@@ -74,7 +83,10 @@
 		// Update inner material
 		if (innerMesh?.material && innerMesh.material instanceof THREE.MeshBasicMaterial) {
 			const mat = innerMesh.material;
-			if (connected || isPastWave) {
+			if (solving) {
+				mat.color.copy(whiteColor);
+				mat.opacity = 0.9;
+			} else if (connected || isPastWave) {
 				mat.color.copy(lockedColor);
 				mat.opacity = 0.85;
 			} else {
@@ -86,7 +98,10 @@
 		// Update outer wireframe material
 		if (outerMesh?.material && outerMesh.material instanceof THREE.MeshBasicMaterial) {
 			const mat = outerMesh.material;
-			if (connected || isPastWave) {
+			if (solving) {
+				mat.color.copy(whiteColor);
+				mat.opacity = 0.5;
+			} else if (connected || isPastWave) {
 				mat.color.copy(lockedColor);
 				mat.opacity = 0.2;
 			} else {

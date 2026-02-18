@@ -98,7 +98,7 @@
 {#if lineGeometry}
 	<T.LineSegments>
 		<T is={lineGeometry} />
-		<T.LineBasicMaterial color="#ffffff" transparent opacity={0.2} />
+		<T.LineBasicMaterial color={gameState.solveSequenceActive ? '#ffffff' : '#ffffff'} transparent opacity={gameState.solveSequenceActive ? 0.8 : 0.2} />
 	</T.LineSegments>
 {/if}
 
@@ -106,7 +106,7 @@
 {#if connectedLineGeometry}
 	<T.LineSegments>
 		<T is={connectedLineGeometry} />
-		<T.LineBasicMaterial color="#44aaff" transparent opacity={0.5} />
+		<T.LineBasicMaterial color={gameState.solveSequenceActive ? '#ffffff' : '#44aaff'} transparent opacity={gameState.solveSequenceActive ? 0.9 : 0.5} />
 	</T.LineSegments>
 {/if}
 
@@ -114,6 +114,6 @@
 {#if targetLineGeometry}
 	<T.LineSegments>
 		<T is={targetLineGeometry} />
-		<T.LineBasicMaterial color="#4488ff" transparent opacity={0.08} />
+		<T.LineBasicMaterial color="#4488ff" transparent opacity={gameState.solveSequenceActive ? 0.4 : 0.08} />
 	</T.LineSegments>
 {/if}

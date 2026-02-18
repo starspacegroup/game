@@ -27,6 +27,7 @@
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
 	import { authState } from '$lib/stores/authState.svelte';
+	import type { FragmentData } from '$lib/game/fragments';
 
 	// Get or create a persistent guest ID for anonymous leaderboard entries
 	function getGuestId(): string {
@@ -121,6 +122,44 @@
 	// Render distance for entities - beyond this they're culled (chord distance on sphere)
 	// On a sphere with R=200, chord dist ~100 covers about 29° of arc
 	const RENDER_DISTANCE = 100;
+
+	/** Unlock the next E8 fragment via the secrets API */
+	async function unlockFragment(): Promise<void> {
+		if (!authState.isLoggedIn) {
+			// Guest: no fragment stored, overlay will show login prompt
+			gameState.lastUnlockedFragment = null;
+			return;
+		}
+
+		try {
+			const res = await fetch('/api/secrets/unlock', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					mode: gameState.mode,
+					sessionId: gameState.gameSessionId,
+					solveTimestamp: Date.now(),
+				}),
+			});
+
+			if (res.ok) {
+				const data = await res.json() as {
+					success: boolean;
+					fragment: FragmentData | null;
+					fragmentCount: number;
+					metaSolved: boolean;
+					alreadyComplete?: boolean;
+				};
+				if (data.success) {
+					gameState.lastUnlockedFragment = data.fragment;
+					gameState.fragmentCount = data.fragmentCount;
+				}
+			}
+		} catch {
+			// Non-critical — game continues even if fragment API fails
+			gameState.lastUnlockedFragment = null;
+		}
+	}
 
 	// Initialize the game world on sphere surface
 	resetIdCounter();
@@ -772,6 +811,13 @@
 				gameState.puzzleSolved = true;
 				if (gameState.isAlive) gameState.score += 5000;
 				gameState.addHint('system', '✦ E8 LATTICE COMPLETE — 240 vertices aligned! +5000 points');
+
+				// Trigger solve sequence overlay
+				gameState.solveSequenceActive = true;
+				gameState.solveSequenceProgress = 0;
+
+				// Unlock a fragment via API (async, non-blocking)
+				unlockFragment();
 			}
 		}
 	}
