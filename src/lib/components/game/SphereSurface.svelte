@@ -16,6 +16,8 @@
 	const GRID_SEGMENTS = 64;
 
 	// === Lat/Lon grid lines ===
+	// Clip longitude lines near the poles to avoid visual convergence artifacts
+	const POLE_CLIP_DEG = 78; // don't draw lon lines beyond ±78° latitude
 	function generateLatLonGrid(): Float32Array {
 		const lines: number[] = [];
 		const R = SURFACE_RADIUS + 0.2;
@@ -36,7 +38,9 @@
 			}
 		}
 
-		// Longitude lines every 15 degrees
+		// Longitude lines every 15 degrees — clipped to ±POLE_CLIP_DEG latitude
+		const clipMin = (-POLE_CLIP_DEG * Math.PI) / 180;
+		const clipMax = (POLE_CLIP_DEG * Math.PI) / 180;
 		for (let lonDeg = 0; lonDeg < 360; lonDeg += 15) {
 			const lon = (lonDeg * Math.PI) / 180;
 			const cosLon = Math.cos(lon);
@@ -45,9 +49,14 @@
 			for (let i = 0; i < segments; i++) {
 				const lat1 = ((i / segments) * Math.PI) - Math.PI / 2;
 				const lat2 = (((i + 1) / segments) * Math.PI) - Math.PI / 2;
+				// Skip segments that extend into the polar cap
+				if (lat1 > clipMax || lat2 < clipMin) continue;
+				// Clamp endpoints to the clip boundary
+				const cLat1 = Math.max(lat1, clipMin);
+				const cLat2 = Math.min(lat2, clipMax);
 				lines.push(
-					R * Math.cos(lat1) * sinLon, R * Math.sin(lat1), R * Math.cos(lat1) * cosLon,
-					R * Math.cos(lat2) * sinLon, R * Math.sin(lat2), R * Math.cos(lat2) * cosLon
+					R * Math.cos(cLat1) * sinLon, R * Math.sin(cLat1), R * Math.cos(cLat1) * cosLon,
+					R * Math.cos(cLat2) * sinLon, R * Math.sin(cLat2), R * Math.cos(cLat2) * cosLon
 				);
 			}
 		}

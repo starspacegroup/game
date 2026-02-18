@@ -429,12 +429,11 @@
 				ast.position.lerp(ast._serverTarget, factor);
 				projectToSphere(ast.position);
 			} else {
-				// Solo / no server target yet: drift on sphere surface using tangent frame.
-				// velocity.x = east speed, velocity.y = north speed (matches server convention)
-				const { east, north } = getTangentFrame(ast.position);
-				ast.position.addScaledVector(east, ast.velocity.x * dt);
-				ast.position.addScaledVector(north, ast.velocity.y * dt);
+				// Solo / no server target yet: drift on sphere surface using world-space velocity.
+				ast.position.addScaledVector(ast.velocity, dt);
 				projectToSphere(ast.position);
+				// Re-project velocity to tangent plane to keep it tangent after projection
+				projectToTangent(ast.velocity, ast.position);
 			}
 
 			ast.rotation.x += ast.rotationSpeed.x * dt;

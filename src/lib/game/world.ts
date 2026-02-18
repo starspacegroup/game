@@ -205,8 +205,16 @@ const _ttKCrossT = new THREE.Vector3();
 export function getTangentFrame(position: THREE.Vector3): { normal: THREE.Vector3; east: THREE.Vector3; north: THREE.Vector3; } {
 	_tfNormal.copy(position).normalize();
 
-	if (Math.abs(_tfNormal.y) > 0.99) {
+	// Smooth blend between Y-up and Z-up references near the poles
+	// to avoid a hard discontinuity in the tangent frame
+	const absY = Math.abs(_tfNormal.y);
+	if (absY > 0.999) {
 		_tfRef.set(0, 0, 1);
+	} else if (absY > 0.9) {
+		// Smoothstep blend from Y-up to Z-up between 0.9 and 0.999
+		const t = (absY - 0.9) / (0.999 - 0.9);
+		const smooth = t * t * (3 - 2 * t);
+		_tfRef.set(0, 1 - smooth, smooth).normalize();
 	} else {
 		_tfRef.set(0, 1, 0);
 	}

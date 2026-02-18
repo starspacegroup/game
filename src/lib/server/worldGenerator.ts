@@ -41,6 +41,53 @@ function euler3(x: number, y: number, z: number): Euler3 {
   return { x, y, z };
 }
 
+/** Get tangent frame at a point on the sphere (plain-object math) */
+function getTangentFrame(pos: Vector3): { east: Vector3; north: Vector3; normal: Vector3; } {
+  const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+  const normal = len > 0.001
+    ? { x: pos.x / len, y: pos.y / len, z: pos.z / len }
+    : { x: 0, y: 0, z: 1 };
+
+  // Smooth blend between Y-up and Z-up references near the poles
+  let ux: number, uy: number, uz: number;
+  const absY = Math.abs(normal.y);
+  if (absY > 0.999) {
+    ux = 0; uy = 0; uz = 1;
+  } else if (absY > 0.9) {
+    const t = (absY - 0.9) / (0.999 - 0.9);
+    const smooth = t * t * (3 - 2 * t);
+    ux = 0; uy = 1 - smooth; uz = smooth;
+    const rlen = Math.sqrt(uy * uy + uz * uz);
+    uy /= rlen; uz /= rlen;
+  } else {
+    ux = 0; uy = 1; uz = 0;
+  }
+
+  let ex = uy * normal.z - uz * normal.y;
+  let ey = uz * normal.x - ux * normal.z;
+  let ez = ux * normal.y - uy * normal.x;
+  const elen = Math.sqrt(ex * ex + ey * ey + ez * ez);
+  if (elen > 0) { ex /= elen; ey /= elen; ez /= elen; }
+
+  const nx = normal.y * ez - normal.z * ey;
+  const ny = normal.z * ex - normal.x * ez;
+  const nz = normal.x * ey - normal.y * ex;
+
+  return { east: { x: ex, y: ey, z: ez }, north: { x: nx, y: ny, z: nz }, normal };
+}
+
+/** Generate a world-space tangent velocity at a position on the sphere */
+function randomWorldVelocity(pos: Vector3, maxSpeed: number): Vector3 {
+  const { east, north } = getTangentFrame(pos);
+  const vx = (Math.random() - 0.5) * 2 * maxSpeed;
+  const vy = (Math.random() - 0.5) * 2 * maxSpeed;
+  return {
+    x: east.x * vx + north.x * vy,
+    y: east.y * vx + north.y * vy,
+    z: east.z * vx + north.z * vy
+  };
+}
+
 /** Normalize a plain vector and scale to sphere surface */
 function projectToSphereV(pos: Vector3): Vector3 {
   const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
@@ -95,14 +142,11 @@ export function generateAsteroids(
   const nearCount = Math.min(Math.floor(count * 0.15), 20);
   for (let i = 0; i < nearCount; i++) {
     const radius = 0.5 + Math.random() * 3;
+    const pos = randomSphereNear(playerStart, 10, 60);
     asteroids.push({
       id: genId('ast'),
-      position: randomSphereNear(playerStart, 10, 60),
-      velocity: vec3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        0
-      ),
+      position: pos,
+      velocity: randomWorldVelocity(pos, 1),
       rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
       rotationSpeed: vec3(
         (Math.random() - 0.5) * 2,
@@ -119,14 +163,11 @@ export function generateAsteroids(
   // Rest across the sphere
   for (let i = nearCount; i < count; i++) {
     const radius = 0.5 + Math.random() * 3;
+    const pos = randomSpherePos();
     asteroids.push({
       id: genId('ast'),
-      position: randomSpherePos(),
-      velocity: vec3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        0
-      ),
+      position: pos,
+      velocity: randomWorldVelocity(pos, 1),
       rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
       rotationSpeed: vec3(
         (Math.random() - 0.5) * 2,
@@ -307,14 +348,11 @@ export function createPlayerState(id: string, username: string): import('../shar
  */
 export function respawnAsteroid(_bounds?: WorldBounds): AsteroidState {
   const radius = 0.5 + Math.random() * 3;
+  const pos = randomSpherePos();
   return {
     id: genId('ast'),
-    position: randomSpherePos(),
-    velocity: vec3(
-      (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 2,
-      0
-    ),
+    position: pos,
+    velocity: randomWorldVelocity(pos, 1),
     rotation: euler3(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 0),
     rotationSpeed: vec3(
       (Math.random() - 0.5) * 2,

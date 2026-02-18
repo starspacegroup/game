@@ -4,15 +4,18 @@ import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSphe
 import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from './e8';
 
 /**
- * Generate a random tangent-frame velocity for an entity on the sphere.
- * Returns a Vector3 where x = east speed, y = north speed, z = 0.
- * This matches the server convention used by moveSphere().
+ * Generate a random world-space tangent velocity for an entity on the sphere.
+ * Returns a Vector3 in world space lying in the tangent plane at `position`.
+ * Using world-space avoids tangent-frame discontinuities near the poles.
  */
-function randomTangentVelocity(maxSpeed: number): THREE.Vector3 {
+function randomWorldVelocity(position: THREE.Vector3, maxSpeed: number): THREE.Vector3 {
+	const { east, north } = getTangentFrame(position);
+	const vx = (Math.random() - 0.5) * 2 * maxSpeed;
+	const vy = (Math.random() - 0.5) * 2 * maxSpeed;
 	return new THREE.Vector3(
-		(Math.random() - 0.5) * 2 * maxSpeed,
-		(Math.random() - 0.5) * 2 * maxSpeed,
-		0
+		east.x * vx + north.x * vy,
+		east.y * vx + north.y * vy,
+		east.z * vx + north.z * vy
 	);
 }
 
@@ -40,7 +43,7 @@ export function generateAsteroids(
 		asteroids.push({
 			id: genId('ast'),
 			position: pos,
-			velocity: randomTangentVelocity(1),
+			velocity: randomWorldVelocity(pos, 1),
 			rotation: new THREE.Euler(
 				Math.random() * Math.PI * 2,
 				Math.random() * Math.PI * 2,
@@ -62,10 +65,11 @@ export function generateAsteroids(
 	// Spawn remaining asteroids across the entire sphere
 	for (let i = nearPlayerCount; i < count; i++) {
 		const radius = 0.5 + Math.random() * 3;
+		const pos2 = randomSpherePosition();
 		asteroids.push({
 			id: genId('ast'),
-			position: randomSpherePosition(),
-			velocity: randomTangentVelocity(1),
+			position: pos2,
+			velocity: randomWorldVelocity(pos2, 1),
 			rotation: new THREE.Euler(
 				Math.random() * Math.PI * 2,
 				Math.random() * Math.PI * 2,

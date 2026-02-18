@@ -86,17 +86,24 @@ function angularDistance(a: Vector3, b: Vector3): number {
 }
 
 /** Get tangent frame (east, north, normal) at a position on the sphere.
- *  Uses Y-up reference; switches to Z-up near the Y-axis poles. */
+ *  Uses Y-up reference with smooth blend to Z-up near the Y-axis poles. */
 function getTangentFrame(pos: Vector3): { east: Vector3; north: Vector3; normal: Vector3; } {
   const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
   const normal = len > 0.001
     ? { x: pos.x / len, y: pos.y / len, z: pos.z / len }
     : { x: 0, y: 0, z: 1 };
 
-  // Y-up everywhere; Z-up fallback near Y-poles
+  // Smooth blend between Y-up and Z-up references near the poles
   let ux: number, uy: number, uz: number;
-  if (Math.abs(normal.y) > 0.99) {
+  const absY = Math.abs(normal.y);
+  if (absY > 0.999) {
     ux = 0; uy = 0; uz = 1;
+  } else if (absY > 0.9) {
+    const t = (absY - 0.9) / (0.999 - 0.9);
+    const smooth = t * t * (3 - 2 * t);
+    ux = 0; uy = 1 - smooth; uz = smooth;
+    const rlen = Math.sqrt(uy * uy + uz * uz);
+    uy /= rlen; uz /= rlen;
   } else {
     ux = 0; uy = 1; uz = 0;
   }
@@ -577,8 +584,21 @@ export class GameRoom implements DurableObject {
     for (const asteroid of this.asteroids) {
       if (asteroid.destroyed) continue;
 
-      // Drift on sphere surface using velocity as tangent-plane components
-      moveSphere(asteroid.position, asteroid.velocity.x * deltaTime, asteroid.velocity.y * deltaTime);
+      // Drift on sphere surface using world-space velocity (avoids tangent-frame discontinuity at poles)
+      asteroid.position.x += asteroid.velocity.x * deltaTime;
+      asteroid.position.y += asteroid.velocity.y * deltaTime;
+      asteroid.position.z += asteroid.velocity.z * deltaTime;
+      projectToSphereM(asteroid.position);
+
+      // Re-project velocity into tangent plane to keep it tangent after sphere projection
+      const len = Math.sqrt(asteroid.position.x ** 2 + asteroid.position.y ** 2 + asteroid.position.z ** 2);
+      if (len > 0.001) {
+        const nx = asteroid.position.x / len, ny = asteroid.position.y / len, nz = asteroid.position.z / len;
+        const dot = asteroid.velocity.x * nx + asteroid.velocity.y * ny + asteroid.velocity.z * nz;
+        asteroid.velocity.x -= dot * nx;
+        asteroid.velocity.y -= dot * ny;
+        asteroid.velocity.z -= dot * nz;
+      }
 
       // Update rotation
       asteroid.rotation.x += asteroid.rotationSpeed.x * deltaTime;
@@ -626,9 +646,13 @@ export class GameRoom implements DurableObject {
       // Hostile NPCs chase nearest player
       this.updateHostileNpc(npc, playerArray, deltaTime);
 
-      // Move NPC on sphere surface
-      if (Math.abs(npc.velocity.x) > 0.01 || Math.abs(npc.velocity.y) > 0.01) {
-        moveSphere(npc.position, npc.velocity.x * deltaTime, npc.velocity.y * deltaTime);
+      // Move NPC on sphere surface using world-space velocity (avoids tangent-frame discontinuity at poles)
+      const vMag = Math.sqrt(npc.velocity.x ** 2 + npc.velocity.y ** 2 + npc.velocity.z ** 2);
+      if (vMag > 0.01) {
+        npc.position.x += npc.velocity.x * deltaTime;
+        npc.position.y += npc.velocity.y * deltaTime;
+        npc.position.z += npc.velocity.z * deltaTime;
+        projectToSphereM(npc.position);
       }
 
       // Update shoot cooldown
@@ -726,26 +750,38 @@ export class GameRoom implements DurableObject {
     const dir = sphereDirection(npc.position, nearestPlayer.position);
     const speed = 6;
 
-    // Project direction into tangent plane for movement
-    const frame = getTangentFrame(npc.position);
-    const localDx = dir.dx * frame.east.x + dir.dy * frame.east.y + dir.dz * frame.east.z;
-    const localDy = dir.dx * frame.north.x + dir.dy * frame.north.y + dir.dz * frame.north.z;
-    const localDist = Math.sqrt(localDx * localDx + localDy * localDy);
+    // Use world-space velocity to avoid tangent-frame discontinuity at poles
+    if (dir.dist > 0.01) {
+      // Project direction into tangent plane (remove radial component)
+      const pLen = Math.sqrt(npc.position.x ** 2 + npc.position.y ** 2 + npc.position.z ** 2);
+      const nx = npc.position.x / pLen, ny = npc.position.y / pLen, nz = npc.position.z / pLen;
+      let tdx = dir.dx, tdy = dir.dy, tdz = dir.dz;
+      const radial = tdx * nx + tdy * ny + tdz * nz;
+      tdx -= radial * nx; tdy -= radial * ny; tdz -= radial * nz;
+      const tLen = Math.sqrt(tdx * tdx + tdy * tdy + tdz * tdz);
 
-    if (localDist > 0.01) {
-      if (dir.dist > 2.5) {
-        // Chase
-        npc.velocity.x = (localDx / localDist) * speed;
-        npc.velocity.y = (localDy / localDist) * speed;
-      } else {
-        // Circle tightly when close
-        npc.velocity.x = (-localDy / localDist) * speed * 0.8;
-        npc.velocity.y = (localDx / localDist) * speed * 0.8;
+      if (tLen > 0.001) {
+        const ux = tdx / tLen, uy = tdy / tLen, uz = tdz / tLen;
+
+        if (dir.dist > 2.5) {
+          // Chase: world-space tangent velocity
+          npc.velocity.x = ux * speed;
+          npc.velocity.y = uy * speed;
+          npc.velocity.z = uz * speed;
+        } else {
+          // Circle: perpendicular to chase direction in tangent plane (cross normal with direction)
+          npc.velocity.x = (ny * uz - nz * uy) * speed * 0.8;
+          npc.velocity.y = (nz * ux - nx * uz) * speed * 0.8;
+          npc.velocity.z = (nx * uy - ny * ux) * speed * 0.8;
+        }
+
+        // Face toward player using tangent-frame decomposition (only for rotation)
+        const frame = getTangentFrame(npc.position);
+        const localX = tdx * frame.east.x + tdy * frame.east.y + tdz * frame.east.z;
+        const localY = tdx * frame.north.x + tdy * frame.north.y + tdz * frame.north.z;
+        npc.rotation.z = Math.atan2(localX, -localY);
       }
     }
-
-    // Point towards player (atan2(east, -north) so the cone nose faces target)
-    npc.rotation.z = Math.atan2(localDx, -localDy);
 
     // Shoot at player if in range
     if (nearestDist < 40 && npc.shootCooldown <= 0) {
