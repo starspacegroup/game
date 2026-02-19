@@ -203,7 +203,7 @@
 	let listUpdateTimer = 0;
 
 	const SHOOT_COOLDOWN = 0.15;
-	const LASER_SPEED = 60;
+	const LASER_SPEED = 35;
 	const LASER_LIFE = 2;
 	const NPC_SPEED = 6;
 	const NPC_SHOOT_RATE = 5;

@@ -19,9 +19,9 @@
 	const DEAD_ZONE = 0.1;
 
 	function handleTouchStart(e: TouchEvent): void {
-		// Don't intercept touches on UI overlays (e.g. death screen buttons)
+		// Don't intercept touches on UI overlays (e.g. death screen buttons, quit menu)
 		const target = e.target as HTMLElement;
-		if (target.closest('.death-overlay') || target.closest('.welcome-screen')) return;
+		if (target.closest('.death-overlay') || target.closest('.welcome-screen') || target.closest('.quit-wrapper') || target.closest('.quit-backdrop')) return;
 		e.preventDefault();
 		const screenMid = window.innerWidth / 2;
 
@@ -140,23 +140,6 @@
 		<span class="joystick-label">AIM</span>
 	</div>
 
-	<!-- Interact button -->
-	<button
-		class="action-btn interact"
-		ontouchstart={() => (inputState.interact = true)}
-		ontouchend={() => (inputState.interact = false)}
-	>
-		E
-	</button>
-
-	<!-- Boost button -->
-	<button
-		class="action-btn boost"
-		ontouchstart={() => (inputState.boost = true)}
-		ontouchend={() => (inputState.boost = false)}
-	>
-		BOOST
-	</button>
 </div>
 
 <style>
@@ -233,43 +216,6 @@
 		letter-spacing: 2px;
 	}
 
-	/* Action buttons - minimum touch target 44px */
-	.action-btn {
-		position: fixed;
-		pointer-events: all;
-		width: var(--touch-target-min, 44px);
-		height: var(--touch-target-min, 44px);
-		border-radius: 50%;
-		border: 2px solid rgba(255, 255, 255, 0.25);
-		background: rgba(255, 255, 255, 0.08);
-		color: rgba(255, 255, 255, 0.5);
-		font-family: var(--hud-font, monospace);
-		font-size: 0.6rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.action-btn.interact {
-		right: calc(var(--safe-right, 0px) + 130px);
-		bottom: max(80px, 12vh);
-		border-color: rgba(68, 136, 255, 0.4);
-	}
-
-	.action-btn.boost {
-		right: calc(var(--safe-right, 0px) + 130px);
-		bottom: max(140px, 18vh);
-		border-color: rgba(255, 170, 0, 0.4);
-		font-size: 0.45rem;
-	}
-
-	.action-btn:active {
-		background: rgba(255, 255, 255, 0.2);
-		transform: scale(0.95);
-	}
-
 	/* ===== LARGER PHONES (375px+) ===== */
 	@media (min-width: 375px) {
 		.joystick.left {
@@ -290,18 +236,6 @@
 			height: 40px;
 		}
 
-		.action-btn {
-			width: 46px;
-			height: 46px;
-		}
-
-		.action-btn.interact {
-			right: calc(var(--safe-right, 0px) + 145px);
-		}
-
-		.action-btn.boost {
-			right: calc(var(--safe-right, 0px) + 145px);
-		}
 	}
 
 	/* ===== MEDIUM PHONES (414px+) ===== */
@@ -328,22 +262,6 @@
 			height: 42px;
 		}
 
-		.action-btn {
-			width: 48px;
-			height: 48px;
-			font-size: 0.65rem;
-		}
-
-		.action-btn.interact {
-			right: calc(var(--safe-right, 0px) + 160px);
-			bottom: max(90px, 13vh);
-		}
-
-		.action-btn.boost {
-			right: calc(var(--safe-right, 0px) + 160px);
-			bottom: max(155px, 20vh);
-			font-size: 0.5rem;
-		}
 	}
 
 	/* ===== LARGER PHONES (480px+) / LANDSCAPE ===== */
@@ -374,15 +292,6 @@
 			font-size: 0.55rem;
 		}
 
-		.action-btn.interact {
-			right: calc(var(--safe-right, 0px) + 170px);
-			bottom: max(100px, 14vh);
-		}
-
-		.action-btn.boost {
-			right: calc(var(--safe-right, 0px) + 170px);
-			bottom: max(170px, 22vh);
-		}
 	}
 
 	/* ===== LANDSCAPE MODE ADJUSTMENTS ===== */
@@ -401,17 +310,5 @@
 			height: 32px;
 		}
 
-		.action-btn {
-			width: 40px;
-			height: 40px;
-		}
-
-		.action-btn.interact {
-			bottom: max(50px, 10vh);
-		}
-
-		.action-btn.boost {
-			bottom: max(100px, 18vh);
-		}
 	}
 </style>

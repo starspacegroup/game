@@ -82,11 +82,8 @@
 	<!-- Latest hint display -->
 	{#if gameState.latestHint}
 		<div class="hint-display">
-			<div class="hint-header">
-				<span class="hint-icon">⟁</span>
-				<span>INCOMING DATA</span>
-			</div>
-			<div class="hint-text">{gameState.latestHint}</div>
+			<span class="hint-tag">⟁ DATA</span>
+			<span class="hint-text">{gameState.latestHint}</span>
 		</div>
 	{/if}
 
@@ -284,13 +281,13 @@
 	}
 
 	.quit-btn {
-		width: 28px;
-		height: 28px;
+		width: 40px;
+		height: 40px;
 		background: rgba(0, 8, 24, 0.6);
 		border: 1px solid rgba(255, 255, 255, 0.15);
 		border-radius: 6px;
 		color: #8899aa;
-		font-size: 0.85rem;
+		font-size: 1rem;
 		cursor: pointer;
 		pointer-events: all;
 		display: flex;
@@ -298,6 +295,8 @@
 		justify-content: center;
 		transition: all 0.15s ease;
 		flex-shrink: 0;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
 	}
 
 	.quit-btn:hover {
@@ -352,14 +351,16 @@
 
 	.quit-confirm,
 	.quit-cancel {
-		padding: 8px 24px;
+		padding: 10px 28px;
 		border-radius: 6px;
 		font-family: 'Courier New', monospace;
-		font-size: 0.8rem;
+		font-size: 0.85rem;
 		letter-spacing: 1px;
 		cursor: pointer;
 		border: 1px solid;
 		transition: all 0.15s ease;
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
 	}
 
 	.quit-confirm {
@@ -382,47 +383,46 @@
 		background: rgba(68, 136, 255, 0.2);
 	}
 
-	/* Hint display */
+	/* Hint display — compact top banner, mobile-first */
 	.hint-display {
 		position: fixed;
-		bottom: calc(var(--safe-bottom, 0px) + 50px);
+		top: calc(var(--safe-top, 0px) + 44px);
 		left: 50%;
 		transform: translateX(-50%);
-		background: rgba(0, 20, 40, 0.9);
-		border: 1px solid rgba(0, 255, 204, 0.5);
-		border-radius: 8px;
-		padding: 8px 16px;
-		max-width: 90%;
+		background: rgba(0, 16, 32, 0.75);
+		border: 1px solid rgba(0, 255, 204, 0.3);
+		border-radius: 6px;
+		padding: 3px 10px;
+		max-width: min(88vw, 360px);
 		width: auto;
-		min-width: 200px;
-		animation: hint-appear 0.3s ease-out;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		animation: hint-slide-in 0.25s ease-out;
 		backdrop-filter: blur(4px);
+		white-space: nowrap;
+		overflow: hidden;
+		pointer-events: none;
+		opacity: 0.85;
 	}
 
-	@keyframes hint-appear {
+	@keyframes hint-slide-in {
 		from {
 			opacity: 0;
-			transform: translateX(-50%) translateY(20px);
+			transform: translateX(-50%) translateY(-8px);
 		}
 		to {
-			opacity: 1;
+			opacity: 0.85;
 			transform: translateX(-50%) translateY(0);
 		}
 	}
 
-	.hint-header {
-		display: flex;
-		align-items: center;
-		gap: 6px;
+	.hint-tag {
 		color: #00ffcc;
-		font-size: var(--font-xs, 0.6rem);
-		letter-spacing: 2px;
-		margin-bottom: 4px;
-	}
-
-	.hint-icon {
-		font-size: var(--font-sm, 0.8rem);
-		animation: pulse-hint 1s ease-in-out infinite;
+		font-size: 0.5rem;
+		letter-spacing: 1px;
+		flex-shrink: 0;
+		animation: pulse-hint 1.5s ease-in-out infinite;
 	}
 
 	@keyframes pulse-hint {
@@ -432,24 +432,27 @@
 
 	.hint-text {
 		color: #aaddff;
-		font-size: var(--font-sm, 0.75rem);
-		line-height: 1.4;
+		font-size: 0.55rem;
+		line-height: 1.2;
 		text-shadow: 0 0 4px rgba(170, 221, 255, 0.3);
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	@media (min-width: 768px) {
 		.hint-display {
-			bottom: 60px;
-			max-width: 400px;
-			padding: 10px 20px;
+			top: calc(var(--safe-top, 0px) + 52px);
+			max-width: 420px;
+			padding: 4px 14px;
+			opacity: 0.9;
 		}
 
-		.hint-header {
-			font-size: 0.65rem;
+		.hint-tag {
+			font-size: 0.55rem;
 		}
 
 		.hint-text {
-			font-size: 0.85rem;
+			font-size: 0.65rem;
 		}
 	}
 
