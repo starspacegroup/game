@@ -49,6 +49,12 @@ export class GameLobby implements DurableObject {
   /** Max archived rooms to keep */
   private static readonly MAX_ARCHIVED = 50;
 
+  /** Recently deleted room IDs — prevents stale upserts from re-adding them */
+  private recentlyDeleted: Map<string, number> = new Map();
+
+  /** How long to keep tombstones for deleted rooms (ms) */
+  private static readonly TOMBSTONE_TTL = 300_000; // 5 minutes
+
   /** Active admin detail subscriptions: roomId -> alarm interval handle */
   private adminDetailInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -65,7 +71,7 @@ export class GameLobby implements DurableObject {
     this.state = state;
     this.env = env;
 
-    // Restore persisted room list
+    // Restore persisted room list and tombstones
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<LobbyRoomInfo[]>('rooms');
       if (stored) {
@@ -77,6 +83,17 @@ export class GameLobby implements DurableObject {
       if (storedArchived) {
         for (const room of storedArchived) {
           this.archivedRooms.set(room.id, room);
+        }
+      }
+      // Restore tombstones so they survive hibernation
+      const storedTombstones = await this.state.storage.get<Array<[string, number]>>('tombstones');
+      if (storedTombstones) {
+        const now = Date.now();
+        for (const [id, ts] of storedTombstones) {
+          // Only restore tombstones that haven't expired
+          if (now - ts < GameLobby.TOMBSTONE_TTL) {
+            this.recentlyDeleted.set(id, ts);
+          }
         }
       }
     });
@@ -106,8 +123,8 @@ export class GameLobby implements DurableObject {
             fetchedAt: Date.now()
           }));
         } else {
-          // Regular lobby client: only public rooms
-          const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate);
+          // Regular lobby client: only public rooms with active players
+          const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate && r.playerCount > 0);
           server.send(JSON.stringify({
             type: 'rooms',
             rooms: publicRooms
@@ -136,13 +153,31 @@ export class GameLobby implements DurableObject {
         archivedRoom?: ArchivedRoomInfo;
       };
 
+      // Clean up expired tombstones
+      const now = Date.now();
+      for (const [id, ts] of this.recentlyDeleted) {
+        if (now - ts > GameLobby.TOMBSTONE_TTL) this.recentlyDeleted.delete(id);
+      }
+
       if (body.action === 'upsert' && body.room) {
-        this.rooms.set(body.room.id, body.room);
+        // Ignore upserts for recently deleted rooms (stale fire-and-forget notifications)
+        if (this.recentlyDeleted.has(body.room.id)) {
+          // Stale upsert — ignore
+        } else if (body.room.playerCount <= 0 || body.room.phase === 'ended') {
+          // Auto-delete rooms with no players or ended phase
+          this.rooms.delete(body.room.id);
+        } else {
+          this.rooms.set(body.room.id, body.room);
+        }
       } else if (body.action === 'delete' && body.roomId) {
         this.rooms.delete(body.roomId);
+        // Add tombstone to prevent stale upserts from re-adding this room
+        this.recentlyDeleted.set(body.roomId, now);
+        await this.persistTombstones();
       } else if (body.action === 'archive' && body.archivedRoom) {
         // Remove from active rooms, add to archived
         this.rooms.delete(body.archivedRoom.id);
+        this.recentlyDeleted.set(body.archivedRoom.id, now);
         this.archivedRooms.set(body.archivedRoom.id, body.archivedRoom);
 
         // Trim old archived rooms if over limit
@@ -156,6 +191,7 @@ export class GameLobby implements DurableObject {
         }
 
         await this.persistArchivedRooms();
+        await this.persistTombstones();
       }
 
       // Persist and broadcast
@@ -247,8 +283,8 @@ export class GameLobby implements DurableObject {
   // ── Helpers ──
 
   private broadcastRooms(): void {
-    // Broadcast public rooms to lobby clients
-    const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate);
+    // Broadcast public rooms with active players to lobby clients
+    const publicRooms = Array.from(this.rooms.values()).filter(r => !r.isPrivate && r.playerCount > 0);
     const lobbyPayload = JSON.stringify({
       type: 'rooms',
       rooms: publicRooms
@@ -298,6 +334,10 @@ export class GameLobby implements DurableObject {
 
   private async persistArchivedRooms(): Promise<void> {
     await this.state.storage.put('archivedRooms', Array.from(this.archivedRooms.values()));
+  }
+
+  private async persistTombstones(): Promise<void> {
+    await this.state.storage.put('tombstones', Array.from(this.recentlyDeleted.entries()));
   }
 
   // ── Admin real-time detail helpers ──

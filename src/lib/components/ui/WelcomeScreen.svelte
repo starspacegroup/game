@@ -12,7 +12,7 @@
 		resetIdCounter
 	} from '$lib/game/procedural';
 	import { connectToServer, disconnect, sendSetPrivacy, sendStartGame } from '$lib/stores/socketClient';
-	import { connectLobby, disconnectLobby, lobbyState, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
+	import { connectLobby, disconnectLobby, lobbyState, removeRoomFromLobby, reconnectLobby, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
@@ -279,7 +279,10 @@
 		}
 	}
 
-	async function deleteRoom(roomId: string): Promise<void> {
+	async function deleteRoom(roomId: string, event?: MouseEvent): Promise<void> {
+		event?.stopPropagation();
+		event?.preventDefault();
+
 		if (!confirm('Delete this room? All players will be disconnected.')) return;
 
 		deletingRoomId = roomId;
@@ -292,12 +295,20 @@
 					userId: authState.userId
 				})
 			});
-			const data = await response.json() as { success?: boolean; error?: string };
-			if (!data.success) {
-				console.error('Failed to delete room:', data.error);
+			if (!response.ok) {
+				const data = await response.json() as { error?: string };
+				console.error('Delete room failed:', response.status, data.error);
+				alert(`Failed to delete room: ${data.error || response.statusText}`);
+				return;
 			}
-		} catch {
-			console.error('Failed to delete room');
+			// Success — force-remove from lobby state immediately so UI updates
+			// even if the lobby WebSocket notification is delayed
+			removeRoomFromLobby(roomId);
+			// Force-reconnect lobby to verify server-side deletion propagated
+			reconnectLobby();
+		} catch (err) {
+			console.error('Failed to delete room:', err);
+			alert('Failed to delete room — network error');
 		} finally {
 			deletingRoomId = null;
 		}
@@ -449,12 +460,12 @@
 												{/if}
 											</span>
 										</button>
-										{#if authState.isSuperAdmin}
+										{#if authState.isSuperAdmin || room.createdBy === authState.username}
 											<button
 												class="room-delete-btn"
-												onclick={() => deleteRoom(room.id)}
+												onclick={(e) => deleteRoom(room.id, e)}
 												disabled={deletingRoomId === room.id}
-												title="Delete room (admin)"
+												title="Delete room"
 											>
 												{deletingRoomId === room.id ? '...' : 'X'}
 											</button>

@@ -251,8 +251,8 @@ export class GameRoom implements DurableObject {
       if (roomEnded) {
         this.roomEnded = true;
         // Room was ended before DO hibernated — clean up on restore
-        this.notifyLobbyDelete();
-        this.state.storage.deleteAll();
+        await this.notifyLobbyDelete();
+        await this.state.storage.deleteAll();
       }
     });
   }
@@ -267,12 +267,19 @@ export class GameRoom implements DurableObject {
 
     // HTTP endpoints for debugging/status
     if (url.pathname === '/status') {
+      // Use sessions.size for actual connected players (not stored players
+      // who may have disconnected but whose state is kept for rejoin)
+      const connectedCount = this.sessions.size;
+      // In lobby phase, also count lobby players if sessions haven't sent 'join' yet
+      const playerCount = this.phase === 'lobby'
+        ? Math.max(connectedCount, this.lobbyPlayers.size)
+        : connectedCount;
       return Response.json({
         roomCode: this.roomCode,
-        phase: this.phase,
+        phase: this.roomEnded ? 'ended' : this.phase,
         isPrivate: this.isPrivate,
         hostId: this.hostId,
-        playerCount: this.phase === 'lobby' ? this.lobbyPlayers.size : this.players.size,
+        playerCount,
         tick: this.tick,
         players: this.phase === 'lobby'
           ? Array.from(this.lobbyPlayers.values()).map(p => ({
@@ -387,6 +394,7 @@ export class GameRoom implements DurableObject {
     // Admin: terminate room and disconnect all players
     if (url.pathname === '/terminate' && request.method === 'POST') {
       this.stopGameLoop();
+      this.roomEnded = true;
 
       for (const ws of this.state.getWebSockets()) {
         try {
@@ -397,6 +405,9 @@ export class GameRoom implements DurableObject {
       }
       this.sessions.clear();
       this.players.clear();
+
+      // Notify lobby to remove this room
+      await this.notifyLobbyDelete();
 
       await this.state.storage.deleteAll();
 
@@ -1011,30 +1022,24 @@ export class GameRoom implements DurableObject {
       this.logEvent('player-left', session.username, `left the game`);
 
       if (this.sessions.size === 0) {
-        // No players remain — end the room properly
+        // No players remain — fully clean up the room
         this.stopGameLoop();
 
         if (!this.roomEnded) {
-          // Check if all players were dead (game over but endRoom hadn't fired yet)
-          const anyAlive = Array.from(this.players.values()).some(p => p.health > 0);
-          if (!anyAlive && this.players.size > 0 && this.phase === 'playing') {
-            // End the room (which archives it in the lobby)
-            this.endRoom('All players eliminated');
+          if (this.phase === 'playing' && this.players.size > 0) {
+            // Game was in progress — archive it (stores final stats in lobby)
+            await this.endRoom('All players left');
           } else {
-            // Players left voluntarily — just delete from lobby
-            this.saveState();
-            this.notifyLobbyDelete();
+            // Still in lobby phase or no players ever joined — just delete
+            await this.notifyLobbyDelete();
           }
-        } else {
-          // Room already ended — ensure lobby knows (archive may have failed earlier)
-          const duration = this.roomStartTime > 0
-            ? Math.round((Date.now() - this.roomStartTime) / 1000)
-            : 0;
-          const playerList = Array.from(this.players.values()).map(p => ({
-            id: p.id, username: p.username, score: p.score
-          }));
-          this.notifyLobbyArchive(duration, playerList);
         }
+
+        // Clear all persisted state so the DO can be garbage-collected
+        // and won't resurrect as a stale room on next wake-up
+        this.state.storage.deleteAll();
+        this.players.clear();
+        this.lobbyPlayers.clear();
       } else if (!this.roomEnded) {
         // Still players remaining — notify lobby of updated count
         this.notifyLobby();
@@ -1737,7 +1742,7 @@ export class GameRoom implements DurableObject {
    * and final stats to all connected clients. The room stays alive so
    * clients can review the log at their leisure.
    */
-  private endRoom(reason: string): void {
+  private async endRoom(reason: string): Promise<void> {
     if (this.roomEnded) return;
     this.roomEnded = true;
     this.stopGameLoop();
@@ -1768,7 +1773,7 @@ export class GameRoom implements DurableObject {
     this.broadcast(msg);
 
     // Archive the room in the lobby (instead of deleting)
-    this.notifyLobbyArchive(duration, playerList);
+    await this.notifyLobbyArchive(duration, playerList);
 
     // Persist ended flag so restoration doesn't revive the room
     this.state.storage.put('roomEnded', true);
@@ -1834,8 +1839,9 @@ export class GameRoom implements DurableObject {
 
   /**
    * Notify the GameLobby Durable Object to delete this room.
+   * Returns a promise so callers can await when cleanup ordering matters.
    */
-  private notifyLobbyDelete(): void {
+  private async notifyLobbyDelete(): Promise<void> {
     const lobbyBinding = this.env.GAME_LOBBY as DurableObjectNamespace | undefined;
     if (!lobbyBinding) return;
 
@@ -1843,7 +1849,7 @@ export class GameRoom implements DurableObject {
       const lobbyId = lobbyBinding.idFromName('global');
       const lobby = lobbyBinding.get(lobbyId);
 
-      lobby.fetch(new Request('https://internal/room-update', {
+      await lobby.fetch(new Request('https://internal/room-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', roomId: this.roomCode })
@@ -1855,11 +1861,12 @@ export class GameRoom implements DurableObject {
 
   /**
    * Notify the GameLobby to archive this room (move from active to past games).
+   * Returns a promise so callers can await when cleanup ordering matters.
    */
-  private notifyLobbyArchive(
+  private async notifyLobbyArchive(
     duration: number,
     playerList: Array<{ id: string; username: string; score: number; }>
-  ): void {
+  ): Promise<void> {
     const lobbyBinding = this.env.GAME_LOBBY as DurableObjectNamespace | undefined;
     if (!lobbyBinding) return;
 
@@ -1867,7 +1874,7 @@ export class GameRoom implements DurableObject {
       const lobbyId = lobbyBinding.idFromName('global');
       const lobby = lobbyBinding.get(lobbyId);
 
-      lobby.fetch(new Request('https://internal/room-update', {
+      await lobby.fetch(new Request('https://internal/room-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

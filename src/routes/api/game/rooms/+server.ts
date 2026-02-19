@@ -56,6 +56,13 @@ export const GET: RequestHandler = async ({ platform }) => {
         const isPrivate = status.isPrivate ?? roomData.isPrivate ?? false;
         const phase = (status.phase as RoomInfo['phase']) ?? roomData.phase ?? 'playing';
 
+        // Rooms that have ended should be cleaned up
+        if (phase === 'ended') {
+          await platform.env.GAME_DATA.delete(key.name);
+          notifyLobbyDelete(platform, roomData.id);
+          continue;
+        }
+
         // Only include rooms with players or recently created (within 5 minutes)
         const isRecent = Date.now() - roomData.createdAt < 5 * 60 * 1000;
         if (status.playerCount > 0 || isRecent) {
@@ -146,7 +153,7 @@ export const POST: RequestHandler = async ({ platform, request }) => {
   }
 };
 
-// DELETE: Delete a game room (super admin only)
+// DELETE: Delete a game room (super admin or room creator)
 export const DELETE: RequestHandler = async ({ platform, request }) => {
   if (!platform?.env?.GAME_DATA || !platform?.env?.GAME_ROOM) {
     return json({ error: 'Server not configured for multiplayer' }, { status: 503 });
@@ -160,25 +167,34 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
       return json({ error: 'Missing roomId or userId' }, { status: 400 });
     }
 
-    // Server-side super admin check
-    if (!adminIds.includes(userId)) {
-      return json({ error: 'Unauthorized' }, { status: 403 });
+    // Allow super admins OR the room creator to delete
+    const isSuperAdmin = adminIds.includes(userId);
+    let isCreator = false;
+    if (!isSuperAdmin) {
+      // Check if the user created this room
+      const roomData = await platform.env.GAME_DATA.get(`room:${roomId}`, 'json') as RoomInfo | null;
+      isCreator = !!roomData && roomData.createdById === userId;
+    }
+    if (!isSuperAdmin && !isCreator) {
+      return json({ error: 'Unauthorized — only the room creator or an admin can delete this room' }, { status: 403 });
     }
 
-    // Delete the KV entry
-    await platform.env.GAME_DATA.delete(`room:${roomId}`);
-
-    // Notify lobby of removal
-    notifyLobbyDelete(platform, roomId);
-
-    // Notify the Durable Object to terminate (best-effort)
+    // 1. Terminate the Durable Object FIRST — this stops the game loop and
+    //    prevents any further lobby upserts from the room's tick or handlers.
     try {
       const id = platform.env.GAME_ROOM.idFromName(roomId);
       const room = platform.env.GAME_ROOM.get(id);
       await room.fetch(new Request('https://internal/terminate', { method: 'POST' }));
     } catch {
-      // Room might already be inactive
+      // Room might already be inactive — continue with cleanup
     }
+
+    // 2. Delete the KV entry
+    await platform.env.GAME_DATA.delete(`room:${roomId}`);
+
+    // 3. Notify lobby of removal LAST — this is the final authority, ensuring
+    //    any stale upserts from the DO terminate are overridden.
+    await notifyLobbyDeleteAsync(platform, roomId);
 
     return json({ success: true });
   } catch (error) {
@@ -212,5 +228,19 @@ function notifyLobbyDelete(platform: App.Platform, roomId: string): void {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', roomId })
     })).catch(() => { /* best-effort */ });
+  } catch { /* lobby unavailable */ }
+}
+
+/** Awaitable version of notifyLobbyDelete for critical paths (e.g. admin delete) */
+async function notifyLobbyDeleteAsync(platform: App.Platform, roomId: string): Promise<void> {
+  if (!platform.env?.GAME_LOBBY) return;
+  try {
+    const id = platform.env.GAME_LOBBY.idFromName('global');
+    const lobby = platform.env.GAME_LOBBY.get(id);
+    await lobby.fetch(new Request('https://internal/room-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', roomId })
+    }));
   } catch { /* lobby unavailable */ }
 }
