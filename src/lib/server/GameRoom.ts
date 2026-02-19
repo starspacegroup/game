@@ -418,6 +418,25 @@ export class GameRoom implements DurableObject {
   }
 
   private handleWebSocket(request: Request, url: URL): Response {
+    // Reject connections to ended/terminated rooms
+    if (this.roomEnded) {
+      const pair = new WebSocketPair();
+      const [client, server] = [pair[0], pair[1]];
+      this.state.acceptWebSocket(server);
+      // Send error and close immediately so the client gets feedback
+      try {
+        server.send(JSON.stringify({
+          type: 'error',
+          code: 'room-ended',
+          message: 'This room has ended and is no longer available.'
+        }));
+        server.close(4004, 'room-ended');
+      } catch {
+        // Already closed
+      }
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     // Check max players
     if (this.sessions.size >= MAX_PLAYERS) {
       return new Response('Room is full', { status: 503 });
@@ -1052,6 +1071,17 @@ export class GameRoom implements DurableObject {
   }
 
   private async handleMessage(ws: WebSocket, data: ClientMessage): Promise<void> {
+    // Reject all messages if room has ended
+    if (this.roomEnded) {
+      this.send(ws, {
+        type: 'error',
+        code: 'room-ended',
+        message: 'This room has ended and is no longer available.'
+      });
+      try { ws.close(4004, 'room-ended'); } catch { /* already closed */ }
+      return;
+    }
+
     switch (data.type) {
       case 'join': {
         const playerId = data.id;

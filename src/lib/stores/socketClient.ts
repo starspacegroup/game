@@ -189,10 +189,24 @@ export function connectToServer(room: string = 'default'): void {
         return;
       }
 
+      // Room ended — already handled by the 'error' message handler
+      if (event.code === 4004 || event.reason === 'room-ended') {
+        currentRoomCode = null;
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        return;
+      }
+
       // Don't attempt to reconnect if the user has already left the game
+      // or is still in the lobby (lobby connections are manually initiated)
       if (gameState.phase !== 'playing') {
         currentRoomCode = null;
         reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        // If user was in lobby and got disconnected, return to welcome
+        if (gameState.phase === 'lobby') {
+          gameState.lobbyState = null;
+          gameState.phase = 'welcome';
+          gameState.mode = 'solo';
+        }
         return;
       }
 
@@ -379,6 +393,16 @@ function handleMessage(data: ServerMessage): void {
 
     case 'error': {
       console.error(`[Starspace] Server error: ${data.code} - ${data.message}`);
+
+      // Room ended/invalid — kick the user back to the welcome screen
+      if (data.code === 'room-ended' || data.code === 'room-not-found') {
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        currentRoomCode = null;
+        stopInputLoop();
+        gameState.lobbyState = null;
+        gameState.phase = 'welcome';
+        gameState.mode = 'solo';
+      }
       break;
     }
 

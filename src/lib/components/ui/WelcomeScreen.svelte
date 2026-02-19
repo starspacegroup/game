@@ -27,6 +27,8 @@
 	let creatingRoom = $state(false);
 	let linkCopied = $state(false);
 	let topScores = $state<LeaderboardEntry[]>([]);
+	let lobbyJoinError = $state<string | null>(null);
+	let lobbyJoinTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
 
 
@@ -146,6 +148,15 @@
 		}
 	});
 
+	// Clear lobby join timeout when we successfully get lobby state
+	$effect(() => {
+		if (gameState.lobbyState && lobbyJoinTimeout) {
+			clearTimeout(lobbyJoinTimeout);
+			lobbyJoinTimeout = null;
+			lobbyJoinError = null;
+		}
+	});
+
 	async function createMultiplayerRoom(): Promise<void> {
 		creatingRoom = true;
 		try {
@@ -172,6 +183,13 @@
 	}
 
 	function enterLobby(roomId: string): void {
+		if (!roomId) {
+			lobbyJoinError = 'Invalid room link.';
+			return;
+		}
+
+		lobbyJoinError = null;
+
 		// Disconnect any existing connection
 		disconnect();
 
@@ -187,22 +205,41 @@
 
 		// Connect to the room's WebSocket (join message will be sent automatically)
 		connectToServer(roomId);
+
+		// Clear any existing timeout
+		if (lobbyJoinTimeout) clearTimeout(lobbyJoinTimeout);
+
+		// Set a timeout — if we don't get lobby-state or welcome within 8 seconds,
+		// something is wrong (room gone, server down, etc.)
+		lobbyJoinTimeout = setTimeout(() => {
+			if (gameState.phase === 'lobby' && !gameState.lobbyState) {
+				// Never received lobby state — room is likely gone
+				disconnect();
+				gameState.phase = 'welcome';
+				gameState.mode = 'solo';
+				lobbyJoinError = 'Could not connect to room. It may have ended or been deleted.';
+			}
+			lobbyJoinTimeout = null;
+		}, 8000);
 	}
 
 	function getInviteLink(): string {
 		const roomCode = gameState.lobbyState?.roomCode || '';
+		if (!roomCode) return '';
 		return `${window.location.origin}?join=${encodeURIComponent(roomCode)}`;
 	}
 
 	async function copyInviteLink(): Promise<void> {
+		const link = getInviteLink();
+		if (!link) return;
 		try {
-			await navigator.clipboard.writeText(getInviteLink());
+			await navigator.clipboard.writeText(link);
 			linkCopied = true;
 			setTimeout(() => { linkCopied = false; }, 2000);
 		} catch {
 			// Fallback: select text from a temporary input
 			const input = document.createElement('input');
-			input.value = getInviteLink();
+			input.value = link;
 			document.body.appendChild(input);
 			input.select();
 			document.execCommand('copy');
@@ -222,6 +259,11 @@
 	}
 
 	function leaveLobby(): void {
+		if (lobbyJoinTimeout) {
+			clearTimeout(lobbyJoinTimeout);
+			lobbyJoinTimeout = null;
+		}
+		lobbyJoinError = null;
 		disconnect();
 		gameState.lobbyState = null;
 		gameState.phase = 'welcome';
@@ -358,22 +400,31 @@
 				{/if}
 
 				<!-- Invite link -->
-				<div class="invite-section">
-					<label class="invite-label" for="invite-link-input">INVITE LINK</label>
-					<div class="invite-row">
-						<input
-							id="invite-link-input"
-							type="text"
-							class="invite-input"
-							value={getInviteLink()}
-							readonly
-							onclick={(e) => (e.target as HTMLInputElement).select()}
-						/>
-						<button class="copy-btn" onclick={copyInviteLink}>
-							{linkCopied ? '✓ COPIED' : 'COPY'}
-						</button>
+				{#if getInviteLink()}
+					<div class="invite-section">
+						<label class="invite-label" for="invite-link-input">INVITE LINK</label>
+						<div class="invite-row">
+							<input
+								id="invite-link-input"
+								type="text"
+								class="invite-input"
+								value={getInviteLink()}
+								readonly
+								onclick={(e) => (e.target as HTMLInputElement).select()}
+							/>
+							<button class="copy-btn" onclick={copyInviteLink}>
+								{linkCopied ? '✓ COPIED' : 'COPY'}
+							</button>
+						</div>
 					</div>
-				</div>
+				{:else}
+					<div class="invite-section">
+						<span class="invite-label">INVITE LINK</span>
+						<div class="invite-row">
+							<span class="invite-input invite-loading">Generating link...</span>
+						</div>
+					</div>
+				{/if}
 
 				<!-- Player list -->
 				<div class="lobby-players">
@@ -481,6 +532,9 @@
 					</div>
 
 				<div class="game-modes">
+					{#if lobbyJoinError}
+						<div class="lobby-error">{lobbyJoinError}</div>
+					{/if}
 					<button class="start-btn multiplayer-btn" onclick={createMultiplayerRoom} disabled={creatingRoom}>
 						{creatingRoom ? 'CREATING...' : 'CREATE NEW MULTIPLAYER ROOM'}
 					</button>
@@ -907,90 +961,6 @@
 		padding: var(--spacing-sm, 8px) 0;
 	}
 
-	/* ===== PAST GAMES SECTION ===== */
-	.past-games-section {
-		margin-top: var(--spacing-lg, 16px);
-		border-top: 1px solid rgba(68, 136, 255, 0.15);
-		padding-top: var(--spacing-md, 12px);
-	}
-
-	.past-games-header {
-		color: #8899aa;
-	}
-
-	.past-game-card {
-		font-family: var(--hud-font, monospace);
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 6px;
-		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-		text-align: left;
-	}
-
-	.past-game-top {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 4px;
-	}
-
-	.past-game-name {
-		color: #aabbcc;
-		font-size: var(--font-sm, 0.875rem);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.past-game-ago {
-		color: #556677;
-		font-size: var(--font-xs, 0.75rem);
-		flex-shrink: 0;
-		margin-left: var(--spacing-sm, 8px);
-	}
-
-	.past-game-stats {
-		display: flex;
-		gap: var(--spacing-sm, 8px);
-		margin-bottom: 4px;
-		flex-wrap: wrap;
-	}
-
-	.past-game-stat {
-		color: #667788;
-		font-size: var(--font-xs, 0.75rem);
-	}
-
-	.past-game-players {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.past-game-player {
-		display: flex;
-		gap: var(--spacing-xs, 4px);
-		align-items: center;
-		font-size: var(--font-xs, 0.75rem);
-	}
-
-	.past-game-rank {
-		color: #556677;
-		min-width: 20px;
-	}
-
-	.past-game-player-name {
-		color: #8899aa;
-		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.past-game-player-score {
-		color: #00ff88;
-	}
-
 	.live-dot {
 		display: inline-block;
 		width: 6px;
@@ -1412,6 +1382,26 @@
 
 	.invite-input:focus {
 		border-color: rgba(68, 136, 255, 0.6);
+	}
+
+	.invite-loading {
+		display: flex;
+		align-items: center;
+		color: #5566aa;
+		font-style: italic;
+		cursor: default;
+	}
+
+	.lobby-error {
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-xs, 0.75rem);
+		color: #ff5555;
+		background: rgba(255, 60, 60, 0.1);
+		border: 1px solid rgba(255, 60, 60, 0.3);
+		border-radius: 6px;
+		padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+		text-align: center;
+		margin-bottom: var(--spacing-sm, 8px);
 	}
 
 	.copy-btn {

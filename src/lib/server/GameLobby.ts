@@ -163,11 +163,25 @@ export class GameLobby implements DurableObject {
         // Ignore upserts for recently deleted rooms (stale fire-and-forget notifications)
         if (this.recentlyDeleted.has(body.room.id)) {
           // Stale upsert — ignore
-        } else if (body.room.playerCount <= 0 || body.room.phase === 'ended') {
-          // Auto-delete rooms with no players or ended phase
+        } else if (body.room.phase === 'ended') {
+          // Auto-remove rooms in ended phase
+          this.rooms.delete(body.room.id);
+        } else if (body.room.playerCount <= 0 && body.room.phase !== 'lobby') {
+          // Auto-remove non-lobby rooms with no players
+          // (lobby-phase rooms with 0 players are normal — host hasn't connected yet)
           this.rooms.delete(body.room.id);
         } else {
-          this.rooms.set(body.room.id, body.room);
+          // Merge with existing data to preserve fields the DO doesn't track
+          // (like createdAt, createdBy, name) while taking authoritative
+          // values (playerCount, isPrivate, phase, wave, puzzleProgress) from the update.
+          const existing = this.rooms.get(body.room.id);
+          const merged: LobbyRoomInfo = {
+            ...body.room,
+            name: body.room.name || existing?.name || body.room.id,
+            createdAt: body.room.createdAt || existing?.createdAt || Date.now(),
+            createdBy: body.room.createdBy || existing?.createdBy || '',
+          };
+          this.rooms.set(body.room.id, merged);
         }
       } else if (body.action === 'delete' && body.roomId) {
         this.rooms.delete(body.roomId);
