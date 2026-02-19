@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { world, SPHERE_RADIUS } from '$lib/game/world';
+	import { world, SPHERE_RADIUS, getTangentFrame } from '$lib/game/world';
 	import { toSpherical } from '$lib/game/chunk';
 
 	let canvas: HTMLCanvasElement;
@@ -19,6 +19,27 @@
 
 			const { lat, lon } = toSpherical(world.player.position);
 
+			// Compute heading angle: angle between geographic north and playerUp
+			// so the minimap rotates to match the player's orientation
+			const frame = getTangentFrame(world.player.position);
+			const eastDot = world.playerUp.dot(frame.east);
+			const northDot = world.playerUp.dot(frame.north);
+			const heading = Math.atan2(eastDot, northDot);
+			const cosH = Math.cos(-heading);
+			const sinH = Math.sin(-heading);
+
+			// Helper: orthographic project + rotate by heading
+			function project(eLat: number, eLon: number): { px: number; py: number; visible: boolean } {
+				const ox = Math.cos(eLat) * Math.sin(eLon - lon);
+				const oy = Math.sin(eLat) * Math.cos(lat) - Math.cos(eLat) * Math.sin(lat) * Math.cos(eLon - lon);
+				const oz = Math.sin(eLat) * Math.sin(lat) + Math.cos(eLat) * Math.cos(lat) * Math.cos(eLon - lon);
+				if (oz < 0) return { px: 0, py: 0, visible: false };
+				// Rotate by heading so "up" matches player facing
+				const rx = ox * cosH - oy * sinH;
+				const ry = ox * sinH + oy * cosH;
+				return { px: HALF + rx * GLOBE_R, py: HALF - ry * GLOBE_R, visible: true };
+			}
+
 			// Draw globe outline
 			ctx.strokeStyle = 'rgba(68, 136, 255, 0.3)';
 			ctx.lineWidth = 1;
@@ -26,7 +47,7 @@
 			ctx.arc(HALF, HALF, GLOBE_R, 0, Math.PI * 2);
 			ctx.stroke();
 
-			// Draw lat/lon grid on orthographic projection from player's perspective
+			// Draw lat/lon grid on orthographic projection
 			ctx.strokeStyle = 'rgba(68, 136, 255, 0.1)';
 			ctx.lineWidth = 0.5;
 
@@ -37,15 +58,10 @@
 				let first = true;
 				for (let latDeg = -90; latDeg <= 90; latDeg += 3) {
 					const latRad = (latDeg * Math.PI) / 180;
-					// Orthographic projection centered on player
-					const x = Math.cos(latRad) * Math.sin(lonRad - lon);
-					const y = Math.sin(latRad) * Math.cos(lat) - Math.cos(latRad) * Math.sin(lat) * Math.cos(lonRad - lon);
-					const z = Math.sin(latRad) * Math.sin(lat) + Math.cos(latRad) * Math.cos(lat) * Math.cos(lonRad - lon);
-					if (z < 0) { first = true; continue; }
-					const px = HALF + x * GLOBE_R;
-					const py = HALF - y * GLOBE_R;
-					if (first) { ctx.moveTo(px, py); first = false; }
-					else ctx.lineTo(px, py);
+					const p = project(latRad, lonRad);
+					if (!p.visible) { first = true; continue; }
+					if (first) { ctx.moveTo(p.px, p.py); first = false; }
+					else ctx.lineTo(p.px, p.py);
 				}
 				ctx.stroke();
 			}
@@ -57,14 +73,10 @@
 				let first = true;
 				for (let lonDeg = 0; lonDeg <= 360; lonDeg += 3) {
 					const lonRad = (lonDeg * Math.PI) / 180;
-					const x = Math.cos(latRad) * Math.sin(lonRad - lon);
-					const y = Math.sin(latRad) * Math.cos(lat) - Math.cos(latRad) * Math.sin(lat) * Math.cos(lonRad - lon);
-					const z = Math.sin(latRad) * Math.sin(lat) + Math.cos(latRad) * Math.cos(lat) * Math.cos(lonRad - lon);
-					if (z < 0) { first = true; continue; }
-					const px = HALF + x * GLOBE_R;
-					const py = HALF - y * GLOBE_R;
-					if (first) { ctx.moveTo(px, py); first = false; }
-					else ctx.lineTo(px, py);
+					const p = project(latRad, lonRad);
+					if (!p.visible) { first = true; continue; }
+					if (first) { ctx.moveTo(p.px, p.py); first = false; }
+					else ctx.lineTo(p.px, p.py);
 				}
 				ctx.stroke();
 			}
@@ -75,37 +87,31 @@
 			for (const ast of world.asteroids) {
 				if (ast.destroyed) continue;
 				const { lat: aLat, lon: aLon } = toSpherical(ast.position);
-				const x = Math.cos(aLat) * Math.sin(aLon - lon);
-				const y = Math.sin(aLat) * Math.cos(lat) - Math.cos(aLat) * Math.sin(lat) * Math.cos(aLon - lon);
-				const z = Math.sin(aLat) * Math.sin(lat) + Math.cos(aLat) * Math.cos(lat) * Math.cos(aLon - lon);
-				if (z < 0) continue;
-				ctx.fillRect(HALF + x * GLOBE_R - 0.5, HALF - y * GLOBE_R - 0.5, 1, 1);
+				const p = project(aLat, aLon);
+				if (!p.visible) continue;
+				ctx.fillRect(p.px - 0.5, p.py - 0.5, 1, 1);
 			}
 
 			// NPCs (red/green dots)
 			for (const npc of world.npcs) {
 				if (npc.destroyed) continue;
 				const { lat: nLat, lon: nLon } = toSpherical(npc.position);
-				const x = Math.cos(nLat) * Math.sin(nLon - lon);
-				const y = Math.sin(nLat) * Math.cos(lat) - Math.cos(nLat) * Math.sin(lat) * Math.cos(nLon - lon);
-				const z = Math.sin(nLat) * Math.sin(lat) + Math.cos(nLat) * Math.cos(lat) * Math.cos(nLon - lon);
-				if (z < 0) continue;
+				const p = project(nLat, nLon);
+				if (!p.visible) continue;
 				ctx.fillStyle = npc.converted ? 'rgba(0, 255, 136, 0.6)' : 'rgba(255, 68, 68, 0.6)';
 				ctx.beginPath();
-				ctx.arc(HALF + x * GLOBE_R, HALF - y * GLOBE_R, 1.5, 0, Math.PI * 2);
+				ctx.arc(p.px, p.py, 1.5, 0, Math.PI * 2);
 				ctx.fill();
 			}
 
 			// Puzzle nodes (colored dots)
 			for (const node of world.puzzleNodes) {
 				const { lat: pLat, lon: pLon } = toSpherical(node.position);
-				const x = Math.cos(pLat) * Math.sin(pLon - lon);
-				const y = Math.sin(pLat) * Math.cos(lat) - Math.cos(pLat) * Math.sin(lat) * Math.cos(pLon - lon);
-				const z = Math.sin(pLat) * Math.sin(lat) + Math.cos(pLat) * Math.cos(lat) * Math.cos(pLon - lon);
-				if (z < 0) continue;
+				const p = project(pLat, pLon);
+				if (!p.visible) continue;
 				ctx.fillStyle = node.connected ? 'rgba(68, 136, 255, 0.9)' : 'rgba(255, 200, 68, 0.6)';
 				ctx.beginPath();
-				ctx.arc(HALF + x * GLOBE_R, HALF - y * GLOBE_R, node.connected ? 3 : 2, 0, Math.PI * 2);
+				ctx.arc(p.px, p.py, node.connected ? 3 : 2, 0, Math.PI * 2);
 				ctx.fill();
 			}
 
@@ -113,12 +119,10 @@
 			ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
 			for (const p of world.otherPlayers) {
 				const { lat: pLat, lon: pLon } = toSpherical(p.position);
-				const x = Math.cos(pLat) * Math.sin(pLon - lon);
-				const y = Math.sin(pLat) * Math.cos(lat) - Math.cos(pLat) * Math.sin(lat) * Math.cos(pLon - lon);
-				const z = Math.sin(pLat) * Math.sin(lat) + Math.cos(pLat) * Math.cos(lat) * Math.cos(pLon - lon);
-				if (z < 0) continue;
+				const proj = project(pLat, pLon);
+				if (!proj.visible) continue;
 				ctx.beginPath();
-				ctx.arc(HALF + x * GLOBE_R, HALF - y * GLOBE_R, 2, 0, Math.PI * 2);
+				ctx.arc(proj.px, proj.py, 2, 0, Math.PI * 2);
 				ctx.fill();
 			}
 
@@ -130,6 +134,15 @@
 			ctx.arc(HALF, HALF, 3, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.shadowBlur = 0;
+
+			// Player heading indicator (small triangle pointing "up" = forward)
+			ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+			ctx.beginPath();
+			ctx.moveTo(HALF, HALF - 7);
+			ctx.lineTo(HALF - 3, HALF - 3);
+			ctx.lineTo(HALF + 3, HALF - 3);
+			ctx.closePath();
+			ctx.fill();
 
 			// Coordinates label
 			const latDeg = ((lat * 180) / Math.PI).toFixed(1);
