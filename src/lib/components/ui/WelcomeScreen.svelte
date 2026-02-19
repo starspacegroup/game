@@ -296,18 +296,18 @@
 		resetWorld();
 		deathReplay.fullReset();
 
+		gameState.reset();
+
 		// Only generate world locally for solo mode
 		// For multiplayer, server will send full world state
-				if (mode === 'solo') {
+		if (mode === 'solo') {
 			// Spawn enough entities to feel populated across the sphere
 			world.asteroids = generateAsteroids(400);
 			world.npcs = generateNpcs(gameState.npcCount);
-			world.puzzleNodes = generatePuzzleNodes(12);
+			world.puzzleNodes = generatePuzzleNodes(gameState.wave);
 			world.powerUps = generatePowerUps(80);
 			gameState.mode = 'solo';
 		}
-
-		gameState.reset();
 		gameState.phase = 'playing';
 
 		// Connect to multiplayer if requested

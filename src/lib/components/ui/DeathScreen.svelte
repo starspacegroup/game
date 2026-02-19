@@ -4,6 +4,7 @@
 	import { sendRespawnRequest, disconnect } from '$lib/stores/socketClient';
 	import { world, randomSpherePosition, getTangentFrame, SPHERE_RADIUS } from '$lib/game/world';
 	import { authState } from '$lib/stores/authState.svelte';
+	import { generatePuzzleNodes, resetIdCounter } from '$lib/game/procedural';
 
 	// Resolve user ID for highlighting in leaderboard
 	function getCurrentUserId(): string | null {
@@ -61,8 +62,15 @@
 	function handleSoloContinue(): void {
 		deathReplay.reset();
 
-		// Score already reset to 0 on death
+		// Reset score, wave, and puzzle progress (finals already captured on death)
 		gameState.score = 0;
+		gameState.wave = 1;
+		gameState.puzzleProgress = 0;
+		gameState.puzzleSolved = false;
+
+		// Regenerate puzzle nodes for wave 1
+		resetIdCounter();
+		world.puzzleNodes = generatePuzzleNodes(gameState.wave);
 
 		// Respawn player at a random position on the sphere
 		const spawnPos = randomSpherePosition();

@@ -984,8 +984,11 @@
 				submitSoloScore(gameState.score, gameState.wave);
 			}
 
-			// Reset score to 0 on death
+			// Reset score, wave, and puzzle state after capturing finals
 			gameState.score = 0;
+			gameState.wave = 1;
+			gameState.puzzleProgress = 0;
+			gameState.puzzleSolved = false;
 
 			// Start death replay — camera will replay last 5 seconds while overlay fades in
 			deathReplay.startReplay();
