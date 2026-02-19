@@ -255,6 +255,7 @@
 	}
 
 	function handleStartGame(): void {
+		requestFullscreen();
 		sendStartGame();
 	}
 
@@ -287,7 +288,14 @@
 		}
 	}
 
+	function requestFullscreen(): void {
+		if (gameState.isMobile && !document.fullscreenElement) {
+			document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
+		}
+	}
+
 	function startGame(mode: 'solo' | 'multiplayer' = 'solo', roomId?: string): void {
+		requestFullscreen();
 		// Disconnect any existing multiplayer connection before resetting
 		disconnect();
 

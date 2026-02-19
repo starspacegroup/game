@@ -1,0 +1,17 @@
+{
+	"name": "Starspace",
+	"short_name": "Starspace",
+	"description": "A 3D multiplayer space game on the surface of a sphere",
+	"start_url": "/",
+	"display": "fullscreen",
+	"orientation": "any",
+	"background_color": "#000011",
+	"theme_color": "#000011",
+	"icons": [
+		{
+			"src": "/favicon.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		}
+	]
+}

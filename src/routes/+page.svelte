@@ -34,10 +34,15 @@
 		// Request fullscreen on mobile after first interaction
 		if (gameState.isMobile) {
 			const requestFs = () => {
-				document.documentElement.requestFullscreen?.().catch(() => {});
+				if (!document.fullscreenElement) {
+					document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
+				}
 				document.removeEventListener('touchstart', requestFs);
 			};
 			document.addEventListener('touchstart', requestFs, { once: true });
+
+			// Also try to scroll away the address bar as a fallback
+			window.scrollTo(0, 1);
 		}
 
 		// Handle resize
