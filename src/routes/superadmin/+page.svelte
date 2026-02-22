@@ -28,6 +28,58 @@
   // View mode
   let viewMode = $state<'overview' | 'detail'>('overview');
 
+  // ── SpaceBot Integration Settings ──
+  let sbToken = $state('');
+  let sbUrl = $state('https://spacebot.starspace.group');
+  let sbLoading = $state(false);
+  let sbSaving = $state(false);
+  let sbMessage = $state<{ text: string; type: 'ok' | 'err' } | null>(null);
+  let sbShowToken = $state(false);
+  let sbTokenRaw = $state(''); // raw unmasked token for editing
+
+  async function loadSpaceBotSettings() {
+    sbLoading = true;
+    try {
+      const res = await fetch('/api/game/settings');
+      if (res.ok) {
+        const data = await res.json() as { spacebot_token?: string; spacebot_url?: string };
+        sbToken = data.spacebot_token || '';
+        sbUrl = data.spacebot_url || 'https://spacebot.starspace.group';
+        sbTokenRaw = ''; // clear raw input on load
+      }
+    } catch { /* ignore */ }
+    sbLoading = false;
+  }
+
+  async function saveSpaceBotSettings() {
+    sbSaving = true;
+    sbMessage = null;
+    try {
+      const body: Record<string, string> = { spacebot_url: sbUrl };
+      // Only send token if user typed a new one
+      if (sbTokenRaw) body.spacebot_token = sbTokenRaw;
+      const res = await fetch('/api/game/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        sbMessage = { text: 'Settings saved. Changes take effect on next request.', type: 'ok' };
+        sbTokenRaw = '';
+        await loadSpaceBotSettings();
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        sbMessage = { text: (err as any).error || 'Save failed', type: 'err' };
+      }
+    } catch (e) {
+      sbMessage = { text: String(e), type: 'err' };
+    }
+    sbSaving = false;
+  }
+
+  // Load settings on mount
+  $effect(() => { loadSpaceBotSettings(); });
+
   // ── WebSocket connection ──
 
   let ws: WebSocket | null = null;
@@ -522,6 +574,64 @@
       {/if}
     </section>
 
+    <!-- SpaceBot Integration Settings -->
+    <section class="overview-section settings-section">
+      <h2>SpaceBot Integration</h2>
+      {#if sbLoading}
+        <p class="empty">Loading settings…</p>
+      {:else}
+        <div class="settings-form">
+          <div class="settings-field">
+            <label for="sb-token">Integration Token</label>
+            <div class="token-row">
+              {#if sbShowToken}
+                <input
+                  id="sb-token"
+                  type="text"
+                  placeholder="sbi_starspace-game_..."
+                  value={sbTokenRaw || ''}
+                  oninput={(e) => sbTokenRaw = (e.target as HTMLInputElement).value}
+                />
+              {:else}
+                <input
+                  id="sb-token"
+                  type="password"
+                  placeholder={sbToken ? '••••••••••••' : 'Not set'}
+                  value={sbTokenRaw || ''}
+                  oninput={(e) => sbTokenRaw = (e.target as HTMLInputElement).value}
+                />
+              {/if}
+              <button class="btn-toggle-vis" onclick={() => sbShowToken = !sbShowToken}>
+                {sbShowToken ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {#if sbToken && !sbTokenRaw}
+              <span class="field-hint">Current: {sbToken}</span>
+            {/if}
+          </div>
+          <div class="settings-field">
+            <label for="sb-url">SpaceBot URL</label>
+            <input
+              id="sb-url"
+              type="url"
+              bind:value={sbUrl}
+              placeholder="https://spacebot.starspace.group"
+            />
+          </div>
+          <div class="settings-actions">
+            <button class="btn-save" onclick={saveSpaceBotSettings} disabled={sbSaving}>
+              {sbSaving ? 'Saving…' : 'Save Settings'}
+            </button>
+            {#if sbMessage}
+              <span class="settings-msg" class:msg-ok={sbMessage.type === 'ok'} class:msg-err={sbMessage.type === 'err'}>
+                {sbMessage.text}
+              </span>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </section>
+
   {:else}
     <!-- ═══════ DETAIL MODE: Single room deep-dive ═══════ -->
 
@@ -870,6 +980,17 @@
     color: var(--color-text);
     font-family: var(--hud-font);
     padding: var(--spacing-xl);
+    /* Override global overflow:hidden on html/body so admin page scrolls */
+    overflow: auto;
+  }
+
+  :global(html:has(.admin-page)),
+  :global(body:has(.admin-page)) {
+    overflow: auto !important;
+    height: auto !important;
+    touch-action: auto !important;
+    -webkit-user-select: text !important;
+    user-select: text !important;
   }
 
   header {
@@ -1148,6 +1269,27 @@
   .errors { margin-bottom: var(--spacing-lg); }
   .error-item { background: rgba(255,68,68,0.1); border: 1px solid var(--color-danger); color: var(--color-danger); padding: var(--spacing-sm) var(--spacing-md); margin-bottom: var(--spacing-xs); font-size: var(--font-xs); }
   .empty { color: var(--color-text-dim); font-style: italic; }
+
+  /* SpaceBot Settings */
+  .settings-section { margin-top: var(--spacing-xl); }
+  .settings-form { display: flex; flex-direction: column; gap: var(--spacing-md); max-width: 540px; }
+  .settings-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+  .settings-field label { font-size: var(--font-xs); color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .settings-field input { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: var(--color-text); padding: 6px 10px; font-family: monospace; font-size: var(--font-sm); }
+  .settings-field input::placeholder { color: rgba(255,255,255,0.25); }
+  .settings-field input:focus { outline: none; border-color: var(--color-primary); }
+  .token-row { display: flex; gap: var(--spacing-xs); }
+  .token-row input { flex: 1; }
+  .btn-toggle-vis { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: var(--color-text-dim); padding: 4px 10px; font-family: var(--hud-font); font-size: var(--font-xs); cursor: pointer; white-space: nowrap; }
+  .btn-toggle-vis:hover { background: rgba(255,255,255,0.15); color: var(--color-text); }
+  .field-hint { font-size: 0.7rem; color: var(--color-text-dim); font-family: monospace; }
+  .settings-actions { display: flex; align-items: center; gap: var(--spacing-md); margin-top: var(--spacing-xs); }
+  .btn-save { background: rgba(0,255,136,0.15); color: var(--color-primary); border: 1px solid var(--color-primary); padding: 6px 18px; font-family: var(--hud-font); font-size: var(--font-xs); cursor: pointer; }
+  .btn-save:hover { background: rgba(0,255,136,0.3); }
+  .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+  .settings-msg { font-size: var(--font-xs); }
+  .msg-ok { color: var(--color-primary); }
+  .msg-err { color: var(--color-danger); }
 
   @media (max-width: 900px) {
     .server-metrics { gap: var(--spacing-xs); }

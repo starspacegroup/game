@@ -3,6 +3,7 @@
 
 import type { Handle } from '@sveltejs/kit';
 import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } from '$env/static/private';
+import { tickSpaceBot } from '$lib/server/spacebot';
 
 interface SessionData {
   id: string;
@@ -113,6 +114,10 @@ export const handle: Handle = async ({ event, resolve }) => {
       event.cookies.delete('session', { path: '/' });
     }
   }
+
+  // SpaceBot integration: sync manifest (once) and heartbeat (every 2 min)
+  const waitUntil = event.platform?.context?.waitUntil?.bind(event.platform.context);
+  tickSpaceBot(event.platform, event.url.origin, waitUntil);
 
   return resolve(event);
 };

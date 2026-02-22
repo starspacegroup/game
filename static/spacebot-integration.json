@@ -1,0 +1,51 @@
+{
+  "name": "*Space Game",
+  "slug": "starspace-game",
+  "version": "0.1.0",
+  "description": "Explore a spherical world, battle asteroids, and solve puzzles in *Space Game",
+  "author": "Starspace Group",
+  "author_url": "https://starspace.group",
+  "icon": "🚀",
+  "category": "gaming",
+  "homepage": "https://game.starspace.group",
+  "health_endpoint": "https://game.starspace.group/api/spacebot/health",
+
+  "commands": [
+    {
+      "name": "game",
+      "description": "Game commands for *Space",
+      "type": 1,
+      "options": [
+        {
+          "name": "stats",
+          "description": "View player stats and high scores",
+          "type": 1,
+          "options": [
+            {
+              "name": "player",
+              "description": "Player to look up (defaults to yourself)",
+              "type": 6,
+              "required": false
+            }
+          ]
+        },
+        {
+          "name": "leaderboard",
+          "description": "View the top players leaderboard",
+          "type": 1
+        },
+        {
+          "name": "play",
+          "description": "Get a link to play *Space Game",
+          "type": 1
+        }
+      ]
+    }
+  ],
+
+  "webhooks": {
+    "on_enable": "https://game.starspace.group/api/spacebot/on-enable",
+    "on_disable": "https://game.starspace.group/api/spacebot/on-disable",
+    "command_handler": "https://game.starspace.group/api/spacebot/command"
+  }
+}
