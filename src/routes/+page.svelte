@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { gameState } from '$lib/stores/gameState.svelte';
+	import { authState } from '$lib/stores/authState.svelte';
 	import { setupKeyboardControls, setupMouseControls } from '$lib/stores/inputState.svelte';
 	import { disconnect } from '$lib/stores/socketClient';
 	import GameScene from '$lib/components/game/GameScene.svelte';
@@ -18,7 +19,46 @@
 	let cleanupKeyboard: (() => void) | undefined;
 	let cleanupMouse: (() => void) | undefined;
 
+	/**
+	 * Handle session end (browser close / navigate away) while the player is alive.
+	 * Saves personal best to localStorage synchronously and uses sendBeacon to
+	 * submit the score to the leaderboard (works reliably during page unload).
+	 */
+	function handleSessionEnd(): void {
+		// Only act if player is in an active game and not already dead
+		if (gameState.phase !== 'playing' || gameState.multiplayerDead) return;
+
+		const score = gameState.score;
+		const wave = gameState.wave;
+
+		// Save personal best to localStorage (synchronous, always works)
+		if (score > 0) {
+			const currentBest = parseInt(localStorage.getItem('starspace_personal_best') || '0', 10) || 0;
+			if (score > currentBest) {
+				localStorage.setItem('starspace_personal_best', String(score));
+			}
+		}
+
+		// Submit score to leaderboard via sendBeacon (fire-and-forget, survives page unload)
+		if (score > 0) {
+			const payload: Record<string, unknown> = { score, wave };
+			if (!authState.isLoggedIn) {
+				payload.guestId = localStorage.getItem('starspace_guest_id') || crypto.randomUUID();
+				payload.guestName = 'Guest';
+			}
+
+			const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+			navigator.sendBeacon('/api/leaderboard', blob);
+		}
+	}
+
+	function onBeforeUnload(): void {
+		handleSessionEnd();
+	}
+
 	onMount(() => {
+		// Listen for tab close / navigation away
+		window.addEventListener('beforeunload', onBeforeUnload);
 		// Detect mobile
 		gameState.isMobile =
 			'ontouchstart' in window ||
@@ -57,6 +97,8 @@
 	});
 
 	onDestroy(() => {
+		window.removeEventListener('beforeunload', onBeforeUnload);
+		handleSessionEnd();
 		cleanupKeyboard?.();
 		cleanupMouse?.();
 		disconnect();

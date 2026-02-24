@@ -1028,6 +1028,33 @@ export class GameRoom implements DurableObject {
         this.broadcastLobbyState();
       }
 
+      // If the game is in progress and the player was alive, kill them.
+      // This ensures their score is finalized and the "all dead" check fires correctly.
+      if (this.phase === 'playing') {
+        const player = this.players.get(session.id);
+        if (player && player.health > 0) {
+          player.health = 0;
+          this.logEvent('player-died', session.username, 'disconnected while alive');
+
+          // Broadcast the death to remaining players
+          this.broadcast({
+            type: 'player-hit',
+            playerId: session.id,
+            damage: player.maxHealth,
+            health: 0
+          } as ServerMessage);
+
+          // Check if all remaining connected players are now dead
+          const allDead = this.getActivePlayers().every(p => p.health <= 0);
+          if (allDead && this.sessions.size > 0) {
+            if (this.allDeadSinceTick === 0) {
+              this.allDeadSinceTick = this.tick;
+              this.logEvent('all-eliminated', undefined, 'All crew eliminated');
+            }
+          }
+        }
+      }
+
       // Keep player state (for potential rejoin) but mark as disconnected
       // Don't remove from this.players to preserve state
 
