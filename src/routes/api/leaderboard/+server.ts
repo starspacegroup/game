@@ -60,7 +60,11 @@ function upsertEntry(entries: LeaderboardEntry[], userId: string, username: stri
     entries.length = MAX_ENTRIES;
   }
 
-  return { entries, rank: insertIdx + 1, newHighScore: existingIdx === -1 || true };
+  // Reaching here means the score is genuinely a personal best: a lower one
+  // already returned above. (Was `existingIdx === -1 || true`, which reads like
+  // a bug — the `|| true` makes the first operand dead — but evaluated to the
+  // same thing.)
+  return { entries, rank: insertIdx + 1, newHighScore: true };
 }
 
 /** POST /api/leaderboard — submit a solo high score (auth optional; guests use provided ID) */
