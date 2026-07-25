@@ -704,7 +704,12 @@
 	.title {
 		font-size: var(--font-3xl, 2.25rem);
 		font-weight: 900;
-		margin: 0 0 var(--spacing-lg, 16px) 0;
+		/* line-height: 1 packs the line box tighter than the font's own metrics
+		   (~1.36em at weight 900), so the glyph box overflows ~0.18em above it
+		   and collided with .org-line — worst at the 6.5rem desktop size, where
+		   it ate the 4px gap and ran into the *SPACE lockup. The em margin
+		   compensates proportionally, so it holds at every breakpoint. */
+		margin: 0.2em 0 var(--spacing-lg, 16px) 0;
 		letter-spacing: 3px;
 		line-height: 1;
 	}
