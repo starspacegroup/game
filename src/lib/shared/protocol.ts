@@ -34,6 +34,9 @@ export interface PlayerState {
   shootCooldown: number;
   /** Timestamp (ms) until which the player is invincible after taking damage */
   damageCooldownUntil: number;
+  /** Timestamp (ms) until which the speed power-up applies. 0 = no boost.
+   *  Persisted rather than held in a timer so it survives a DO eviction. */
+  speedBoostUntil?: number;
   /** The input sequence number the server last processed for this player.
    *  Used by the owning client for server reconciliation. */
   lastProcessedInput: number;

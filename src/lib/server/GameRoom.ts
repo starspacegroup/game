@@ -34,7 +34,10 @@ import {
   createPlayerState,
   respawnAsteroid,
   respawnPowerUp,
-  respawnNpc
+  respawnNpc,
+  BASE_PLAYER_SPEED,
+  BOOSTED_PLAYER_SPEED,
+  SPEED_BOOST_MS
 } from './worldGenerator';
 
 import { E8_TOTAL_WAVES } from '../game/e8';
@@ -662,6 +665,26 @@ export class GameRoom implements DurableObject {
   }
 
   /**
+   * Drop expired speed boosts. Driven by the tick rather than a timer so it
+   * still runs for boosts that were granted before an eviction.
+   */
+  private expireBuffs(): void {
+    const now = Date.now();
+    for (const player of this.players.values()) {
+      if (player.speedBoostUntil) {
+        if (now >= player.speedBoostUntil) {
+          player.speed = BASE_PLAYER_SPEED;
+          player.speedBoostUntil = 0;
+        }
+      } else if (player.speed > BASE_PLAYER_SPEED) {
+        // No expiry recorded but still boosted: state left behind by the old
+        // setTimeout version, where an eviction stranded the boost forever.
+        player.speed = BASE_PLAYER_SPEED;
+      }
+    }
+  }
+
+  /**
    * Start the game loop when first player joins
    */
   private startGameLoop(): void {
@@ -691,6 +714,9 @@ export class GameRoom implements DurableObject {
     const deltaTime = (now - this.lastTickTime) / 1000;
     this.lastTickTime = now;
     this.tick++;
+
+    // Expire timed buffs before movement uses `speed`
+    this.expireBuffs();
 
     // Process player inputs
     this.updatePlayers(deltaTime);
@@ -1747,9 +1773,11 @@ export class GameRoom implements DurableObject {
         player.health = Math.min(player.maxHealth, player.health + 25);
         break;
       case 'speed':
-        player.speed = 20;
-        // Temporary boost matching solo mode (8 seconds)
-        setTimeout(() => { player.speed = 12; }, 8000);
+        // Expiry is a timestamp on the (persisted) player, not a setTimeout.
+        // A timer lives in DO memory while `speed` is written to storage, so an
+        // eviction inside the window left the boost on permanently.
+        player.speed = BOOSTED_PLAYER_SPEED;
+        player.speedBoostUntil = Date.now() + SPEED_BOOST_MS;
         break;
       case 'shield':
         player.health = Math.min(player.maxHealth + 50, player.health + 50);

@@ -353,6 +353,13 @@ export function generateWorld(playerCount: number = 1): {
   };
 }
 
+/** Base movement speed. The speed power-up raises it to BOOSTED_PLAYER_SPEED. */
+export const BASE_PLAYER_SPEED = 12;
+/** Speed while the power-up is active. */
+export const BOOSTED_PLAYER_SPEED = 20;
+/** How long the speed power-up lasts (ms), matching solo mode. */
+export const SPEED_BOOST_MS = 8000;
+
 /**
  * Create initial player state at spawn point on the sphere
  */
@@ -366,9 +373,10 @@ export function createPlayerState(id: string, username: string): import('../shar
     health: 100,
     maxHealth: 100,
     score: 0,
-    speed: 12,
+    speed: BASE_PLAYER_SPEED,
     shootCooldown: 0,
     damageCooldownUntil: 0,
+    speedBoostUntil: 0,
     lastProcessedInput: 0
   };
 }
