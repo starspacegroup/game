@@ -59,6 +59,31 @@ interface StoredState {
 }
 
 // ==========================================
+// Storage lifecycle — Cloudflare bills SQLite-backed DO storage, so an
+// abandoned room must not keep its data forever.
+//
+// The graceful paths (last player leaves, room ends, admin terminates) already
+// call deleteAll(). They are not enough: this DO uses the WebSocket
+// *hibernation* API, and `sessions` is in-memory only — it is never rebuilt
+// from getWebSockets() after an eviction. So a room that hibernates and then
+// loses its last socket hits `sessions.get(ws) === undefined` in
+// webSocketClose() and skips cleanup entirely. A room configured but never
+// joined leaks the same way: /configure writes storage, and nothing ever
+// deletes it. The alarm below is the backstop that catches every such case.
+// ==========================================
+
+/** Wipe a room once it has had no connected sockets for this long. */
+const IDLE_TTL_MS = 30 * 60 * 1000;
+/** How often the alarm re-checks a room that is still live or not yet stale. */
+const IDLE_CHECK_MS = 10 * 60 * 1000;
+/**
+ * Safety-net save while a game is running, in ticks (20/sec). Real saves are
+ * driven by transitions (join/leave, wave, phase); this only bounds how much
+ * progress an eviction can lose. Was every 100 ticks (~5s) — 24× the writes.
+ */
+const SAVE_INTERVAL_TICKS = 2400;
+
+// ==========================================
 // Sphere math helpers (plain objects, no THREE.js)
 // ==========================================
 
@@ -203,6 +228,9 @@ export class GameRoom implements DurableObject {
   /** Event log for post-game review */
   private eventLog: RoomEvent[] = [];
 
+  /** Last time this room saw a connection or a meaningful transition. */
+  private lastActivity: number = Date.now();
+
   constructor(state: DurableObjectState, env?: Record<string, unknown>) {
     this.state = state;
     this.env = env || {};
@@ -247,14 +275,98 @@ export class GameRoom implements DurableObject {
       const phase = await this.state.storage.get<RoomPhase>('phase');
       if (phase) this.phase = phase;
 
+      const lastActivity = await this.state.storage.get<number>('lastActivity');
+      // No stored value means a room from before this field existed, or one
+      // configured but never joined. Treat "now" as the baseline so it gets a
+      // full idle window rather than being wiped the moment it wakes.
+      this.lastActivity = lastActivity ?? Date.now();
+
       const roomEnded = await this.state.storage.get<boolean>('roomEnded');
       if (roomEnded) {
         this.roomEnded = true;
         // Room was ended before DO hibernated — clean up on restore
         await this.notifyLobbyDelete();
         await this.state.storage.deleteAll();
+        try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+        return;
       }
+
+      // Any room that wakes up gets an idle alarm, even one created long before
+      // this code existed. Without this, a stale room that is never touched
+      // again has no alarm pending and would keep its storage forever — waking
+      // it once (a /status call is enough) is all it takes to schedule cleanup.
+      await this.ensureAlarm();
     });
+  }
+
+  // ==========================================
+  // Storage lifecycle
+  // ==========================================
+
+  /**
+   * Note that something meaningful happened, and make sure an alarm is pending
+   * so an abandoned room is eventually wiped.
+   *
+   * `lastActivity` is deliberately *not* written on every call — that would
+   * trade one storage-cost problem for another. It rides along with the next
+   * saveState(), and the alarm falls back to the room's own start time, so the
+   * worst case is one extra IDLE_CHECK_MS cycle before cleanup.
+   */
+  private async touchActivity(): Promise<void> {
+    this.lastActivity = Date.now();
+    await this.ensureAlarm();
+  }
+
+  /** Schedule the idle check unless one is already pending (avoids a write). */
+  private async ensureAlarm(): Promise<void> {
+    try {
+      const existing = await this.state.storage.getAlarm();
+      if (existing === null) {
+        await this.state.storage.setAlarm(Date.now() + IDLE_CHECK_MS);
+      }
+    } catch {
+      // Alarms unavailable (older local runtime) — the graceful paths still run.
+    }
+  }
+
+  /** Current SQLite footprint, for the cost telemetry. 0 if unavailable. */
+  private databaseSize(): number {
+    try {
+      return (this.state.storage as unknown as { sql?: { databaseSize: number; }; }).sql?.databaseSize ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Idle sweep. Runs whether or not the room hibernated, and reads live socket
+   * count from getWebSockets() rather than the in-memory `sessions` map, which
+   * does not survive eviction.
+   */
+  async alarm(): Promise<void> {
+    const sockets = this.state.getWebSockets().length;
+    const idleFor = Date.now() - this.lastActivity;
+
+    if (sockets === 0 && idleFor >= IDLE_TTL_MS) {
+      console.log(JSON.stringify({
+        event: 'room-storage-reclaimed',
+        roomCode: this.roomCode,
+        idleMinutes: Math.round(idleFor / 60000),
+        databaseSize: this.databaseSize()
+      }));
+
+      this.stopGameLoop();
+      this.roomEnded = true;
+      await this.notifyLobbyDelete();
+      await this.state.storage.deleteAll();
+      // deleteAll() does not cancel a pending alarm — drop it explicitly so the
+      // DO can go cold instead of waking forever on an empty room.
+      try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+      return;
+    }
+
+    // Still live, or not stale yet — look again later.
+    await this.state.storage.setAlarm(Date.now() + IDLE_CHECK_MS);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -298,7 +410,12 @@ export class GameRoom implements DurableObject {
         npcCount: this.npcs.filter(n => !n.destroyed).length,
         puzzleProgress: this.puzzleProgress,
         puzzleSolved: this.puzzleSolved,
-        wave: this.wave
+        wave: this.wave,
+        // Cost telemetry — this is the number Cloudflare bills on. Exposed here
+        // so a bloated room can be found without guessing.
+        databaseSize: this.databaseSize(),
+        connectedSockets: this.state.getWebSockets().length,
+        idleMinutes: Math.round((Date.now() - this.lastActivity) / 60000)
       });
     }
 
@@ -388,6 +505,10 @@ export class GameRoom implements DurableObject {
       }
       this.phase = 'lobby';
       this.state.storage.put('phase', 'lobby');
+      // A room can be configured and then never joined. Start the idle clock
+      // here or that storage would never be reclaimed.
+      await this.touchActivity();
+      await this.state.storage.put('lastActivity', this.lastActivity);
       return Response.json({ success: true });
     }
 
@@ -454,6 +575,11 @@ export class GameRoom implements DurableObject {
       this.roomCode = roomCode;
       this.state.storage.put('roomCode', roomCode);
     }
+
+    // Keep the room out of the idle sweep while someone is connected, and make
+    // sure an alarm exists even for rooms that only ever see WebSocket traffic.
+    this.lastActivity = Date.now();
+    void this.ensureAlarm();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -534,8 +660,10 @@ export class GameRoom implements DurableObject {
       this.checkAllDead();
     }
 
-    // Periodic save (every 100 ticks = 5 seconds)
-    if (this.tick % 100 === 0) {
+    // Safety net only. Meaningful transitions (join, leave, wave, phase) save
+    // as they happen — see saveState() callers. This bounds how much an
+    // eviction can lose without writing the whole world every 5 seconds.
+    if (this.tick % SAVE_INTERVAL_TICKS === 0) {
       this.saveState();
     }
   }
@@ -1019,6 +1147,22 @@ export class GameRoom implements DurableObject {
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     const session = this.sessions.get(ws);
+
+    if (!session) {
+      // No in-memory session for this socket, which happens whenever the DO was
+      // evicted and rehydrated: `sessions` is not rebuilt from getWebSockets().
+      // The old code returned here and left the room's storage behind forever —
+      // the main source of the stale rooms. Fall back to the socket count, and
+      // let the idle alarm reclaim the storage.
+      if (this.state.getWebSockets().length === 0) {
+        this.stopGameLoop();
+        this.lastActivity = Date.now();
+        await this.state.storage.put('lastActivity', this.lastActivity);
+        await this.ensureAlarm();
+      }
+      return;
+    }
+
     if (session) {
       this.sessions.delete(ws);
 
@@ -1083,7 +1227,8 @@ export class GameRoom implements DurableObject {
 
         // Clear all persisted state so the DO can be garbage-collected
         // and won't resurrect as a stale room on next wake-up
-        this.state.storage.deleteAll();
+        await this.state.storage.deleteAll();
+        try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
         this.players.clear();
         this.lobbyPlayers.clear();
       } else if (!this.roomEnded) {
@@ -1220,6 +1365,9 @@ export class GameRoom implements DurableObject {
 
         // Notify lobby of updated player count
         this.notifyLobby();
+        // Transition save: a new player is part of the world worth restoring.
+        this.lastActivity = Date.now();
+        void this.saveState();
         break;
       }
 
@@ -1247,8 +1395,9 @@ export class GameRoom implements DurableObject {
         // Transition to playing phase
         this.phase = 'playing';
         this.state.storage.put('phase', 'playing');
+        this.lastActivity = Date.now();
 
-        // Initialize world
+        // Initialize world (which persists it — a phase-change transition save)
         this.initializeWorld();
 
         // Create player states for all lobby players
@@ -1671,6 +1820,10 @@ export class GameRoom implements DurableObject {
         this.puzzleSolved = true;
         this.logEvent('puzzle-complete', undefined, 'E8 LATTICE COMPLETE — 240 vertices aligned!');
       }
+      // Transition save: the wave/solve state is the progress worth keeping,
+      // and this is far rarer than the old every-5-seconds write.
+      this.lastActivity = Date.now();
+      void this.saveState();
     } else if (totalConnected > 0 && totalConnected % 3 === 0) {
       this.logEvent('puzzle-progress', undefined, `${waveConnected}/${waveNodes.length} wave-${this.wave} nodes aligned (${Math.round(this.puzzleProgress)}%)`);
     }
@@ -1764,7 +1917,14 @@ export class GameRoom implements DurableObject {
     }
   }
 
+  /**
+   * Persist the world. Called on meaningful transitions rather than on a short
+   * timer — see SAVE_INTERVAL_TICKS. Carries `lastActivity` along so the idle
+   * alarm has a fresh baseline without a write of its own.
+   */
   private async saveState(): Promise<void> {
+    await this.state.storage.put('lastActivity', this.lastActivity);
+
     const state: StoredState = {
       asteroids: this.asteroids,
       npcs: this.npcs,

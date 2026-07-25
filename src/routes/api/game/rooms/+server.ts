@@ -1,8 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { SUPER_ADMIN_DISCORD_IDS } from '$env/static/private';
-
-const adminIds = SUPER_ADMIN_DISCORD_IDS?.split(',').map(id => id.trim()) ?? [];
+import { isSuperAdmin, isSuperAdminId } from '$lib/server/admin';
 
 interface RoomInfo {
   id: string;
@@ -58,6 +56,7 @@ export const GET: RequestHandler = async ({ platform }) => {
 
         // Rooms that have ended should be cleaned up
         if (phase === 'ended') {
+          await terminateRoomDO(platform, roomData.id);
           await platform.env.GAME_DATA.delete(key.name);
           notifyLobbyDelete(platform, roomData.id);
           continue;
@@ -76,7 +75,11 @@ export const GET: RequestHandler = async ({ platform }) => {
             phase
           });
         } else {
-          // Clean up stale empty rooms
+          // Clean up stale empty rooms. Terminate the DO *before* dropping the
+          // KV key: the key is the only pointer back to the room, so deleting
+          // it first orphans the DO's SQLite storage with no way to find it
+          // again — which is how the stale rooms accumulated in the first place.
+          await terminateRoomDO(platform, roomData.id);
           await platform.env.GAME_DATA.delete(key.name);
           // Notify lobby of removal
           notifyLobbyDelete(platform, roomData.id);
@@ -154,7 +157,7 @@ export const POST: RequestHandler = async ({ platform, request }) => {
 };
 
 // DELETE: Delete a game room (super admin or room creator)
-export const DELETE: RequestHandler = async ({ platform, request }) => {
+export const DELETE: RequestHandler = async ({ platform, request, locals }) => {
   if (!platform?.env?.GAME_DATA || !platform?.env?.GAME_ROOM) {
     return json({ error: 'Server not configured for multiplayer' }, { status: 503 });
   }
@@ -167,15 +170,17 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
       return json({ error: 'Missing roomId or userId' }, { status: 400 });
     }
 
-    // Allow super admins OR the room creator to delete
-    const isSuperAdmin = adminIds.includes(userId);
+    // Allow super admins OR the room creator to delete. The session check comes
+    // first (it also covers dev virtual admins); the body-userId check is the
+    // long-standing client-supplied path.
+    const admin = isSuperAdmin(locals) || isSuperAdminId(userId);
     let isCreator = false;
-    if (!isSuperAdmin) {
+    if (!admin) {
       // Check if the user created this room
       const roomData = await platform.env.GAME_DATA.get(`room:${roomId}`, 'json') as RoomInfo | null;
       isCreator = !!roomData && roomData.createdById === userId;
     }
-    if (!isSuperAdmin && !isCreator) {
+    if (!admin && !isCreator) {
       return json({ error: 'Unauthorized — only the room creator or an admin can delete this room' }, { status: 403 });
     }
 
@@ -202,6 +207,22 @@ export const DELETE: RequestHandler = async ({ platform, request }) => {
     return json({ error: 'Failed to delete room' }, { status: 500 });
   }
 };
+
+/**
+ * Tell a room's Durable Object to wipe its storage. Best-effort: a room that is
+ * already gone throws, and that is fine — the point is to never delete the KV
+ * pointer while the DO still holds billable storage.
+ */
+async function terminateRoomDO(platform: App.Platform, roomId: string): Promise<void> {
+  if (!platform.env?.GAME_ROOM) return;
+  try {
+    const id = platform.env.GAME_ROOM.idFromName(roomId);
+    const room = platform.env.GAME_ROOM.get(id);
+    await room.fetch(new Request('https://internal/terminate', { method: 'POST' }));
+  } catch {
+    // Already inactive or unreachable — the idle alarm is the backstop.
+  }
+}
 
 // ── Lobby notification helpers ──
 

@@ -14,6 +14,37 @@ npm run check:watch  # Type-check in watch mode
 
 No test framework is configured. Use `npm run check` for validation.
 
+Copy `.env.example` to `.env` before either command — `$env/static/private`
+errors on imports it can't resolve, so a missing file fails the build.
+
+### Dev virtual login
+
+`npm run dev` shows a **DEV LOGIN** panel on the welcome screen: pick any
+username, optionally tick "super admin", and it mints the same `session` cookie
+the Discord callback writes — no Discord app needed. Also scriptable:
+
+```bash
+curl -X POST localhost:4201/api/auth/dev-login -H 'Content-Type: application/json' \
+  -d '{"username":"Tester","superAdmin":true}' -c jar.txt
+open 'http://localhost:4201/api/auth/dev-login?username=Tester&superAdmin=1'  # or via browser
+```
+
+Dev accounts get a generated avatar instead of a Discord one: `$lib/devAvatar`
+builds a deterministic SVG in the style of a Discord *default* avatar — the
+white Clyde mark on a flat colour — served from `/api/auth/dev-avatar/<id>.svg`.
+The palette is Discord's own six colours plus six more in the same register;
+colours repeat across accounts the same way Discord's do, so don't rely on
+colour alone to tell more than a few test accounts apart. The session stores
+that path in `avatar` where a real session stores a Discord hash, and
+`authState.avatarUrl` passes through anything starting with `/` or `http`
+rather than prefixing the CDN. Same-origin, so it also loads into the ship's
+canvas texture without tainting it.
+
+Every part of it is gated on `dev` from `$app/environment`, so a production
+build dead-code-eliminates both endpoints to a bare 404, drops the UI, and
+strips the dev branch from `isSuperAdmin()`. `hooks.server.ts` also deletes any
+`dev: true` cookie it sees outside dev. Keep all these gates when touching this.
+
 ## Tech Stack
 
 - **SvelteKit 2.x + Svelte 5** (runes: `$state`, `$props`, `$derived`, `$effect`)
@@ -82,3 +113,13 @@ Simple distance-based (sum of radii vs chord distance). Uses `sphereDistance()` 
 - Stores use Svelte 5 `$state` class pattern (not writable stores)
 - Three.js objects use Threlte's `<T>` component with `bind:ref` for direct manipulation
 - Mobile detected via `navigator.maxTouchPoints` / viewport width, uses VirtualJoystick
+
+## Goals
+
+- **Cap Durable Object SQLite storage costs** (added 2026-07-16, code landed 2026-07-25). Cloudflare bills SQLite-backed DO storage; the DOs on the personal account (7170…77aa) held ~12.5 GB across stale rooms. Code is done — **the production purge is not**, and needs a deploy. See `ROADMAP.md` in the workspace repo.
+
+  Storage rules to keep in mind when touching `GameRoom.ts`:
+  - **Never delete a room's KV pointer without first terminating its DO.** The KV key is the only handle on that DO; drop it first and the storage is orphaned and unfindable. `terminateRoomDO()` in `api/game/rooms` exists for this.
+  - **`sessions` does not survive hibernation.** This DO uses `acceptWebSocket()`, and `sessions` is never rebuilt from `getWebSockets()`. Any cleanup keyed on a session lookup will silently not run after an eviction — use `state.getWebSockets().length` for liveness.
+  - **`storage.deleteAll()` does not cancel a pending alarm.** Call `deleteAlarm()` too, or the DO wakes forever on an empty room.
+  - **Don't reintroduce per-tick persistence.** Saves are transition-driven; `SAVE_INTERVAL_TICKS` is only a safety net.
