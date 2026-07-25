@@ -57,6 +57,9 @@ class AuthStore {
 
   get avatarUrl(): string | null {
     if (!this.userId || !this.avatar) return null;
+    // Dev virtual sessions (/api/auth/dev-login) store a ready-made URL rather
+    // than a Discord avatar hash — pass those through as-is.
+    if (this.avatar.startsWith('/') || this.avatar.startsWith('http')) return this.avatar;
     return `https://cdn.discordapp.com/avatars/${this.userId}/${this.avatar}.png`;
   }
 }

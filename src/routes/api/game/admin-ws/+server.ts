@@ -1,7 +1,5 @@
 import type { RequestHandler } from './$types';
-import { SUPER_ADMIN_DISCORD_IDS } from '$env/static/private';
-
-const adminIds = SUPER_ADMIN_DISCORD_IDS?.split(',').map(id => id.trim()) ?? [];
+import { isSuperAdmin } from '$lib/server/admin';
 
 export const GET: RequestHandler = async ({ request, platform, locals }) => {
   // Verify WebSocket upgrade
@@ -10,7 +8,7 @@ export const GET: RequestHandler = async ({ request, platform, locals }) => {
   }
 
   // Auth: must be a superadmin
-  if (!locals.user || !adminIds.includes(locals.user.id)) {
+  if (!isSuperAdmin(locals)) {
     return new Response('Unauthorized', { status: 403 });
   }
 

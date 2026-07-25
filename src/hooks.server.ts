@@ -2,6 +2,7 @@
 // Note: GameRoom Durable Object is exported from worker.ts for Cloudflare Workers
 
 import type { Handle } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } from '$env/static/private';
 import { tickSpaceBot } from '$lib/server/spacebot';
 
@@ -12,6 +13,10 @@ interface SessionData {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  /** Virtual session minted by /api/auth/dev-login — never touches Discord. */
+  dev?: boolean;
+  /** Dev sessions only: grants the super-admin gate. See $lib/server/admin. */
+  superAdmin?: boolean;
 }
 
 interface RefreshResult {
@@ -84,8 +89,17 @@ export const handle: Handle = async ({ event, resolve }) => {
     try {
       let session = JSON.parse(sessionCookie) as SessionData;
 
-      // Refresh token if expired (with 5 min buffer)
-      if (session.expiresAt < Date.now() + 5 * 60 * 1000) {
+      if (session.dev) {
+        // Virtual session from /api/auth/dev-login. There is no Discord behind
+        // it, so skip the refresh path — a fake refresh token would 400 and
+        // nuke the cookie. Outside dev such a cookie is not a session at all.
+        if (!dev) {
+          event.cookies.delete('session', { path: '/' });
+          return resolve(event);
+        }
+        event.locals.devSuperAdmin = session.superAdmin === true;
+      } else if (session.expiresAt < Date.now() + 5 * 60 * 1000) {
+        // Refresh token if expired (with 5 min buffer)
         const result = await refreshDiscordToken(session.refreshToken);
         if (result.session) {
           session = result.session;

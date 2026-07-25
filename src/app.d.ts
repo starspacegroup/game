@@ -9,6 +9,11 @@ declare global {
 				username: string;
 				avatar: string | null;
 			};
+			/**
+			 * Set only for dev virtual sessions (/api/auth/dev-login) that asked
+			 * for admin rights. Ignored outside dev — see $lib/server/admin.
+			 */
+			devSuperAdmin?: boolean;
 		}
 		// interface PageData {}
 		// interface PageState {}

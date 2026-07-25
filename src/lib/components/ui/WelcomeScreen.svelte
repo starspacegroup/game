@@ -15,6 +15,7 @@
 	import { connectLobby, disconnectLobby, lobbyState, removeRoomFromLobby, reconnectLobby, type LobbyRoomInfo } from '$lib/stores/lobbyClient.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { dev } from '$app/environment';
 
 	interface LeaderboardEntry {
 		userId: string;
@@ -277,6 +278,34 @@
 
 	function loginWithDiscord(): void {
 		window.location.href = '/api/auth/discord';
+	}
+
+	// --- Dev-only virtual login (compiled out of production builds) ---
+	let devUsername = $state('Dev Player');
+	let devAsAdmin = $state(false);
+	let devLoginError = $state<string | null>(null);
+
+	async function devLogin(): Promise<void> {
+		devLoginError = null;
+		try {
+			const res = await fetch('/api/auth/dev-login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ username: devUsername, superAdmin: devAsAdmin })
+			});
+			if (!res.ok) {
+				devLoginError = `Dev login unavailable (${res.status})`;
+				return;
+			}
+			const data = await res.json() as {
+				user: { id: string; username: string; avatar: string | null };
+				superAdmin: boolean;
+			};
+			authState.setUser({ ...data.user, accessToken: '' });
+			authState.setSuperAdmin(data.superAdmin);
+		} catch {
+			devLoginError = 'Dev login request failed';
+		}
 	}
 
 	async function logout(): Promise<void> {
@@ -560,6 +589,31 @@
 					</svg>
 					Login with Discord
 				</button>
+
+				{#if dev}
+					<div class="dev-login">
+						<h3 class="dev-login-header">DEV LOGIN — not available in production</h3>
+						<div class="dev-login-row">
+							<input
+								class="dev-login-input"
+								type="text"
+								bind:value={devUsername}
+								maxlength="32"
+								placeholder="Username"
+								aria-label="Dev login username"
+								onkeydown={(e) => { if (e.key === 'Enter') devLogin(); }}
+							/>
+							<button class="dev-login-btn" onclick={devLogin}>Log in</button>
+						</div>
+						<label class="dev-login-check">
+							<input type="checkbox" bind:checked={devAsAdmin} />
+							<span>super admin (unlocks /superadmin)</span>
+						</label>
+						{#if devLoginError}
+							<p class="dev-login-error">{devLoginError}</p>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 
 	
@@ -771,6 +825,93 @@
 		width: 20px;
 		height: 20px;
 		flex-shrink: 0;
+	}
+
+	/* Dev-only virtual login — deliberately looks like scaffolding, not UI */
+	.dev-login {
+		width: 100%;
+		max-width: 320px;
+		margin: 0 auto var(--spacing-lg, 16px);
+		padding: var(--spacing-md, 12px);
+		border: 1px dashed rgba(255, 176, 0, 0.5);
+		border-radius: 8px;
+		background: rgba(255, 176, 0, 0.05);
+		text-align: left;
+	}
+
+	.dev-login-header {
+		margin: 0 0 var(--spacing-sm, 8px);
+		font-family: var(--hud-font, monospace);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		letter-spacing: 1px;
+		color: #ffb000;
+	}
+
+	.dev-login-row {
+		display: flex;
+		gap: var(--spacing-sm, 8px);
+	}
+
+	.dev-login-input {
+		flex: 1;
+		min-width: 0;
+		min-height: var(--touch-target, 44px);
+		padding: 0 10px;
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		color: #e8eef8;
+		background: rgba(0, 0, 0, 0.4);
+		border: 1px solid rgba(255, 176, 0, 0.35);
+		border-radius: 6px;
+	}
+
+	.dev-login-input:focus {
+		outline: none;
+		border-color: #ffb000;
+	}
+
+	.dev-login-btn {
+		min-height: var(--touch-target, 44px);
+		padding: 0 var(--spacing-md, 12px);
+		font-family: var(--hud-font, monospace);
+		font-size: var(--font-sm, 0.875rem);
+		letter-spacing: 1px;
+		color: #1a1200;
+		background: #ffb000;
+		border: none;
+		border-radius: 6px;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.dev-login-btn:hover,
+	.dev-login-btn:active {
+		background: #ffc740;
+	}
+
+	.dev-login-check {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: var(--spacing-sm, 8px);
+		font-family: var(--hud-font, monospace);
+		font-size: 0.75rem;
+		color: #ccb488;
+		cursor: pointer;
+	}
+
+	.dev-login-check input {
+		accent-color: #ffb000;
+		width: 16px;
+		height: 16px;
+	}
+
+	.dev-login-error {
+		margin: var(--spacing-sm, 8px) 0 0;
+		font-family: var(--hud-font, monospace);
+		font-size: 0.75rem;
+		color: #ff6b6b;
 	}
 
 	.lore {

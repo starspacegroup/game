@@ -1,8 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { SUPER_ADMIN_DISCORD_IDS } from '$env/static/private';
-
-const adminIds = SUPER_ADMIN_DISCORD_IDS?.split(',').map(id => id.trim()) ?? [];
+import { isSuperAdmin } from '$lib/server/admin';
 
 const SETTINGS_KEY = 'settings:global';
 
@@ -34,7 +32,7 @@ export async function _loadSettings(platform: App.Platform | undefined): Promise
 
 /** GET /api/game/settings — return current settings (admin only, tokens masked) */
 export const GET: RequestHandler = async ({ locals, platform }) => {
-  if (!locals.user || !adminIds.includes(locals.user.id)) {
+  if (!isSuperAdmin(locals)) {
     return json({ error: 'Unauthorized' }, { status: 403 });
   }
 
@@ -51,7 +49,7 @@ export const GET: RequestHandler = async ({ locals, platform }) => {
 
 /** PUT /api/game/settings — update settings (admin only) */
 export const PUT: RequestHandler = async ({ request, locals, platform }) => {
-  if (!locals.user || !adminIds.includes(locals.user.id)) {
+  if (!isSuperAdmin(locals)) {
     return json({ error: 'Unauthorized' }, { status: 403 });
   }
 

@@ -7,6 +7,9 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		port: 4201,
+		// Cloudflare Tunnel dev URLs (dev-game-<hash>.starspace.group) — Vite
+		// rejects unknown Host headers otherwise.
+		allowedHosts: ['.starspace.group'],
 		proxy: {
 			// Proxy WebSocket (and HTTP) requests to the game-worker so
 			// Durable Object connections work in local dev.
