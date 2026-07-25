@@ -386,7 +386,11 @@
 	/* Hint display — compact top banner, mobile-first */
 	.hint-display {
 		position: fixed;
-		top: calc(var(--safe-top, 0px) + 44px);
+		/* Clears the minimap, which is also fixed top-centre and spans
+		   safe-top+8px to safe-top+138px. At 44px this banner ran straight
+		   through the radar — both are centred and this one is up to 3x wider,
+		   so it cut the minimap in half and left both unreadable. */
+		top: calc(var(--safe-top, 0px) + 146px);
 		left: 50%;
 		transform: translateX(-50%);
 		background: rgba(0, 16, 32, 0.75);
@@ -441,7 +445,8 @@
 
 	@media (min-width: 768px) {
 		.hint-display {
-			top: calc(var(--safe-top, 0px) + 52px);
+			/* No `top` override: the minimap is the same size at every
+			   breakpoint, so the base offset already clears it. */
 			max-width: 420px;
 			padding: 4px 14px;
 			opacity: 0.9;

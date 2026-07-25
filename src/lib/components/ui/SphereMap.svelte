@@ -169,7 +169,10 @@
 <style>
 	.minimap {
 		position: fixed;
-		top: 8px;
+		/* Respects the notch like .hud does, and anchors the top-centre stack:
+		   the HUD bar reserves a 140px .top-spacer for this, and .hint-display
+		   is positioned to clear the bottom of it (safe-top + 138px). */
+		top: calc(var(--safe-top, 0px) + 8px);
 		left: 50%;
 		transform: translateX(-50%);
 		width: 120px;
