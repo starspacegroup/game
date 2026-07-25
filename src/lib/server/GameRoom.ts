@@ -297,12 +297,65 @@ export class GameRoom implements DurableObject {
         return;
       }
 
+      // Rebuild sessions from any sockets that survived the eviction, and pick
+      // the game back up if one was running.
+      this.ensureSessions();
+
       // Any room that wakes up gets an idle alarm, even one created long before
       // this code existed. Without this, a stale room that is never touched
       // again has no alarm pending and would keep its storage forever — waking
       // it once (a /status call is enough) is all it takes to schedule cleanup.
       await this.ensureAlarm();
     });
+  }
+
+  // ==========================================
+  // Session recovery
+  // ==========================================
+
+  /**
+   * Rebuild `sessions` from the sockets themselves.
+   *
+   * `sessions` is in-memory, and this DO accepts sockets through the
+   * hibernation API — so an eviction keeps every WebSocket open while wiping
+   * the map. Everything keyed on a session lookup then failed silently: inputs
+   * were dropped, nobody moved, and `start-game` returned without a word. The
+   * client could not even detect it, because the socket never closed.
+   *
+   * Each socket carries its own identity via serializeAttachment() at join
+   * time, so the map can always be reconstructed from getWebSockets().
+   */
+  private restoreSessions(): void {
+    for (const ws of this.state.getWebSockets()) {
+      if (this.sessions.has(ws)) continue;
+      let att: { id?: string; username?: string; } | null = null;
+      try {
+        att = ws.deserializeAttachment() as { id?: string; username?: string; } | null;
+      } catch {
+        att = null;
+      }
+      if (!att?.id) continue; // Connected but never sent 'join' — nothing to restore.
+      this.sessions.set(ws, {
+        id: att.id,
+        username: att.username || 'Player',
+        lastInput: null,
+        lastPing: Date.now()
+      });
+    }
+  }
+
+  /**
+   * Restore sessions if the socket count has outrun the map, then resume the
+   * tick loop if a game was in progress. Cheap enough to call on every inbound
+   * message: the comparison short-circuits in the normal case.
+   */
+  private ensureSessions(): void {
+    if (this.sessions.size < this.state.getWebSockets().length) {
+      this.restoreSessions();
+    }
+    if (this.phase === 'playing' && !this.roomEnded && this.sessions.size > 0 && !this.tickInterval) {
+      this.startGameLoop();
+    }
   }
 
   // ==========================================
@@ -1143,6 +1196,10 @@ export class GameRoom implements DurableObject {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
 
+    // A message can be the first thing to touch the DO after an eviction, so
+    // recover before dispatching — otherwise this message is silently dropped.
+    this.ensureSessions();
+
     try {
       const data = JSON.parse(message) as ClientMessage;
       await this.handleMessage(ws, data);
@@ -1152,14 +1209,15 @@ export class GameRoom implements DurableObject {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
+    // Recover first: without this, a close arriving after an eviction skipped
+    // every cleanup path below.
+    this.ensureSessions();
     const session = this.sessions.get(ws);
 
     if (!session) {
-      // No in-memory session for this socket, which happens whenever the DO was
-      // evicted and rehydrated: `sessions` is not rebuilt from getWebSockets().
-      // The old code returned here and left the room's storage behind forever —
-      // the main source of the stale rooms. Fall back to the socket count, and
-      // let the idle alarm reclaim the storage.
+      // Still nothing — a socket that never sent 'join', or an attachment that
+      // could not be read. Fall back to the socket count and let the idle alarm
+      // reclaim the storage.
       if (this.state.getWebSockets().length === 0) {
         this.stopGameLoop();
         this.lastActivity = Date.now();
@@ -1289,6 +1347,15 @@ export class GameRoom implements DurableObject {
           lastInput: null,
           lastPing: Date.now()
         });
+
+        // Stamp identity onto the socket itself. This is what survives an
+        // eviction — see restoreSessions().
+        try {
+          ws.serializeAttachment({ id: playerId, username });
+        } catch {
+          // Attachment unavailable (older runtime); recovery degrades to the
+          // pre-existing behaviour rather than breaking the join.
+        }
 
         // If in lobby phase, add to lobby players and broadcast lobby state
         if (this.phase === 'lobby') {
