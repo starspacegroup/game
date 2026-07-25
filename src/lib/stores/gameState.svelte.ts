@@ -68,6 +68,20 @@ class GameStore {
 	puzzleProgress = $state(0);
 	puzzleRevealed = $state(false);
 	puzzleSolved = $state(false);
+
+	/**
+	 * The puzzle node the player is currently close enough to align, if any.
+	 * `align` is 0..1 — how far that node has travelled to its target.
+	 *
+	 * Without this nothing ever told a player a node was actionable: the
+	 * mechanic worked (fly over a node, hold interact, it locks in ~0.2s) but
+	 * the only mention of it anywhere was "E interact" in a footer hint, so in
+	 * practice nobody solved anything and the wave never advanced.
+	 */
+	nodeInRange = $state<{ id: string; align: number; } | null>(null);
+	/** Nodes aligned in the current wave, and how many the wave needs. */
+	nodesAligned = $state(0);
+	nodesInWave = $state(0);
 	showChat = $state(false);
 	messages = $state<{ sender: string; text: string; time: number; }[]>([]);
 	isMobile = $state(false);
@@ -297,6 +311,9 @@ class GameStore {
 		this.puzzleProgress = 0;
 		this.puzzleRevealed = false;
 		this.puzzleSolved = false;
+		this.nodeInRange = null;
+		this.nodesAligned = 0;
+		this.nodesInWave = 0;
 		this.messages = [];
 		this.convertedNpcCount = 0;
 		this.hints = [];

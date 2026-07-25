@@ -87,6 +87,21 @@
 		</div>
 	{/if}
 
+	<!-- Node alignment prompt — the only thing that tells a player the puzzle
+	     is playable at the moment they can actually act on it. -->
+	{#if gameState.nodeInRange}
+		<div class="align-prompt">
+			<span class="align-key">{gameState.isMobile ? 'HOLD ⊙' : 'HOLD E'}</span>
+			<span class="align-label">ALIGN NODE</span>
+			<span class="align-bar">
+				<span class="align-fill" style="width: {Math.round(gameState.nodeInRange.align * 100)}%"></span>
+			</span>
+			{#if gameState.nodesInWave > 0}
+				<span class="align-count">{gameState.nodesAligned}/{gameState.nodesInWave}</span>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Controls hint -->
 	{#if !gameState.isMobile}
 		<div class="controls-hint">
@@ -381,6 +396,70 @@
 
 	.quit-cancel:hover {
 		background: rgba(68, 136, 255, 0.2);
+	}
+
+	/* Node alignment prompt — bottom-centre, clear of the top-centre stack
+	   (minimap + hint banner) and above the mobile joysticks. */
+	.align-prompt {
+		position: fixed;
+		bottom: calc(var(--safe-bottom, 0px) + 96px);
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 5px 12px;
+		background: rgba(0, 16, 32, 0.82);
+		border: 1px solid rgba(0, 255, 204, 0.45);
+		border-radius: 6px;
+		backdrop-filter: blur(4px);
+		font-family: var(--hud-font, monospace);
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 12;
+		animation: align-pop 0.18s ease-out;
+	}
+
+	@keyframes align-pop {
+		from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+		to { opacity: 1; transform: translateX(-50%) translateY(0); }
+	}
+
+	.align-key {
+		color: #00ffcc;
+		font-size: 0.6rem;
+		letter-spacing: 1px;
+		border: 1px solid rgba(0, 255, 204, 0.5);
+		border-radius: 3px;
+		padding: 1px 5px;
+		animation: pulse-hint 1.5s ease-in-out infinite;
+	}
+
+	.align-label {
+		color: #cfe;
+		font-size: 0.6rem;
+		letter-spacing: 1px;
+	}
+
+	.align-bar {
+		width: 64px;
+		height: 4px;
+		border-radius: 2px;
+		background: rgba(0, 255, 204, 0.15);
+		overflow: hidden;
+	}
+
+	.align-fill {
+		display: block;
+		height: 100%;
+		background: linear-gradient(90deg, #00ffcc, #4488ff);
+		transition: width 0.08s linear;
+	}
+
+	.align-count {
+		color: #8899bb;
+		font-size: 0.55rem;
+		letter-spacing: 1px;
 	}
 
 	/* Hint display — compact top banner, mobile-first */

@@ -40,6 +40,11 @@
 		return id;
 	}
 
+	/** Distance at which a node locks into its target. */
+	const NODE_CONNECT_DIST = 8;
+	/** Reference scatter distance used to scale the align readout (see puzzle.ts). */
+	const NODE_ALIGN_REFERENCE = 40;
+
 	// Load personal best from localStorage
 	function loadPersonalBest(): number {
 		if (typeof localStorage === 'undefined') return 0;
@@ -633,6 +638,9 @@
 
 	function handleCollisions(): void {
 		const events = checkCollisions();
+		// Recomputed from this frame's events below; cleared first so the prompt
+		// disappears as soon as the player flies off a node.
+		let inRange: { id: string; align: number; } | null = null;
 		for (const event of events) {
 			switch (event.type) {
 				case 'laser-npc':
@@ -732,6 +740,16 @@
 				}
 				case 'player-puzzlenode': {
 					const node = world.puzzleNodes.find((n) => n.id === event.entityB);
+					// Surface the nearest actionable node whether or not the player
+					// is holding interact — that prompt is the only thing that tells
+					// them the puzzle is playable at all.
+					if (node && !node.connected) {
+						// 0 at the reference scatter distance, 1 at the lock-in
+						// threshold. Same 40/8 scale checkPuzzleProgress uses.
+						const gap = node.position.distanceTo(node.targetPosition);
+						const align = Math.max(0, Math.min(1, 1 - (gap - NODE_CONNECT_DIST) / (NODE_ALIGN_REFERENCE - NODE_CONNECT_DIST)));
+						if (!inRange || align > inRange.align) inRange = { id: node.id, align };
+					}
 					if (node && inputState.interact && !node.connected) {
 						// Lerp node toward target inside the sphere (no surface projection)
 						node.position.lerp(node.targetPosition, 0.05);
@@ -742,8 +760,16 @@
 							{ x: node.position.x, y: node.position.y, z: node.position.z },
 							false
 						);
-						if (node.position.distanceTo(node.targetPosition) < 8) {
+						if (node.position.distanceTo(node.targetPosition) < NODE_CONNECT_DIST) {
 							node.connected = true;
+							// Confirm the lock-in on the puzzle's own channel. Without
+							// this a node simply stopped glowing and nothing said the
+							// player had achieved anything.
+							{
+								const waveNodes = world.puzzleNodes.filter((n) => n.wave === gameState.wave);
+								const done = waveNodes.filter((n) => n.connected).length;
+								gameState.addHint(node.id, `Node aligned — ${done}/${waveNodes.length} in this shell`);
+							}
 							sendPuzzleAction(
 								node.id,
 								'connect',
@@ -756,6 +782,16 @@
 				}
 			}
 		}
+
+		// Publish this frame's result so the HUD can prompt. Assigned once rather
+		// than per-event to avoid churning reactive state inside the loop.
+		const prev = gameState.nodeInRange;
+		if (!prev !== !inRange || (prev && inRange && (prev.id !== inRange.id || Math.abs(prev.align - inRange.align) > 0.01))) {
+			gameState.nodeInRange = inRange;
+		}
+		const waveNodes = world.puzzleNodes.filter((n) => n.wave === gameState.wave);
+		gameState.nodesInWave = waveNodes.length;
+		gameState.nodesAligned = waveNodes.filter((n) => n.connected).length;
 	}
 
 	function updatePuzzle(): void {
