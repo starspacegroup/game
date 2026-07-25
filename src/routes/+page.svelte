@@ -24,12 +24,22 @@
 	 * Saves personal best to localStorage synchronously and uses sendBeacon to
 	 * submit the score to the leaderboard (works reliably during page unload).
 	 */
+	/** Highest score already sent, so repeated triggers don't resubmit the same run. */
+	let lastSubmittedScore = 0;
+
 	function handleSessionEnd(): void {
 		// Only act if player is in an active game and not already dead
 		if (gameState.phase !== 'playing' || gameState.multiplayerDead) return;
 
 		const score = gameState.score;
 		const wave = gameState.wave;
+
+		// Fires from several events now (see onMount) — only the first one with
+		// a given score does any work. Score only grows during a run, so a
+		// player who backgrounds the app, returns and scores more still submits
+		// the improvement on the next trigger.
+		if (score <= lastSubmittedScore) return;
+		lastSubmittedScore = score;
 
 		// Save personal best to localStorage (synchronous, always works)
 		if (score > 0) {
@@ -43,7 +53,15 @@
 		if (score > 0) {
 			const payload: Record<string, unknown> = { score, wave };
 			if (!authState.isLoggedIn) {
-				payload.guestId = localStorage.getItem('starspace_guest_id') || crypto.randomUUID();
+				// Persist a freshly minted ID, or this run lands under an identity
+				// no later run can improve on. GameWorld normally creates it first;
+				// this covers the case where it never mounted.
+				let guestId = localStorage.getItem('starspace_guest_id');
+				if (!guestId) {
+					guestId = crypto.randomUUID();
+					localStorage.setItem('starspace_guest_id', guestId);
+				}
+				payload.guestId = guestId;
 				payload.guestName = 'Guest';
 			}
 
@@ -56,9 +74,23 @@
 		handleSessionEnd();
 	}
 
+	function onPageHide(): void {
+		handleSessionEnd();
+	}
+
+	function onVisibilityChange(): void {
+		if (document.visibilityState === 'hidden') handleSessionEnd();
+	}
+
 	onMount(() => {
-		// Listen for tab close / navigation away
+		// `beforeunload` alone loses mobile scores: it is unreliable on mobile
+		// browsers, and backgrounding the app — the normal way a phone session
+		// ends — often never fires it. `pagehide` and visibilitychange→hidden do
+		// fire there. handleSessionEnd() is idempotent per score, so overlapping
+		// events on desktop cost nothing.
 		window.addEventListener('beforeunload', onBeforeUnload);
+		window.addEventListener('pagehide', onPageHide);
+		document.addEventListener('visibilitychange', onVisibilityChange);
 		// Detect mobile
 		gameState.isMobile =
 			'ontouchstart' in window ||
@@ -98,6 +130,8 @@
 
 	onDestroy(() => {
 		window.removeEventListener('beforeunload', onBeforeUnload);
+		window.removeEventListener('pagehide', onPageHide);
+		document.removeEventListener('visibilitychange', onVisibilityChange);
 		handleSessionEnd();
 		cleanupKeyboard?.();
 		cleanupMouse?.();
