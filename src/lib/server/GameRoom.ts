@@ -280,6 +280,12 @@ export class GameRoom implements DurableObject {
       // configured but never joined. Treat "now" as the baseline so it gets a
       // full idle window rather than being wiped the moment it wakes.
       this.lastActivity = lastActivity ?? Date.now();
+      if (lastActivity === undefined) {
+        // Stamp it once, or the clock restarts on every wake: an idle room that
+        // gets evicted and re-instantiated (by a status poll, a lobby listing,
+        // anything) would look brand new each time and could never age out.
+        await this.state.storage.put('lastActivity', this.lastActivity);
+      }
 
       const roomEnded = await this.state.storage.get<boolean>('roomEnded');
       if (roomEnded) {
