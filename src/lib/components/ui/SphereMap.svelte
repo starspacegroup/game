@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { world, SPHERE_RADIUS, getTangentFrame } from '$lib/game/world';
+	import { world, SPHERE_RADIUS, getTangentFrame, surfaceProximity, nodeInteractRange } from '$lib/game/world';
 	import { toSpherical } from '$lib/game/chunk';
+	import { gameState } from '$lib/stores/gameState.svelte';
 
 	let canvas: HTMLCanvasElement;
 	let ctx: CanvasRenderingContext2D;
@@ -104,15 +105,65 @@
 				ctx.fill();
 			}
 
-			// Puzzle nodes (colored dots)
+			// Puzzle nodes. Three states have to be tellable apart at 2-3px:
+			// locked in, reachable right now, and too far to act on. Previously
+			// every unaligned node was the same dim amber dot, so the map gave
+			// no reason to fly anywhere and no signal on arrival.
+			const activeId = gameState.nodeInRange?.id;
+			const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
 			for (const node of world.puzzleNodes) {
 				const { lat: pLat, lon: pLon } = toSpherical(node.position);
 				const p = project(pLat, pLon);
 				if (!p.visible) continue;
-				ctx.fillStyle = node.connected ? 'rgba(68, 136, 255, 0.9)' : 'rgba(255, 200, 68, 0.6)';
-				ctx.beginPath();
-				ctx.arc(p.px, p.py, node.connected ? 3 : 2, 0, Math.PI * 2);
-				ctx.fill();
+
+				const reachable = !node.connected &&
+					surfaceProximity(world.player.position, node.position)
+						<= nodeInteractRange(world.player.radius, node.radius);
+
+				if (node.connected) {
+					// Locked in — solid blue, with a ring so it reads as "done"
+					ctx.fillStyle = 'rgba(68, 160, 255, 0.95)';
+					ctx.beginPath();
+					ctx.arc(p.px, p.py, 2.6, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.strokeStyle = 'rgba(120, 200, 255, 0.55)';
+					ctx.lineWidth = 1;
+					ctx.beginPath();
+					ctx.arc(p.px, p.py, 4.5, 0, Math.PI * 2);
+					ctx.stroke();
+				} else if (reachable) {
+					// In range — pulsing cyan halo. This is the "you can act here"
+					// signal the map never had.
+					ctx.shadowColor = '#00ffcc';
+					ctx.shadowBlur = 6 + pulse * 6;
+					ctx.fillStyle = 'rgba(0, 255, 204, 0.95)';
+					ctx.beginPath();
+					ctx.arc(p.px, p.py, 3, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.shadowBlur = 0;
+
+					ctx.strokeStyle = `rgba(0, 255, 204, ${0.35 + pulse * 0.45})`;
+					ctx.lineWidth = 1.2;
+					ctx.beginPath();
+					ctx.arc(p.px, p.py, 5.5 + pulse * 2.5, 0, Math.PI * 2);
+					ctx.stroke();
+
+					// Alignment progress as an arc around the node being worked on
+					if (node.id === activeId && gameState.nodeInRange) {
+						ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+						ctx.lineWidth = 1.6;
+						ctx.beginPath();
+						ctx.arc(p.px, p.py, 7.5, -Math.PI / 2,
+							-Math.PI / 2 + Math.PI * 2 * gameState.nodeInRange.align);
+						ctx.stroke();
+					}
+				} else {
+					// Out of range — amber, dim, but still a target worth flying to
+					ctx.fillStyle = 'rgba(255, 200, 68, 0.55)';
+					ctx.beginPath();
+					ctx.arc(p.px, p.py, 1.8, 0, Math.PI * 2);
+					ctx.fill();
+				}
 			}
 
 			// Other players (white dots)
@@ -143,6 +194,26 @@
 			ctx.lineTo(HALF + 3, HALF - 3);
 			ctx.closePath();
 			ctx.fill();
+
+			// Shell progress — the map is where the player is already looking for
+			// nodes, so the count of what they have locked in belongs here too.
+			// Counted here rather than read from gameState so the map is correct
+			// from the first frame, before any collision pass has run.
+			let total = 0, done = 0;
+			for (const n of world.puzzleNodes) {
+				if (n.wave !== gameState.wave) continue;
+				total++;
+				if (n.connected) done++;
+			}
+			if (total > 0) {
+				ctx.font = 'bold 9px monospace';
+				ctx.textAlign = 'left';
+				ctx.fillStyle = done > 0 ? 'rgba(68, 180, 255, 0.95)' : 'rgba(255, 200, 68, 0.8)';
+				ctx.fillText(`${done}/${total}`, 3, 10);
+				ctx.font = '7px monospace';
+				ctx.fillStyle = 'rgba(120, 150, 190, 0.75)';
+				ctx.fillText('NODES', 3, 18);
+			}
 
 			// Coordinates label
 			const latDeg = ((lat * 180) / Math.PI).toFixed(1);
