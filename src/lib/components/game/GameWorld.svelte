@@ -42,6 +42,17 @@
 
 	/** Distance at which a node locks into its target. */
 	const NODE_CONNECT_DIST = 8;
+	/**
+	 * Per-frame lerp toward the slot while the player is in range.
+	 *
+	 * Was 0.05, which locked a node in ~11 frames. That was fine when it was
+	 * gated behind holding a key, but alignment is now automatic, so at that
+	 * rate flying past a node would snap it in before the player registered
+	 * anything — and the ring, bar and map arc would never be legible. This
+	 * takes roughly 0.6-1.8s depending on how far the node has to travel, so
+	 * staying put on a node is a deliberate act with visible progress.
+	 */
+	const NODE_ALIGN_RATE = 0.015;
 	/** Reference scatter distance used to scale the align readout (see puzzle.ts). */
 	const NODE_ALIGN_REFERENCE = 40;
 
@@ -740,9 +751,8 @@
 				}
 				case 'player-puzzlenode': {
 					const node = world.puzzleNodes.find((n) => n.id === event.entityB);
-					// Surface the nearest actionable node whether or not the player
-					// is holding interact — that prompt is the only thing that tells
-					// them the puzzle is playable at all.
+					// Surface the nearest actionable node so the HUD and minimap can
+					// show what is happening.
 					if (node && !node.connected) {
 						// 0 at the reference scatter distance, 1 at the lock-in
 						// threshold. Same 40/8 scale checkPuzzleProgress uses.
@@ -750,9 +760,12 @@
 						const align = Math.max(0, Math.min(1, 1 - (gap - NODE_CONNECT_DIST) / (NODE_ALIGN_REFERENCE - NODE_CONNECT_DIST)));
 						if (!inRange || align > inRange.align) inRange = { id: node.id, align };
 					}
-					if (node && inputState.interact && !node.connected) {
+					// Alignment happens by being there, not by holding a key. The old
+					// gate was the E key, which mobile has no way to press — half the
+					// audience simply could not touch the puzzle.
+					if (node && !node.connected && gameState.isAlive) {
 						// Lerp node toward target inside the sphere (no surface projection)
-						node.position.lerp(node.targetPosition, 0.05);
+						node.position.lerp(node.targetPosition, NODE_ALIGN_RATE);
 						// Sync puzzle node movement to server
 						sendPuzzleAction(
 							node.id,

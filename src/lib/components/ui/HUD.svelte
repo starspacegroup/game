@@ -91,8 +91,8 @@
 	     is playable at the moment they can actually act on it. -->
 	{#if gameState.nodeInRange}
 		<div class="align-prompt">
-			<span class="align-key">{gameState.isMobile ? 'HOLD ⊙' : 'HOLD E'}</span>
-			<span class="align-label">ALIGN NODE</span>
+			<span class="align-key">⟁</span>
+			<span class="align-label">ALIGNING NODE</span>
 			<span class="align-bar">
 				<span class="align-fill" style="width: {Math.round(gameState.nodeInRange.align * 100)}%"></span>
 			</span>
@@ -105,7 +105,7 @@
 	<!-- Controls hint -->
 	{#if !gameState.isMobile}
 		<div class="controls-hint">
-			WASD move &bull; Mouse aim &bull; Click shoot &bull; E interact &bull; Shift boost
+			WASD move &bull; Mouse aim &bull; Click shoot &bull; Shift boost
 		</div>
 	{/if}
 
