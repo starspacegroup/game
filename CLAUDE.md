@@ -14,17 +14,26 @@ npm run check:watch  # Type-check in watch mode
 
 No test framework is configured. Use `npm run check` for validation.
 
-**Don't run `npm run check` or `npm run build` while `npm run dev` is up.** Both
-start with `svelte-kit sync`, which rewrites `.svelte-kit/generated/*` — the
-files the dev server watches. It reloads every route, then exits, taking the
-dev tunnel down with it. While the dev server is running, type-check with:
+**The dev server exits on its own, and it takes the dev tunnel down with it.**
+Observed four times in one session (2026-07-26), always a clean exit — code 0,
+no error in its output. Expect to restart `npm run dev` periodically, and check
+it before assuming the tunnel is broken:
 
 ```bash
-npx svelte-check --tsconfig ./tsconfig.json   # same result, no sync, no restart
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4201/
 ```
 
-The dev server keeps `.svelte-kit/generated` current on its own, so the sync
-step is redundant while it is running.
+What is known: `npm run check` and `npm run build` both begin with
+`svelte-kit sync`, which rewrites `.svelte-kit/generated/*` and makes the dev
+server reload every route. Deaths have followed those commands. What is *not*
+established: that the sync causes the exit. A controlled test — run
+`npx svelte-check --tsconfig ./tsconfig.json`, then poll for 30s — produced the
+same reload lines and the server survived; and one death happened with no log
+output at all, minutes after the last command. Treat the correlation as a hint,
+not a diagnosis.
+
+`npx svelte-check --tsconfig ./tsconfig.json` gives the same result as
+`npm run check` and is the lighter option, but it is not a proven fix.
 
 Copy `.env.example` to `.env` before either command — `$env/static/private`
 errors on imports it can't resolve, so a missing file fails the build.
