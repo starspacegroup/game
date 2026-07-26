@@ -5,6 +5,22 @@ export const SPHERE_RADIUS = 100;
 /** Puzzle nodes live inside the sphere at this fraction of the radius */
 export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
 
+/** Slack added to the radii when deciding if a player can align a node. */
+export const PUZZLE_INTERACT_PADDING = 20;
+
+/**
+ * Surface proximity within which a player can align a node.
+ *
+ * Single source of truth: collision.ts gates the interaction on this, and
+ * PuzzleNode lights up on it. They used to carry independent numbers — 23 in
+ * collision, 60 in the visuals — so a node advertised itself as ready from
+ * nearly three times the distance at which holding interact actually did
+ * anything.
+ */
+export function nodeInteractRange(playerRadius: number, nodeRadius: number): number {
+	return playerRadius + nodeRadius + PUZZLE_INTERACT_PADDING;
+}
+
 export interface AsteroidData {
 	id: string;
 	position: THREE.Vector3;

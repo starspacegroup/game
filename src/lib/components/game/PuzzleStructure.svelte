@@ -9,7 +9,12 @@
 	let lineGeometry: THREE.BufferGeometry | undefined = $state();
 	let targetLineGeometry: THREE.BufferGeometry | undefined = $state();
 	let connectedLineGeometry: THREE.BufferGeometry | undefined = $state();
+	/** Node → its own slot, for the node the player can currently align. */
+	let tetherGeometry: THREE.BufferGeometry | undefined = $state();
 	let updateTimer = 0;
+
+	/** The slot the actionable node is heading for, so it can be marked. */
+	let slotMarker = $state<{ x: number; y: number; z: number; } | null>(null);
 
 	// Cache connections (recomputed when wave changes)
 	let connections: [number, number][] = [];
@@ -19,6 +24,29 @@
 	useTask((delta) => {
 		const nodes = world.puzzleNodes;
 		if (nodes.length === 0) return;
+
+		// The tether tracks a moving node, so it updates every frame — it is two
+		// points, unlike the edge rebuild below which is throttled.
+		const activeId = gameState.nodeInRange?.id;
+		const active = activeId ? nodes.find((n) => n.id === activeId) : undefined;
+		if (active && !active.connected) {
+			if (!tetherGeometry) tetherGeometry = new THREE.BufferGeometry();
+			tetherGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+				active.position.x, active.position.y, active.position.z,
+				active.targetPosition.x, active.targetPosition.y, active.targetPosition.z
+			]), 3));
+			tetherGeometry.attributes.position.needsUpdate = true;
+			const t = active.targetPosition;
+			if (!slotMarker || slotMarker.x !== t.x || slotMarker.y !== t.y || slotMarker.z !== t.z) {
+				slotMarker = { x: t.x, y: t.y, z: t.z };
+			}
+		} else if (slotMarker) {
+			slotMarker = null;
+			if (tetherGeometry) {
+				tetherGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([]), 3));
+				tetherGeometry.attributes.position.needsUpdate = true;
+			}
+		}
 
 		// Only update geometry 5 times per second
 		updateTimer += delta;
@@ -91,8 +119,28 @@
 		color={node.color}
 		nodeWave={node.wave}
 		currentWave={gameState.wave}
+		radius={node.radius}
 	/>
 {/each}
+
+<!-- Tether from the actionable node to the slot it is travelling to. Nothing
+     previously showed an individual node's destination — the ghost wireframe
+     draws slot-to-slot edges, which is the finished shape, not where this node
+     is going. -->
+{#if tetherGeometry}
+	<T.LineSegments>
+		<T is={tetherGeometry} />
+		<T.LineBasicMaterial color="#00ffcc" transparent opacity={0.75} />
+	</T.LineSegments>
+{/if}
+
+<!-- The slot itself, so the destination is a place and not just a line end. -->
+{#if slotMarker}
+	<T.Mesh position={[slotMarker.x, slotMarker.y, slotMarker.z]}>
+		<T.IcosahedronGeometry args={[2.6, 0]} />
+		<T.MeshBasicMaterial color="#00ffcc" transparent opacity={0.28} wireframe />
+	</T.Mesh>
+{/if}
 
 <!-- Active edges (current wave, not yet locked) -->
 {#if lineGeometry}
@@ -114,6 +162,8 @@
 {#if targetLineGeometry}
 	<T.LineSegments>
 		<T is={targetLineGeometry} />
-		<T.LineBasicMaterial color="#4488ff" transparent opacity={gameState.solveSequenceActive ? 0.4 : 0.08} />
+		<!-- Was 0.08, which is effectively invisible — the shape the player is
+		     assembling should be faintly legible, since it is the goal. -->
+		<T.LineBasicMaterial color="#4488ff" transparent opacity={gameState.solveSequenceActive ? 0.4 : 0.16} />
 	</T.LineSegments>
 {/if}

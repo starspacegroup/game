@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { T, useTask } from '@threlte/core';
 	import * as THREE from 'three';
-	import { world, surfaceProximity } from '$lib/game/world';
+	import { world, surfaceProximity, nodeInteractRange } from '$lib/game/world';
 	import { gameState } from '$lib/stores/gameState.svelte';
 
 	interface Props {
@@ -11,9 +11,10 @@
 		color: string;
 		nodeWave: number;
 		currentWave: number;
+		radius?: number;
 	}
 
-	let { position, connected, color, nodeWave, currentWave }: Props = $props();
+	let { position, targetPosition, connected, color, nodeWave, currentWave, radius = 2 }: Props = $props();
 	let group: THREE.Group | undefined = $state();
 	let innerMesh: THREE.Mesh | undefined = $state();
 	let outerMesh: THREE.Mesh | undefined = $state();
@@ -21,8 +22,10 @@
 	let scale = $state(1);
 	let canInteract = $state(true);
 
-	// Interaction range — angular proximity from player on surface to node inside
-	const INTERACTION_RANGE = 60;
+	/** How close the node has travelled to its target, 0..1 — drives the ring. */
+	let alignFraction = $state(0);
+	/** True only while the player is genuinely close enough to align this node. */
+	let nearEnough = $state(false);
 
 	// Color objects
 	const baseColor = new THREE.Color();
@@ -51,9 +54,19 @@
 			lastColorStr = color;
 		}
 
-		// Check angular proximity
+		// Check angular proximity against the same range collision.ts gates on,
+		// so a node only advertises itself as ready when it actually is.
 		const distance = surfaceProximity(world.player.position, position);
-		canInteract = isCurrentWave && !connected && distance <= INTERACTION_RANGE;
+		nearEnough = distance <= nodeInteractRange(world.player.radius, radius);
+		canInteract = isCurrentWave && !connected && nearEnough;
+
+		// How far this node has travelled toward its slot, for the progress ring.
+		if (!connected && targetPosition) {
+			const gap = position.distanceTo(targetPosition);
+			alignFraction = Math.max(0, Math.min(1, 1 - (gap - 8) / 32));
+		} else {
+			alignFraction = 1;
+		}
 
 		if (isPastWave || connected) {
 			// Locked node — steady glow, slightly larger
@@ -128,6 +141,21 @@
 			wireframe
 		/>
 	</T.Mesh>
+	<!-- Alignment ring — only while this node is genuinely actionable. It closes
+	     in on the node as the node closes in on its slot, so "something is
+	     happening" is visible on the node itself, not just in the HUD.
+	     Scaled rather than re-swept, so the geometry is never rebuilt. -->
+	{#if canInteract}
+		<T.Mesh
+			scale.x={1.7 - alignFraction * 0.7}
+			scale.y={1.7 - alignFraction * 0.7}
+			scale.z={1.7 - alignFraction * 0.7}
+		>
+			<T.TorusGeometry args={[4.6, 0.22, 8, 32]} />
+			<T.MeshBasicMaterial color="#00ffcc" transparent opacity={0.35 + alignFraction * 0.6} />
+		</T.Mesh>
+	{/if}
+
 	<!-- Point light — brighter for connected / interactive nodes -->
 	{#if connected || nodeWave < currentWave}
 		<T.PointLight color="#44aaff" intensity={1.5} distance={25} />

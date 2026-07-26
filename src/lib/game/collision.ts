@@ -1,4 +1,4 @@
-import { world, sphereDistanceSq, surfaceProximity } from './world';
+import { world, sphereDistanceSq, surfaceProximity, nodeInteractRange } from './world';
 
 export interface CollisionEvent {
 	type:
@@ -37,7 +37,7 @@ export function checkCollisions(): CollisionEvent[] {
 	// Player vs Puzzle Nodes (angular proximity)
 	for (const node of world.puzzleNodes) {
 		if (node.connected) continue;
-		if (surfaceProximity(pp, node.position) < pr + node.radius + 20) {
+		if (surfaceProximity(pp, node.position) < nodeInteractRange(pr, node.radius)) {
 			events.push({ type: 'player-puzzlenode', entityA: 'player', entityB: node.id });
 		}
 	}
