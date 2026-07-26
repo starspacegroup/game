@@ -14,6 +14,18 @@ npm run check:watch  # Type-check in watch mode
 
 No test framework is configured. Use `npm run check` for validation.
 
+**Don't run `npm run check` or `npm run build` while `npm run dev` is up.** Both
+start with `svelte-kit sync`, which rewrites `.svelte-kit/generated/*` — the
+files the dev server watches. It reloads every route, then exits, taking the
+dev tunnel down with it. While the dev server is running, type-check with:
+
+```bash
+npx svelte-check --tsconfig ./tsconfig.json   # same result, no sync, no restart
+```
+
+The dev server keeps `.svelte-kit/generated` current on its own, so the sync
+step is redundant while it is running.
+
 Copy `.env.example` to `.env` before either command — `$env/static/private`
 errors on imports it can't resolve, so a missing file fails the build.
 
