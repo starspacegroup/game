@@ -3,7 +3,10 @@
 	import logoUrl from '$lib/assets/logo.png';
 
 	let { data } = $props();
-	const entries: LeaderboardEntry[] = data.entries;
+	// Derived, not captured. As a plain const this read `data` once at init, so
+	// a client-side navigation back to this route — or an invalidate() after a
+	// score is posted — would keep rendering the first load's table.
+	const entries: LeaderboardEntry[] = $derived(data.entries);
 
 	function formatDate(dateStr: string): string {
 		const d = new Date(dateStr);

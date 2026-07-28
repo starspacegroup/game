@@ -163,7 +163,11 @@
 </script>
 
 {#if gameState.multiplayerDead && gameState.phase === 'playing'}
+	<!-- This overlay exists only to swallow mouse events so they don't reach the
+	     game beneath it; it is not a control, so a keyboard handler would be
+	     wrong rather than missing. Everything actionable inside it is a button. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="death-overlay" style="opacity: {overlayOpacity}; pointer-events: auto;" onmousedown={(e) => e.stopPropagation()} onmouseup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
 		{#if contentVisible}
 			<div class="death-content" class:fade-in={contentVisible}>
@@ -560,14 +564,6 @@
 		color: #aabbcc;
 	}
 
-	.death-penalty {
-		font-family: var(--hud-font, monospace);
-		font-size: 0.65rem;
-		color: #ff8844;
-		letter-spacing: 1px;
-		margin-bottom: 16px;
-		opacity: 0.8;
-	}
 
 	/* Stats panel */
 	.stats-panel {

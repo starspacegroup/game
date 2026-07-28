@@ -19,7 +19,10 @@
 	let scale = $state(0.5);
 	let lifetime = 0;
 
-	// Store original position for wrapped calculation
+	// Store original position for wrapped calculation.
+	// Captured deliberately: a popup is keyed by id and spawns at a fixed point,
+	// then rises from it — following a later prop change would drag it sideways.
+	// svelte-ignore state_referenced_locally
 	const originalPos = new THREE.Vector3(x, y, z);
 
 	const DURATION = 1.2;

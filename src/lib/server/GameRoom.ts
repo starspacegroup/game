@@ -22,7 +22,6 @@ import type {
 
 import {
   SPHERE_RADIUS,
-  TICK_RATE,
   TICK_INTERVAL,
   MAX_PLAYERS,
   ASTEROID_COUNT,
@@ -106,16 +105,6 @@ function sphereDistance(a: Vector3, b: Vector3): number {
   const dy = a.y - b.y;
   const dz = a.z - b.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-/** Angular distance between two position vectors (angle from sphere center).
- *  Works correctly for points at different radii (surface vs interior). */
-function angularDistance(a: Vector3, b: Vector3): number {
-  const lenA = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-  const lenB = Math.sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
-  if (lenA < 0.001 || lenB < 0.001) return Math.PI;
-  const dot = (a.x * b.x + a.y * b.y + a.z * b.z) / (lenA * lenB);
-  return Math.acos(Math.max(-1, Math.min(1, dot)));
 }
 
 /** Get tangent frame (east, north, normal) at a position on the sphere.
@@ -595,6 +584,14 @@ export class GameRoom implements DurableObject {
       await this.notifyLobbyDelete();
 
       await this.state.storage.deleteAll();
+      // deleteAll() does not cancel a pending alarm — same rule alarm() follows.
+      // Without this the room keeps waking every IDLE_CHECK_MS forever: the wake
+      // cold-starts the DO, `lastActivity` reads undefined from the wiped
+      // storage and is reset to now (and written back, re-creating a row), so
+      // idleFor is always ~0 and alarm() takes its "not stale yet" branch and
+      // re-arms. Eviction between wakes makes that permanent rather than
+      // self-healing after IDLE_TTL_MS.
+      try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
 
       return Response.json({ success: true });
     }
@@ -602,7 +599,7 @@ export class GameRoom implements DurableObject {
     return new Response('Game Room Durable Object', { status: 200 });
   }
 
-  private handleWebSocket(request: Request, url: URL): Response {
+  private handleWebSocket(_request: Request, url: URL): Response {
     // Reject connections to ended/terminated rooms
     if (this.roomEnded) {
       const pair = new WebSocketPair();
@@ -759,7 +756,7 @@ export class GameRoom implements DurableObject {
    * Update player positions based on inputs (world-space velocity from client)
    */
   private updatePlayers(deltaTime: number): void {
-    for (const [ws, session] of this.sessions) {
+    for (const session of this.sessions.values()) {
       const player = this.players.get(session.id);
       if (!player || player.health <= 0) continue;
 
@@ -894,7 +891,7 @@ export class GameRoom implements DurableObject {
       }
 
       // Hostile NPCs chase nearest player
-      this.updateHostileNpc(npc, playerArray, deltaTime);
+      this.updateHostileNpc(npc, playerArray);
 
       // Move NPC on sphere surface using world-space velocity (avoids tangent-frame discontinuity at poles)
       const vMag = Math.sqrt(npc.velocity.x ** 2 + npc.velocity.y ** 2 + npc.velocity.z ** 2);
@@ -980,7 +977,8 @@ export class GameRoom implements DurableObject {
     }
   }
 
-  private updateHostileNpc(npc: NpcState, players: PlayerState[], deltaTime: number): void {
+  // No deltaTime: this only sets npc.velocity; updateNpcs() integrates it.
+  private updateHostileNpc(npc: NpcState, players: PlayerState[]): void {
     if (players.length === 0) return;
 
     // Find nearest player
@@ -2111,32 +2109,12 @@ export class GameRoom implements DurableObject {
    * Terminate the room: broadcast game-over, close all connections,
    * notify lobby, and clear storage.
    */
-  private terminateRoom(reason: string): void {
-    this.stopGameLoop();
+  // terminateRoom() was removed: it had no callers. The live path is the
+  // '/terminate' route above, which the rooms API calls when it reaps a stale
+  // room. The two had drifted — the dead copy broadcast a typed
+  // 'room-terminated' message the live one does not send, and neither cancelled
+  // the alarm. Keeping one path rather than a decorative second.
 
-    // Broadcast termination to all connected clients
-    this.broadcast({
-      type: 'room-terminated',
-      reason
-    });
-
-    // Close all WebSocket connections
-    for (const ws of this.state.getWebSockets()) {
-      try {
-        ws.close(1000, reason);
-      } catch {
-        // Already closed
-      }
-    }
-    this.sessions.clear();
-    this.players.clear();
-
-    // Notify lobby to remove this room
-    this.notifyLobbyDelete();
-
-    // Clear all persisted state so the DO can be garbage-collected
-    this.state.storage.deleteAll();
-  }
 
   /**
    * Notify the GameLobby Durable Object to delete this room.
@@ -2260,8 +2238,13 @@ export class GameRoom implements DurableObject {
         return 'Node requires significant repositioning...';
       },
       () => {
-        const connected = this.puzzleNodes.filter(n => n.connected).length;
-        return `${connected}/${this.puzzleNodes.length} nodes aligned. Structure emerging...`;
+        // Current wave only. Counting every node folded in the past waves, which
+        // are generated already-connected — at wave 3 that reported "48/84
+        // aligned" while the actual objective was 0/36. The client's equivalent
+        // in game/puzzle.ts has always been wave-scoped.
+        const waveNodes = this.puzzleNodes.filter(n => n.wave === this.wave);
+        const connected = waveNodes.filter(n => n.connected).length;
+        return `${connected}/${waveNodes.length} nodes aligned. Structure emerging...`;
       },
       () => {
         const dx = node.targetPosition.x - node.position.x;

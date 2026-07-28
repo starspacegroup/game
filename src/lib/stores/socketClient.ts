@@ -1,7 +1,7 @@
 import { gameState } from './gameState.svelte';
 import { authState } from './authState.svelte';
 import { deathReplay } from './deathReplay.svelte';
-import { world, projectToSphere, sphereDistance, getPlayerFrame, transportTangent, reorthogonalizePlayerUp, SPHERE_RADIUS } from '$lib/game/world';
+import { world, projectToSphere, sphereDistance } from '$lib/game/world';
 import * as THREE from 'three';
 import type {
   ClientMessage,

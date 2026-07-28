@@ -10,6 +10,10 @@
 
 	// Generate star positions on a large sphere centered at origin
 	// Stars are fixed in space — as the player orbits the planet, different stars appear
+	//
+	// Captured deliberately: the buffers below are built once and the field is
+	// never rebuilt, so a later `count` change would not be honoured anyway.
+	// svelte-ignore state_referenced_locally
 	const starCount: number = count;
 	const positions = new Float32Array(starCount * 3);
 	const colors = new Float32Array(starCount * 3);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { AsteroidData, NpcData, PuzzleNodeData, PowerUpData } from './world';
-import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSpherePositionNear, projectToSphere, getTangentFrame } from './world';
-import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from './e8';
+import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSpherePositionNear, getTangentFrame } from './world';
+import { getE8Roots, getE8MaxRadius } from './e8';
 import { NODE_CONNECT_DIST } from '../shared/protocol';
 
 /**

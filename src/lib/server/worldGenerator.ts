@@ -23,10 +23,10 @@ import {
   NODE_CONNECT_DIST
 } from '../shared/protocol';
 
+import { getE8Roots, getE8MaxRadius } from '../game/e8';
+
 /** Smallest gap a freshly-scattered node may start at — see game/procedural.ts. */
 const MIN_SCATTER_GAP = NODE_CONNECT_DIST * 1.25;
-
-import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from '../game/e8';
 
 let nextId = 0;
 
