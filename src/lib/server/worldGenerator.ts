@@ -19,8 +19,12 @@ import {
   ASTEROID_COUNT,
   POWER_UP_COUNT,
   BASE_NPC_COUNT,
-  SPHERE_RADIUS
+  SPHERE_RADIUS,
+  NODE_CONNECT_DIST
 } from '../shared/protocol';
+
+/** Smallest gap a freshly-scattered node may start at — see game/procedural.ts. */
+const MIN_SCATTER_GAP = NODE_CONNECT_DIST * 1.25;
 
 import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from '../game/e8';
 
@@ -280,6 +284,31 @@ export function generatePuzzleNodes(
       if (clen > PUZZLE_INTERIOR_RADIUS) {
         const clampC = (PUZZLE_INTERIOR_RADIUS * 0.9) / clen;
         cx *= clampC; cy *= clampC; cz *= clampC;
+      }
+
+      // A scatter can land inside the lock radius, and such a node snaps home
+      // on first contact with no alignment at all — skipping the ring, the bar
+      // and the map arc, which are the only things that teach the mechanic.
+      // Mirrors pushOutsideLockRadius() in game/procedural.ts.
+      let gx = cx - tx, gy = cy - ty, gz = cz - tz;
+      const gap = Math.sqrt(gx * gx + gy * gy + gz * gz);
+      if (gap < MIN_SCATTER_GAP) {
+        if (gap > 0.001) {
+          gx /= gap; gy /= gap; gz /= gap;
+        } else {
+          // Landed exactly on the vertex — no direction to keep, any axis will do.
+          gx = 1; gy = 0; gz = 0;
+        }
+        cx = tx + gx * MIN_SCATTER_GAP;
+        cy = ty + gy * MIN_SCATTER_GAP;
+        cz = tz + gz * MIN_SCATTER_GAP;
+        if (Math.sqrt(cx * cx + cy * cy + cz * cz) > PUZZLE_INTERIOR_RADIUS) {
+          // Pushing outward left the sphere — the opposite side is always safe,
+          // since targets are clamped well inside the interior radius.
+          cx = tx - gx * MIN_SCATTER_GAP;
+          cy = ty - gy * MIN_SCATTER_GAP;
+          cz = tz - gz * MIN_SCATTER_GAP;
+        }
       }
     }
 

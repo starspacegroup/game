@@ -133,6 +133,16 @@ class GameStore {
 	solveSequenceProgress = $state(0); // 0..1 animation progress
 	lastUnlockedFragment = $state<import('$lib/game/fragments').FragmentData | null>(null);
 	fragmentCount = $state(0);       // how many fragments the player has collected (this mode)
+	/**
+	 * Highest wave a fragment has already been granted for in this run.
+	 *
+	 * Lives here rather than in GameWorld because a solo restart resets the run
+	 * in place (DeathScreen's handleSoloContinue) without remounting that
+	 * component — a component-local guard would stay at the old high-water mark
+	 * and silently stop granting fragments for the rest of the session.
+	 * Not $state: only the game loop reads it, nothing renders it.
+	 */
+	fragmentUnlockedForWave = 0;
 	gameSessionId = $state(crypto.randomUUID()); // unique per game session
 
 	// Health change animation: 'heal' | 'damage' | null
@@ -340,6 +350,7 @@ class GameStore {
 		this.solveSequenceProgress = 0;
 		this.lastUnlockedFragment = null;
 		this.fragmentCount = 0;
+		this.fragmentUnlockedForWave = 0;
 		this.gameSessionId = crypto.randomUUID();
 	}
 }

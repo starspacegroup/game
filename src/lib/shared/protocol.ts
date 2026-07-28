@@ -394,6 +394,19 @@ export const SPHERE_RADIUS = 100;
 /** Interior radius where puzzle nodes live inside the sphere */
 export const PUZZLE_INTERIOR_RADIUS = SPHERE_RADIUS * 0.55;
 
+/**
+ * Fraction of the remaining gap a puzzle node is pulled toward its E8 vertex
+ * per alignment step, by one player standing in range.
+ *
+ * Shared so solo and multiplayer align at the same speed. The server used to
+ * run this 3.3× faster than the client (0.05 against 0.015), which made the
+ * same node feel different depending on the mode.
+ */
+export const NODE_ALIGN_RATE = 0.015;
+
+/** Gap at which a node snaps onto its vertex and locks. */
+export const NODE_CONNECT_DIST = 8;
+
 export const TICK_RATE = 30; // ticks per second
 export const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 export const MAX_PLAYERS = 8;
@@ -401,5 +414,8 @@ export const MAX_PLAYERS = 8;
 // Entity counts (scaled for sphere surface area)
 export const ASTEROID_COUNT = 100;
 export const POWER_UP_COUNT = 20;
-export const PUZZLE_NODE_COUNT = 13;
 export const BASE_NPC_COUNT = 2;
+// There is no PUZZLE_NODE_COUNT: the node count is whatever the current wave
+// of the E8 root system holds (20 on wave 1, 240 across all six). The old
+// constant said 13, was never imported anywhere, and is where the "12 puzzle
+// nodes" claim in the docs came from.

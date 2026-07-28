@@ -81,7 +81,7 @@
 
 <div class="secrets-page">
 	<header class="secrets-header">
-		<a href="/" class="back-link">← STARSPACE</a>
+		<a href="/" class="back-link">← *SPACE</a>
 		<h1>E8 FRAGMENTS</h1>
 		<p class="subtitle">
 			{fragments.length} / {TOTAL_FRAGMENTS} collected

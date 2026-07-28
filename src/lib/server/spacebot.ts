@@ -40,7 +40,7 @@ export function getManifest(origin: string) {
     version: INTEGRATION_VERSION,
     description:
       'Explore a spherical world, battle asteroids, and solve puzzles in *Space Game',
-    author: 'Starspace Group',
+    author: 'StarSpace Group',
     author_url: 'https://starspace.group',
     icon: '🚀',
     category: 'gaming',

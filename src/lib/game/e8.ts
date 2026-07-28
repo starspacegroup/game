@@ -123,42 +123,69 @@ export function getE8Roots(): E8Root[] {
     projected[i].shell = currentShell;
   }
 
-  // Count how many roots per shell
-  const shellCounts = new Map<number, number>();
-  for (const r of projected) {
-    shellCounts.set(r.shell, (shellCounts.get(r.shell) || 0) + 1);
-  }
-
-  // Assign waves — merge shells into gameplay-sized groups.
-  // The H3 projection produces ~8 shells of sizes roughly:
-  //   [~4, ~24, ~24, ~40, ~48, ~40, ~30, ~30]
-  // We combine them into 6 waves (inner → outer):
-  //   Wave 1: shells 0+1  (~28 nodes)
-  //   Wave 2: shell 2      (~24 nodes)
-  //   Wave 3: shell 3      (~40 nodes)
-  //   Wave 4: shell 4      (~48 nodes)
-  //   Wave 5: shell 5      (~40 nodes)
-  //   Wave 6: shells 6+7   (~60 nodes)
-  const maxShell = currentShell;
-  for (const r of projected) {
-    if (r.shell <= 1) r.wave = 1;
-    else if (r.shell === 2) r.wave = 2;
-    else if (r.shell === 3) r.wave = 3;
-    else if (r.shell === 4) r.wave = 4;
-    else if (r.shell === 5) r.wave = 5;
-    else r.wave = 6;
-  }
-
-  // If shell structure differs from expected, fallback: divide evenly by radius
-  if (maxShell < 3) {
-    const perWave = Math.ceil(projected.length / E8_TOTAL_WAVES);
-    for (let i = 0; i < projected.length; i++) {
-      projected[i].wave = Math.min(E8_TOTAL_WAVES, Math.floor(i / perWave) + 1);
+  // Assign waves as contiguous bands of the radius-sorted roots, so the
+  // structure still grows outward, but with boundaries computed for the
+  // difficulty curve instead of pinned to shell edges.
+  //
+  // The previous mapping gave one wave per shell, written against an expected
+  // [4, 24, 24, 40, 48, 40, 30, 30]. The projection actually produces *seven*
+  // shells, [4, 24, 40, 78, 40, 24, 30], so that mapping yielded wave sizes of
+  // 28/40/78/40/24/30 — a spike at wave 3 followed by three easier waves.
+  //
+  // Whole shells cannot fix that: the largest shell sits in the middle, so no
+  // grouping of adjacent shells is monotonic. Splitting a shell across two
+  // waves is the only way to get a curve that climbs, and a partially-filled
+  // shell still reads correctly in-game because past-wave nodes render locked
+  // at their vertices — the shell visibly finishes filling in during the next
+  // wave.
+  const waveSizes = computeWaveSizes(projected.length, E8_TOTAL_WAVES);
+  let cursor = 0;
+  for (let w = 0; w < waveSizes.length; w++) {
+    const end = Math.min(cursor + waveSizes[w], projected.length);
+    for (let i = cursor; i < end; i++) {
+      projected[i].wave = w + 1;
     }
+    cursor = end;
+  }
+  // Only reachable if the root count ever stops matching the computed sizes.
+  for (let i = cursor; i < projected.length; i++) {
+    projected[i].wave = E8_TOTAL_WAVES;
   }
 
   _cachedRoots = projected;
   return projected;
+}
+
+/**
+ * How much bigger the final wave is than the average one. 0 would make every
+ * wave the same size; 0.5 means the last wave is 1.5× the mean and the first
+ * is 0.5×.
+ */
+const WAVE_RAMP = 0.5;
+
+/**
+ * Wave sizes that increase steadily and sum to exactly `total`.
+ *
+ * For the 240 E8 roots over 6 waves: **20, 28, 36, 44, 52, 60**.
+ */
+export function computeWaveSizes(total: number, waves: number): number[] {
+  if (waves <= 1) return [total];
+
+  const mean = total / waves;
+  const sizes: number[] = [];
+  let assigned = 0;
+
+  for (let w = 0; w < waves; w++) {
+    const t = (2 * w) / (waves - 1) - 1; // −1 on the first wave, +1 on the last
+    const size = Math.max(1, Math.round(mean * (1 + WAVE_RAMP * t)));
+    sizes.push(size);
+    assigned += size;
+  }
+
+  // Rounding drift lands on the last wave — it is the largest, so it absorbs a
+  // few nodes either way without disturbing the curve.
+  sizes[waves - 1] += total - assigned;
+  return sizes;
 }
 
 /**

@@ -23,11 +23,12 @@
 	import { checkCollisions } from '$lib/game/collision';
 	import { checkPuzzleProgress, isPuzzleSolved, isWaveSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { E8_TOTAL_WAVES } from '$lib/game/e8';
+	import { NODE_ALIGN_RATE, NODE_CONNECT_DIST } from '$lib/shared/protocol';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
-	import { sendPosition, sendPuzzleAction, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
+	import { sendPosition, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
 	import { authState } from '$lib/stores/authState.svelte';
-	import type { FragmentData } from '$lib/game/fragments';
+	import { TOTAL_FRAGMENTS, type FragmentData } from '$lib/game/fragments';
 
 	// Get or create a persistent guest ID for anonymous leaderboard entries
 	function getGuestId(): string {
@@ -40,19 +41,18 @@
 		return id;
 	}
 
-	/** Distance at which a node locks into its target. */
-	const NODE_CONNECT_DIST = 8;
 	/**
-	 * Per-frame lerp toward the slot while the player is in range.
+	 * NODE_CONNECT_DIST and NODE_ALIGN_RATE now live in shared/protocol.ts so
+	 * the server aligns at the same speed — it was running 0.05 against this
+	 * file's 0.015, so the same node behaved differently in multiplayer.
 	 *
-	 * Was 0.05, which locked a node in ~11 frames. That was fine when it was
-	 * gated behind holding a key, but alignment is now automatic, so at that
-	 * rate flying past a node would snap it in before the player registered
-	 * anything — and the ring, bar and map arc would never be legible. This
-	 * takes roughly 0.6-1.8s depending on how far the node has to travel, so
-	 * staying put on a node is a deliberate act with visible progress.
+	 * On the rate itself: 0.05 locked a node in ~11 frames. That was fine when
+	 * alignment was gated behind holding a key, but it happens automatically
+	 * now, so at that rate flying past a node would snap it in before the
+	 * player registered anything — and the ring, bar and map arc would never be
+	 * legible. 0.015 takes roughly 0.6-1.8s depending on how far the node has to
+	 * travel, so staying put on a node is a deliberate act with visible progress.
 	 */
-	const NODE_ALIGN_RATE = 0.015;
 	/** Reference scatter distance used to scale the align readout (see puzzle.ts). */
 	const NODE_ALIGN_REFERENCE = 40;
 
@@ -169,6 +169,16 @@
 				if (data.success) {
 					gameState.lastUnlockedFragment = data.fragment;
 					gameState.fragmentCount = data.fragmentCount;
+					// `lastUnlockedFragment` has no renderer — nothing in-game ever
+					// told the player a fragment had been recovered. Now that this
+					// fires once a wave rather than once a lattice, say so on the
+					// channel that already exists, and point at where they live.
+					if (data.fragment) {
+						gameState.addHint(
+							'system',
+							`✦ Fragment ${data.fragmentCount}/${TOTAL_FRAGMENTS} recovered — view at /secrets`
+						);
+					}
 				}
 			}
 		} catch {
@@ -764,15 +774,14 @@
 					// gate was the E key, which mobile has no way to press — half the
 					// audience simply could not touch the puzzle.
 					if (node && !node.connected && gameState.isAlive) {
-						// Lerp node toward target inside the sphere (no surface projection)
+						// Lerp node toward target inside the sphere (no surface
+						// projection). In multiplayer this is local prediction only —
+						// the server runs the same alignment against its own copy and
+						// corrects us on the next state broadcast. We deliberately do
+						// not send the result: the server used to accept a client's
+						// node position verbatim, which let any client drop every node
+						// onto its vertex from anywhere on the sphere.
 						node.position.lerp(node.targetPosition, NODE_ALIGN_RATE);
-						// Sync puzzle node movement to server
-						sendPuzzleAction(
-							node.id,
-							'move',
-							{ x: node.position.x, y: node.position.y, z: node.position.z },
-							false
-						);
 						if (node.position.distanceTo(node.targetPosition) < NODE_CONNECT_DIST) {
 							node.connected = true;
 							// Confirm the lock-in on the puzzle's own channel. Without
@@ -781,14 +790,8 @@
 							{
 								const waveNodes = world.puzzleNodes.filter((n) => n.wave === gameState.wave);
 								const done = waveNodes.filter((n) => n.connected).length;
-								gameState.addHint(node.id, `Node aligned — ${done}/${waveNodes.length} in this shell`);
+								gameState.addHint(node.id, `Node aligned — ${done}/${waveNodes.length} in this wave`);
 							}
-							sendPuzzleAction(
-								node.id,
-								'connect',
-								{ x: node.position.x, y: node.position.y, z: node.position.z },
-								true
-							);
 						}
 					}
 					break;
@@ -812,6 +815,23 @@
 
 		// Check if the current wave is solved
 		if (isWaveSolved(world.puzzleNodes, gameState.wave) && !gameState.puzzleSolved) {
+			// A fragment per wave, not per completed lattice.
+			//
+			// This used to fire only in the "all six waves done" branch below —
+			// one fragment for aligning all 240 vertices. With 12 fragments in the
+			// set, the meta-solve was gated behind twelve complete playthroughs.
+			// Six waves per run makes it two, which is a target a player can
+			// actually hold in their head.
+			//
+			// Guarded per wave because in multiplayer this check runs against
+			// locally-predicted node state: we can see the wave complete, unlock,
+			// then be corrected by a broadcast that still has a node open, and
+			// reach the same wave's completion a second time.
+			if (gameState.wave > gameState.fragmentUnlockedForWave) {
+				gameState.fragmentUnlockedForWave = gameState.wave;
+				unlockFragment();
+			}
+
 			if (gameState.wave < E8_TOTAL_WAVES) {
 				// Wave complete — advance!
 				const waveBonus = gameState.wave * 500;
@@ -847,8 +867,11 @@
 					});
 				}
 
-				// Add wave-advance message
-				gameState.addHint('system', `⬡ Wave ${gameState.wave} — E8 shell ${gameState.wave} activated! +${waveBonus} points`);
+				// Add wave-advance message. Waves are contiguous bands of the root
+				// system rather than whole shells, so this no longer claims to
+				// activate "shell N" — it says how much bigger the next one is.
+				const nextCount = world.puzzleNodes.filter((n) => n.wave === gameState.wave).length;
+				gameState.addHint('system', `⬡ Wave ${gameState.wave} — ${nextCount} vertices to align. +${waveBonus} points`);
 			} else {
 				// All E8 waves complete — full lattice solved!
 				gameState.puzzleSolved = true;
@@ -858,9 +881,6 @@
 				// Trigger solve sequence overlay
 				gameState.solveSequenceActive = true;
 				gameState.solveSequenceProgress = 0;
-
-				// Unlock a fragment via API (async, non-blocking)
-				unlockFragment();
 			}
 		}
 	}

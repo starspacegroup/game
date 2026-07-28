@@ -7,7 +7,6 @@ import type {
   ClientMessage,
   ServerMessage,
   InputMessage,
-  Vector3,
   StateMessage,
   AsteroidState,
   NpcState,
@@ -967,38 +966,14 @@ export function sendFire(direction?: { x: number; y: number; z: number; }): void
   });
 }
 
-/**
- * Send an interact command to the server
- */
-export function sendInteract(
-  targetId: string,
-  targetType: 'puzzle-node' | 'npc' | 'power-up',
-  action: 'move' | 'connect' | 'convert',
-  position?: Vector3
-): void {
-  if (socket?.readyState !== WebSocket.OPEN) return;
-
-  send({
-    type: 'interact',
-    targetId,
-    targetType,
-    action,
-    ...(position && { position })
-  });
-}
-
-/**
- * Send puzzle action (legacy compatibility)
- */
-export function sendPuzzleAction(
-  nodeId: string,
-  action: string,
-  position?: { x: number; y: number; z: number; },
-  connected?: boolean
-): void {
-  if (socket?.readyState !== WebSocket.OPEN) return;
-  sendInteract(nodeId, 'puzzle-node', action === 'connect' ? 'connect' : 'move', position);
-}
+// sendInteract() and sendPuzzleAction() were removed; the server ignores the
+// 'interact' message they produced (see GameRoom's handler for both holes).
+//
+// sendPuzzleAction reported the client's locally-predicted node position, which
+// the server wrote verbatim — both an exploit and redundant, since the server
+// aligns nodes itself from player proximity. Node alignment and NPC conversion
+// are server-authoritative now, with the client predicting locally and being
+// corrected by the next state broadcast. Nothing is sent back.
 
 export function sendChat(text: string): void {
   if (socket?.readyState !== WebSocket.OPEN) return;

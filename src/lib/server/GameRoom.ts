@@ -25,7 +25,9 @@ import {
   TICK_RATE,
   TICK_INTERVAL,
   MAX_PLAYERS,
-  ASTEROID_COUNT
+  ASTEROID_COUNT,
+  NODE_ALIGN_RATE,
+  NODE_CONNECT_DIST
 } from '../shared/protocol';
 
 import {
@@ -1600,31 +1602,23 @@ export class GameRoom implements DurableObject {
       }
 
       case 'interact': {
-        const session = this.sessions.get(ws);
-        if (!session) return;
-
-        const player = this.players.get(session.id);
-        if (!player || player.health <= 0) return;
-
-        switch (data.targetType) {
-          case 'puzzle-node': {
-            const node = this.puzzleNodes.find(n => n.id === data.targetId);
-            if (node && data.action === 'move' && data.position) {
-              node.position = data.position;
-              this.checkPuzzleProgress();
-            }
-            break;
-          }
-          case 'npc': {
-            if (data.action === 'convert') {
-              const npc = this.npcs.find(n => n.id === data.targetId);
-              if (npc && !npc.converted && !npc.destroyed) {
-                this.convertNpc(npc, player.id);
-              }
-            }
-            break;
-          }
-        }
+        // Deliberately does nothing, for both target types. The official client
+        // no longer sends this message at all; the case is kept so the two holes
+        // it opened are not reintroduced by wiring it back up.
+        //
+        // 'puzzle-node' wrote `node.position = data.position` verbatim — no
+        // range check, no step clamp, no rate limit — so any client could place
+        // every node on its vertex from anywhere on the sphere and walk the room
+        // through all six waves. Alignment belongs to the tick loop, which lerps
+        // only nodes a player is genuinely near (see interactPuzzleNode).
+        //
+        // 'npc' called convertNpc() on any NPC by id, skipping the laser hit and
+        // the ~0.5s conversionProgress ramp that updateNpcs() runs. Converted
+        // NPCs push puzzle nodes, so that was a puzzle exploit as much as a
+        // scoring one. Conversion starts from a laser collision and nowhere else.
+        //
+        // Clients still predict both locally and are corrected by the next state
+        // broadcast.
         break;
       }
 
@@ -1804,33 +1798,21 @@ export class GameRoom implements DurableObject {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
     // Lerp toward target (inside sphere, no surface projection)
-    node.position.x += dx * 0.05;
-    node.position.y += dy * 0.05;
-    node.position.z += dz * 0.05;
+    node.position.x += dx * NODE_ALIGN_RATE;
+    node.position.y += dy * NODE_ALIGN_RATE;
+    node.position.z += dz * NODE_ALIGN_RATE;
 
-    if (dist < 8) {
+    if (dist < NODE_CONNECT_DIST) {
       node.position = { ...node.targetPosition };
       node.connected = true;
       this.checkPuzzleProgress();
     }
   }
 
-  private convertNpc(npc: NpcState, convertedBy: string): void {
-    npc.converted = true;
-    npc.conversionProgress = 1;
-    npc.velocity = { x: 0, y: 0, z: 0 };
-
-    // Assign to nearest unconnected puzzle node using surface-projected distance,
-    // preferring nodes not already targeted by other converted NPCs
-    npc.targetNodeId = this.findBestNodeForNpc(npc);
-
-    this.broadcast({
-      type: 'npc-converted',
-      npcId: npc.id,
-      convertedBy,
-      targetNodeId: npc.targetNodeId || ''
-    });
-  }
+  // convertNpc() was removed along with the 'interact' handler that was its only
+  // caller. It duplicated, in full, the completion branch of the conversion ramp
+  // in updateNpcs() — but skipped the ramp, so it converted instantly. A laser
+  // collision setting conversionProgress is now the single way an NPC turns.
 
   /** Reassign a converted NPC to the nearest unconnected puzzle node */
   private reassignConvertedNpc(npc: NpcState): void {
@@ -1915,7 +1897,8 @@ export class GameRoom implements DurableObject {
         this.wave++;
         this.puzzleNodes = generatePuzzleNodes(this.wave);
         this.puzzleProgress = 0;
-        this.logEvent('wave-advance', undefined, `Wave ${this.wave} reached — E8 shell ${this.wave} activated!`);
+        const nextCount = this.puzzleNodes.filter(n => n.wave === this.wave).length;
+        this.logEvent('wave-advance', undefined, `Wave ${this.wave} reached — ${nextCount} vertices to align`);
       } else {
         // All E8 waves complete
         this.puzzleSolved = true;

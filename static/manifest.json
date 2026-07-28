@@ -1,6 +1,6 @@
 {
-	"name": "Starspace",
-	"short_name": "Starspace",
+	"name": "*Space Game",
+	"short_name": "*Space Game",
 	"description": "A 3D multiplayer space game on the surface of a sphere",
 	"start_url": "/",
 	"display": "fullscreen",

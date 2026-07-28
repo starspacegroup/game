@@ -121,7 +121,13 @@ Simple distance-based (sum of radii vs chord distance). Uses `sphereDistance()` 
 
 ### Puzzle System
 
-12 puzzle nodes placed randomly. Players and converted NPCs push nodes toward target positions. NPCs convert from hostile to allied via repeated laser hits, then orbit puzzle nodes and generate hints.
+Nodes are the **240 E8 roots**, projected to 3D by the H3 basis (`e8.ts`) and placed inside the sphere. They are not random: each node's *target* is a lattice vertex, and only its *start* position is scattered. Six waves reveal them as contiguous bands of the radius-sorted roots — **20, 28, 36, 44, 52, 60** nodes, computed by `computeWaveSizes()` so the curve climbs. Past-wave nodes render locked at their vertices; future waves are not generated.
+
+> Wave sizes are computed, not hardcoded per shell. The projection makes seven shells of `[4, 24, 40, 78, 40, 24, 30]` — the biggest in the middle — so no grouping of whole shells gives a rising curve. Don't reintroduce a shell→wave table.
+
+Players and converted NPCs push nodes toward their targets; a node within `NODE_CONNECT_DIST` locks. NPCs convert from hostile to allied via repeated laser hits, then orbit nodes and generate hints. Completing a wave unlocks one of the 12 `/secrets` fragments.
+
+**Alignment and conversion are server-authoritative** (`shared/protocol.ts` holds the shared `NODE_ALIGN_RATE`/`NODE_CONNECT_DIST`). Clients predict locally and are corrected by the next state broadcast; they send nothing back. The `interact` message is a deliberate no-op — see the handler in `GameRoom.ts` before re-enabling it.
 
 ## Platform Notes
 

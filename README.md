@@ -1,4 +1,4 @@
-# Game
+# *Space Game
 
 A mobile-first, responsive, fullscreen 3D multiplayer space game built with SvelteKit, Threlte (Three.js), and Cloudflare Workers + Durable Objects.
 

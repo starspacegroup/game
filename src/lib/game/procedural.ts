@@ -2,6 +2,45 @@ import * as THREE from 'three';
 import type { AsteroidData, NpcData, PuzzleNodeData, PowerUpData } from './world';
 import { SPHERE_RADIUS, PUZZLE_INTERIOR_RADIUS, randomSpherePosition, randomSpherePositionNear, projectToSphere, getTangentFrame } from './world';
 import { getE8Roots, getE8MaxRadius, E8_TOTAL_WAVES } from './e8';
+import { NODE_CONNECT_DIST } from '../shared/protocol';
+
+/**
+ * Smallest gap a freshly-scattered node may start at.
+ *
+ * A random scatter can land inside the lock radius, and such a node snaps home
+ * on first contact with no alignment at all — skipping the ring, the bar and
+ * the map arc, which are the only things that teach the mechanic. One node in
+ * twenty did this on wave 1. At the shared align rate this gap takes about
+ * three quarters of a second to close, so every node asks for a deliberate act.
+ */
+const MIN_SCATTER_GAP = NODE_CONNECT_DIST * 1.25;
+
+/**
+ * Move `pos` away from `target` until it is at least MIN_SCATTER_GAP away,
+ * keeping it inside the puzzle interior. Mutates and returns `pos`.
+ */
+function pushOutsideLockRadius(
+	pos: THREE.Vector3,
+	target: THREE.Vector3
+): THREE.Vector3 {
+	const gap = pos.distanceTo(target);
+	if (gap >= MIN_SCATTER_GAP) return pos;
+
+	// Keep the scatter's own direction where there is one; a node that landed
+	// exactly on its vertex has no direction to keep, so any axis will do.
+	const dir =
+		gap > 0.001
+			? pos.clone().sub(target).divideScalar(gap)
+			: new THREE.Vector3(1, 0, 0);
+
+	pos.copy(target).addScaledVector(dir, MIN_SCATTER_GAP);
+	if (pos.length() > PUZZLE_INTERIOR_RADIUS) {
+		// Pushing outward left the sphere — the opposite side is always safe,
+		// since targets are clamped well inside the interior radius.
+		pos.copy(target).addScaledVector(dir, -MIN_SCATTER_GAP);
+	}
+	return pos;
+}
 
 /**
  * Generate a random world-space tangent velocity for an entity on the sphere.
@@ -178,6 +217,7 @@ export function generatePuzzleNodes(currentWave = 1): PuzzleNodeData[] {
 			if (currentPos.length() > PUZZLE_INTERIOR_RADIUS) {
 				currentPos.normalize().multiplyScalar(PUZZLE_INTERIOR_RADIUS * 0.9);
 			}
+			pushOutsideLockRadius(currentPos, targetPos);
 		}
 
 		nodes.push({

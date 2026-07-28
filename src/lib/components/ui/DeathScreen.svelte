@@ -67,6 +67,9 @@
 		gameState.wave = 1;
 		gameState.puzzleProgress = 0;
 		gameState.puzzleSolved = false;
+		// Must fall back with the wave, or the per-wave fragment guard stays at
+		// this run's high-water mark and the next run earns nothing.
+		gameState.fragmentUnlockedForWave = 0;
 
 		// Regenerate puzzle nodes for wave 1
 		resetIdCounter();
