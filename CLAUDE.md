@@ -23,17 +23,28 @@ it before assuming the tunnel is broken:
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4201/
 ```
 
-What is known: `npm run check` and `npm run build` both begin with
-`svelte-kit sync`, which rewrites `.svelte-kit/generated/*` and makes the dev
-server reload every route. Deaths have followed those commands. What is *not*
-established: that the sync causes the exit. A controlled test — run
-`npx svelte-check --tsconfig ./tsconfig.json`, then poll for 30s — produced the
-same reload lines and the server survived; and one death happened with no log
-output at all, minutes after the last command. Treat the correlation as a hint,
-not a diagnosis.
+**It is Vite that exits**, not the worker: under `dev:full` the log always ends
+`vite ... exited with code 0` and only then `wrangler dev exited with code 0` —
+`concurrently` tearing down the survivor. So a death costs multiplayer too, not
+just the tunnel origin.
 
-`npx svelte-check --tsconfig ./tsconfig.json` gives the same result as
-`npm run check` and is the lighter option, but it is not a proven fix.
+Two theories have been tested and neither holds:
+
+- **`svelte-kit sync`** (run by `npm run check` and `npm run build`, which
+  rewrites `.svelte-kit/generated/*` and reloads every route). Deaths have
+  followed those commands, but a controlled run of
+  `npx svelte-check --tsconfig ./tsconfig.json` then polling for 30s produced
+  the same reload lines and survived, and deaths have happened over an hour
+  after the last such command.
+- **Vite exiting on stdin EOF** — the classic cause of a silent code-0 exit.
+  Ruled out 2026-07-28: it died twice while started with `< /dev/null`.
+
+Lifetimes are wildly variable — 2h45m and then 25m on 2026-07-28 — so it is not
+a timeout either. Still unexplained; don't treat any correlation as a diagnosis.
+
+If you need it to stay up (a tunnel, a long session), supervise it rather than
+babysitting — a `while true; do npm run dev:full < /dev/null; sleep 3; done`
+loop is enough, ideally with a guard that gives up on repeated instant exits.
 
 Copy `.env.example` to `.env` before either command — `$env/static/private`
 errors on imports it can't resolve, so a missing file fails the build.
