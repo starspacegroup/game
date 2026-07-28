@@ -286,8 +286,8 @@ export class GameRoom implements DurableObject {
         this.roomEnded = true;
         // Room was ended before DO hibernated — clean up on restore
         await this.notifyLobbyDelete();
-        await this.state.storage.deleteAll();
         try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+        await this.state.storage.deleteAll();
         return;
       }
 
@@ -411,10 +411,13 @@ export class GameRoom implements DurableObject {
       this.stopGameLoop();
       this.roomEnded = true;
       await this.notifyLobbyDelete();
-      await this.state.storage.deleteAll();
-      // deleteAll() does not cancel a pending alarm — drop it explicitly so the
-      // DO can go cold instead of waking forever on an empty room.
+      // Alarm before storage. deleteAll() does not cancel a pending alarm, so
+      // it has to be dropped explicitly or the DO wakes forever on an empty
+      // room. Doing it first also keeps the runtime quiet — calling deleteAll()
+      // while an alarm is still set logs "deleteAll() called on ActorSqlite
+      // with an alarm still set" on every teardown.
       try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+      await this.state.storage.deleteAll();
       return;
     }
 
@@ -583,15 +586,14 @@ export class GameRoom implements DurableObject {
       // Notify lobby to remove this room
       await this.notifyLobbyDelete();
 
-      await this.state.storage.deleteAll();
-      // deleteAll() does not cancel a pending alarm — same rule alarm() follows.
-      // Without this the room keeps waking every IDLE_CHECK_MS forever: the wake
-      // cold-starts the DO, `lastActivity` reads undefined from the wiped
-      // storage and is reset to now (and written back, re-creating a row), so
-      // idleFor is always ~0 and alarm() takes its "not stale yet" branch and
-      // re-arms. Eviction between wakes makes that permanent rather than
-      // self-healing after IDLE_TTL_MS.
+      // Same order and reason as alarm(). Without the deleteAlarm() the room
+      // keeps waking every IDLE_CHECK_MS forever: the wake cold-starts the DO,
+      // `lastActivity` reads undefined from the wiped storage and is reset to
+      // now (and written back, re-creating a row), so idleFor is always ~0 and
+      // alarm() takes its "not stale yet" branch and re-arms. Eviction between
+      // wakes makes that permanent rather than self-healing after IDLE_TTL_MS.
       try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+      await this.state.storage.deleteAll();
 
       return Response.json({ success: true });
     }
@@ -1317,8 +1319,8 @@ export class GameRoom implements DurableObject {
 
         // Clear all persisted state so the DO can be garbage-collected
         // and won't resurrect as a stale room on next wake-up
-        await this.state.storage.deleteAll();
         try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
+        await this.state.storage.deleteAll();
         this.players.clear();
         this.lobbyPlayers.clear();
       } else if (!this.roomEnded) {
