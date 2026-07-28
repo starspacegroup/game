@@ -16,8 +16,53 @@
 	/** The slot the actionable node is heading for, so it can be marked. */
 	let slotMarker = $state<{ x: number; y: number; z: number; } | null>(null);
 
-	// Cache connections (recomputed when wave changes)
-	let connections: [number, number][] = [];
+	/** Edge pairs for the current wave; recomputed when the wave changes. */
+	let connections = $state<[number, number][]>([]);
+
+	/**
+	 * Everything here is drawn *inside* the sphere and viewed through the surface
+	 * shell, which passes about 28% (SphereSurface's solid shell is opacity 0.72).
+	 * So an opacity set by eye against a black background lands at roughly a
+	 * quarter of itself in game. These were 0.16 / 0.2 / 0.5 — about 4%, 6% and
+	 * 14% once transmitted, which is why the lattice the player is assembling was
+	 * not legible even after the nodes themselves became visible.
+	 *
+	 * The ghost is the *goal*: the finished shape, drawn at every node's target.
+	 * It should be the thing you notice first and the reason the puzzle reads as
+	 * a puzzle rather than as scattered glowing objects.
+	 */
+	const GHOST_OPACITY = 0.5;
+	const ACTIVE_EDGE_OPACITY = 0.42;
+	const LOCKED_EDGE_BASE = 0.72;
+
+	/**
+	 * A flat opacity cannot work here: the 4_21 polytope's edge count explodes as
+	 * waves reveal it — 55 edges on wave 1, then 326 / 896 / 2088 / 3891 / 6720.
+	 * Alpha accumulates wherever lines overlap, so a value that reads as a clean
+	 * lattice on wave 1 is a solid mass by wave 6.
+	 *
+	 * Scale by 1/sqrt(count) against the wave-1 count to hold perceived density
+	 * roughly flat, with floors so the structure never disappears entirely. Early
+	 * waves get a bright, readable goal shape — which is when the player is still
+	 * working out what the puzzle is — and later waves settle into a scaffold.
+	 */
+	const EDGE_REFERENCE = 55;
+	const densityScale = $derived(
+		Math.min(1, Math.sqrt(EDGE_REFERENCE / Math.max(1, connections.length)))
+	);
+
+	const ghostOpacity = $derived(Math.max(0.1, GHOST_OPACITY * densityScale));
+	const activeEdgeOpacity = $derived(Math.max(0.12, ACTIVE_EDGE_OPACITY * densityScale));
+
+	/**
+	 * Locked edges brighten as the wave fills in, so completing it looks like the
+	 * structure resolving rather than a counter incrementing. Floored higher than
+	 * the others — these are the payoff, and the ones worth seeing.
+	 */
+	const lockedEdgeOpacity = $derived(
+		Math.min(1, Math.max(0.3, LOCKED_EDGE_BASE * densityScale) + gameState.puzzleProgress * 0.25)
+	);
+
 	let lastNodeCount = 0;
 	let lastWave = 0;
 
@@ -146,7 +191,7 @@
 {#if lineGeometry}
 	<T.LineSegments>
 		<T is={lineGeometry} />
-		<T.LineBasicMaterial color={gameState.solveSequenceActive ? '#ffffff' : '#ffffff'} transparent opacity={gameState.solveSequenceActive ? 0.8 : 0.2} />
+		<T.LineBasicMaterial color="#ffffff" transparent opacity={gameState.solveSequenceActive ? 0.9 : activeEdgeOpacity} />
 	</T.LineSegments>
 {/if}
 
@@ -154,7 +199,7 @@
 {#if connectedLineGeometry}
 	<T.LineSegments>
 		<T is={connectedLineGeometry} />
-		<T.LineBasicMaterial color={gameState.solveSequenceActive ? '#ffffff' : '#44aaff'} transparent opacity={gameState.solveSequenceActive ? 0.9 : 0.5} />
+		<T.LineBasicMaterial color={gameState.solveSequenceActive ? '#ffffff' : '#44aaff'} transparent opacity={gameState.solveSequenceActive ? 1 : lockedEdgeOpacity} />
 	</T.LineSegments>
 {/if}
 
@@ -162,8 +207,9 @@
 {#if targetLineGeometry}
 	<T.LineSegments>
 		<T is={targetLineGeometry} />
-		<!-- Was 0.08, which is effectively invisible — the shape the player is
-		     assembling should be faintly legible, since it is the goal. -->
-		<T.LineBasicMaterial color="#4488ff" transparent opacity={gameState.solveSequenceActive ? 0.4 : 0.16} />
+		<!-- The goal shape. Was 0.08, then 0.16 — both effectively invisible once
+		     the surface shell takes its ~72%. This is the only thing on screen
+		     that says what the player is assembling, so it is drawn to be seen. -->
+		<T.LineBasicMaterial color="#4488ff" transparent opacity={gameState.solveSequenceActive ? 0.7 : ghostOpacity} />
 	</T.LineSegments>
 {/if}

@@ -83,6 +83,16 @@ function replayInputs(fromPos: THREE.Vector3, startAfterSeq: number): THREE.Vect
   return pos;
 }
 
+/**
+ * The server reports puzzle progress as a percentage (0-100); solo play and the
+ * HUD both work in 0-1. Without this the HUD's `width: {progress * 100}%` got a
+ * value already in percent, so the bar pinned full the instant one node locked.
+ */
+function toProgressFraction(serverPercent: number): number {
+  if (!Number.isFinite(serverPercent)) return 0;
+  return Math.max(0, Math.min(1, serverPercent / 100));
+}
+
 // Input state tracking
 let inputInterval: ReturnType<typeof setInterval> | null = null;
 let currentInput: Omit<InputMessage, 'type' | 'tick'> = {
@@ -249,7 +259,7 @@ function handleMessage(data: ServerMessage): void {
       // Apply full world state from server
       applyFullState(data.state);
 
-      gameState.puzzleProgress = data.state.puzzleProgress;
+      gameState.puzzleProgress = toProgressFraction(data.state.puzzleProgress);
       gameState.puzzleSolved = data.state.puzzleSolved;
       gameState.wave = data.state.wave;
       gameState.playerCount = data.state.players.length;
@@ -734,7 +744,7 @@ function applyStateUpdate(data: StateMessage): void {
     syncPuzzleNodes(data.puzzleNodes);
   }
 
-  gameState.puzzleProgress = data.puzzleProgress;
+  gameState.puzzleProgress = toProgressFraction(data.puzzleProgress);
   gameState.wave = data.wave;
 
   // Detect puzzle solve transition (false → true) to trigger fragment unlock
