@@ -316,7 +316,7 @@
 		const isMultiplayer = gameState.mode === 'multiplayer' && isConnected();
 
 		// Always simulate player movement locally for responsiveness (client-side prediction)
-		const speed = world.player.speed * (inputState.boost ? 1.8 : 1);
+		const speed = world.player.speed;
 		let mx = inputState.moveX;
 		let my = inputState.moveY;
 		// Normalize diagonal movement so it's not faster than cardinal
@@ -364,7 +364,6 @@
 		if (isMultiplayer) {
 			setInput({
 				thrust: inputState.moveX !== 0 || inputState.moveY !== 0,
-				brake: inputState.boost,
 				rotateX: mx,  // Legacy: abstract move direction
 				rotateY: my,  // Legacy: abstract move direction
 				rotateZ: world.player.rotation.z,

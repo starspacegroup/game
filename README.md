@@ -10,7 +10,8 @@ A mobile-first, responsive, fullscreen 3D multiplayer space game built with Svel
 
 ## Controls
 
-**Desktop:** WASD/Arrows to move, Mouse to aim, Click/Space to shoot, E to interact with puzzle nodes, Shift to boost.
+**Desktop:** WASD/Arrows to move, Mouse to aim, Click/Space to shoot. Puzzle
+nodes align by flying near them — there is no interact key.
 
 **Mobile:** Left virtual joystick to move, Right virtual joystick to aim, Tap fire button to shoot.
 

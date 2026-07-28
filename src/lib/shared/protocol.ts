@@ -150,7 +150,9 @@ export interface InputMessage {
   type: 'input';
   tick: number;
   thrust: boolean;
-  brake: boolean;
+  // No `brake`. It never braked — it was the held-Shift sprint, a flat 1.8x
+  // speed multiplier the client asked the server to apply to itself. The sprint
+  // is gone; anything still sending the field is ignored.
   rotateX: number;
   rotateY: number;
   rotateZ: number;

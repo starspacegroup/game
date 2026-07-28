@@ -77,8 +77,12 @@
 			pulsePhase += delta * 3;
 			scale = 0.8 + Math.sin(pulsePhase) * 0.3;
 		} else {
-			// Current wave but out of range — dim and small
-			scale = 0.5;
+			// Current wave, out of range. Still has to be findable from across the
+			// sphere: these sit inside the world at ~half its radius, seen through
+			// the surface shell, and they are the only thing in the 3D view that
+			// says the puzzle exists at all. Was 0.5, which combined with the
+			// grayscale below and the shell's absorption to about 3% of a dot.
+			scale = 0.85;
 			pulsePhase += delta * 1;
 		}
 
@@ -103,8 +107,13 @@
 				mat.color.copy(lockedColor);
 				mat.opacity = 0.85;
 			} else {
-				mat.color.copy(canInteract ? baseColor : grayColor);
-				mat.opacity = canInteract ? 0.5 : 0.2;
+				// Keep the node's own colour out of range. Draining it to grey put
+				// a dark dot on a near-black background behind a 15%-transmitting
+				// shell, which is why the lattice was visible on the minimap and
+				// nowhere else. Range is still legible from the ring, the pulse
+				// and the brightness step.
+				mat.color.copy(baseColor);
+				mat.opacity = canInteract ? 0.95 : 0.62;
 			}
 		}
 
@@ -118,8 +127,8 @@
 				mat.color.copy(lockedColor);
 				mat.opacity = 0.2;
 			} else {
-				mat.color.copy(canInteract ? baseColor : grayColor);
-				mat.opacity = canInteract ? 0.12 : 0.03;
+				mat.color.copy(baseColor);
+				mat.opacity = canInteract ? 0.35 : 0.2;
 			}
 		}
 	});
@@ -156,12 +165,16 @@
 		</T.Mesh>
 	{/if}
 
-	<!-- Point light — brighter for connected / interactive nodes -->
-	{#if connected || nodeWave < currentWave}
-		<T.PointLight color="#44aaff" intensity={1.5} distance={25} />
-	{:else if canInteract}
+	<!-- Point light, but only for nodes the player is actually next to.
+	     Every node used to carry one. That is 20 lights on wave 1 and 240 by
+	     wave 6, all of them lighting the MeshStandardMaterial surface shell —
+	     far past what a sane forward renderer handles, and the distant ones
+	     contributed nothing visible anyway (intensity 0.3, distance 12, seen
+	     through the shell). Node visibility now comes from the unlit materials
+	     above, which cost nothing per-fragment. -->
+	{#if canInteract}
 		<T.PointLight color={color} intensity={2} distance={40} />
-	{:else}
-		<T.PointLight color={color} intensity={0.3} distance={12} />
+	{:else if (connected || nodeWave < currentWave) && nearEnough}
+		<T.PointLight color="#44aaff" intensity={1.5} distance={25} />
 	{/if}
 </T.Group>

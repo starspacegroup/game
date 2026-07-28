@@ -5,7 +5,6 @@ class InputStore {
 	aimX = $state(0);
 	aimY = $state(0);
 	shooting = $state(false);
-	boost = $state(false);
 }
 
 export const inputState = new InputStore();
@@ -28,7 +27,6 @@ function clearAllInputs(): void {
 	inputState.moveX = 0;
 	inputState.moveY = 0;
 	inputState.shooting = false;
-	inputState.boost = false;
 }
 
 export function setupKeyboardControls(): () => void {
@@ -40,7 +38,6 @@ export function setupKeyboardControls(): () => void {
 			inputState.shooting = true;
 			e.preventDefault();
 		}
-		if (key === 'shift') inputState.boost = true;
 	}
 
 	function onKeyUp(e: KeyboardEvent): void {
@@ -48,7 +45,6 @@ export function setupKeyboardControls(): () => void {
 		keys.delete(key);
 		updateFromKeys();
 		if (e.key === ' ') inputState.shooting = false;
-		if (key === 'shift') inputState.boost = false;
 	}
 
 	function onBlur(): void {

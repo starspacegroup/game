@@ -805,7 +805,7 @@ export class GameRoom implements DurableObject {
         player.velocity.z = vz;
       } else {
         // Fallback: old protocol (rotateX/rotateY as tangent-frame components)
-        const speed = player.speed * (input.brake ? 1.8 : 1);
+        const speed = player.speed;
         let moveX = input.rotateX;
         let moveY = input.rotateY;
         const moveMag = Math.sqrt(moveX * moveX + moveY * moveY);

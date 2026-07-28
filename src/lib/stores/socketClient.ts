@@ -38,7 +38,6 @@ interface InputHistoryEntry {
   seq: number;
   moveX: number;
   moveY: number;
-  boost: boolean;
   dt: number; // deltaTime used for this input's physics step
   /** World-space velocity vector — used for frame-independent replay */
   velX: number;
@@ -57,8 +56,8 @@ const RECONCILE_THRESHOLD = 3.0;
  * Record an input that was sent to the server, for later reconciliation.
  * Called from the game loop (GameWorld) after applying local prediction.
  */
-export function recordInput(seq: number, moveX: number, moveY: number, boost: boolean, dt: number, velX = 0, velY = 0, velZ = 0): void {
-  inputHistory.push({ seq, moveX, moveY, boost, dt, velX, velY, velZ });
+export function recordInput(seq: number, moveX: number, moveY: number, dt: number, velX = 0, velY = 0, velZ = 0): void {
+  inputHistory.push({ seq, moveX, moveY, dt, velX, velY, velZ });
   // Trim old entries
   if (inputHistory.length > INPUT_BUFFER_SIZE) {
     inputHistory.splice(0, inputHistory.length - INPUT_BUFFER_SIZE);
@@ -88,7 +87,6 @@ function replayInputs(fromPos: THREE.Vector3, startAfterSeq: number): THREE.Vect
 let inputInterval: ReturnType<typeof setInterval> | null = null;
 let currentInput: Omit<InputMessage, 'type' | 'tick'> = {
   thrust: false,
-  brake: false,
   rotateX: 0,
   rotateY: 0,
   rotateZ: 0,
@@ -928,7 +926,6 @@ function startInputLoop(): void {
         seq,
         currentInput.rotateX,
         currentInput.rotateY,
-        currentInput.brake,
         INPUT_SEND_RATE / 1000,
         currentInput.velX,
         currentInput.velY,

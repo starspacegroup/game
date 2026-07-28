@@ -104,7 +104,12 @@
 </script>
 
 <T.Group bind:ref={surfaceGroup}>
-	<!-- Solid surface shell — very subtle, shows curvature -->
+	<!-- Solid surface shell — very subtle, shows curvature.
+	     The puzzle lattice lives inside the sphere, so everything the player is
+	     meant to find is seen *through* this shell. At opacity 0.85 only ~15% of
+	     a node's brightness survived it, and the structure was invisible in the
+	     3D view while showing fine on the minimap. 0.72 roughly doubles that
+	     without the surface ceasing to read as solid ground. -->
 	<T.Mesh>
 		<T.SphereGeometry args={[SURFACE_RADIUS - 1, GRID_SEGMENTS, GRID_SEGMENTS]} />
 		<T.MeshStandardMaterial
@@ -112,7 +117,7 @@
 			emissive="#050d1a"
 			emissiveIntensity={0.3}
 			transparent
-			opacity={0.85}
+			opacity={0.72}
 			side={THREE.FrontSide}
 			roughness={0.9}
 			metalness={0.1}

@@ -105,7 +105,7 @@
 	<!-- Controls hint -->
 	{#if !gameState.isMobile}
 		<div class="controls-hint">
-			WASD move &bull; Mouse aim &bull; Click shoot &bull; Shift boost
+			WASD move &bull; Mouse aim &bull; Click shoot
 		</div>
 	{/if}
 
