@@ -735,6 +735,10 @@
 		width: 24px;
 		height: 24px;
 		object-fit: contain;
+		/* The mark is a full-bleed square with its own dark field, so without a
+		   radius it reads as a hard-edged box on the page background. Matches
+		   the leaderboard header's treatment of the same asset. */
+		border-radius: 5px;
 		filter: drop-shadow(0 0 6px rgba(68, 136, 255, 0.4));
 	}
 

@@ -8,7 +8,9 @@
 
 <svelte:head>
 	<title>*Space Game</title>
-	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>&#x2B50;</text></svg>" />
+	<!-- Icons live in app.html, not here: they are static for every route, and a
+	     <svelte:head> link is re-evaluated per navigation for no benefit. This
+	     used to be an inline data-URI of the ⭐ emoji. -->
 </svelte:head>
 
 {@render children?.()}
