@@ -466,10 +466,11 @@
 	.hint-display {
 		position: fixed;
 		/* Clears the minimap, which is also fixed top-centre and spans
-		   safe-top+8px to safe-top+138px. At 44px this banner ran straight
-		   through the radar — both are centred and this one is up to 3x wider,
-		   so it cut the minimap in half and left both unreadable. */
-		top: calc(var(--safe-top, 0px) + 146px);
+		   safe-top+8px to safe-top+154px (120px canvas plus its legend row).
+		   At 44px this banner ran straight through the radar — both are centred
+		   and this one is up to 3x wider, so it cut the minimap in half and left
+		   both unreadable. Keep in step with `.minimap`'s height. */
+		top: calc(var(--safe-top, 0px) + 162px);
 		left: 50%;
 		transform: translateX(-50%);
 		background: rgba(0, 16, 32, 0.75);

@@ -111,6 +111,19 @@
 			// no reason to fly anywhere and no signal on arrival.
 			const activeId = gameState.nodeInRange?.id;
 			const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
+
+			// The one node the player should actually be flying at. Without this
+			// the map is a field of identical amber dots with no way to tell
+			// which is the objective, or whether a given dot wants anything at
+			// all — the blue "already aligned" ones read the same as a job to do.
+			let target: (typeof world.puzzleNodes)[number] | null = null;
+			let targetDist = Infinity;
+			for (const n of world.puzzleNodes) {
+				if (n.connected || n.wave !== gameState.wave) continue;
+				const d = surfaceProximity(world.player.position, n.position);
+				if (d < targetDist) { targetDist = d; target = n; }
+			}
+
 			for (const node of world.puzzleNodes) {
 				const { lat: pLat, lon: pLon } = toSpherical(node.position);
 				const p = project(pLat, pLon);
@@ -177,6 +190,38 @@
 				ctx.fill();
 			}
 
+			// Lead line to the objective. Answers "which of these do I go to",
+			// and gives the amber dots a reason to exist. Drawn before the player
+			// marker so it runs under it rather than over the heading triangle.
+			if (target) {
+				const { lat: tLat, lon: tLon } = toSpherical(target.position);
+				const tp = project(tLat, tLon);
+				ctx.strokeStyle = 'rgba(255, 200, 68, 0.45)';
+				ctx.lineWidth = 1;
+				ctx.setLineDash([3, 3]);
+				ctx.beginPath();
+				ctx.moveTo(HALF, HALF);
+				if (tp.visible) {
+					ctx.lineTo(tp.px, tp.py);
+				} else {
+					// Over the horizon: point at it and stop at the rim, so the
+					// player still knows which way to fly.
+					const dx = tp.px - HALF, dy = tp.py - HALF;
+					const m = Math.hypot(dx, dy) || 1;
+					ctx.lineTo(HALF + (dx / m) * GLOBE_R, HALF + (dy / m) * GLOBE_R);
+				}
+				ctx.stroke();
+				ctx.setLineDash([]);
+
+				if (tp.visible) {
+					ctx.strokeStyle = 'rgba(255, 200, 68, 0.9)';
+					ctx.lineWidth = 1.2;
+					ctx.beginPath();
+					ctx.arc(tp.px, tp.py, 5, 0, Math.PI * 2);
+					ctx.stroke();
+				}
+			}
+
 			// Player dot (center, always visible) — cyan with glow
 			ctx.shadowColor = '#00ffff';
 			ctx.shadowBlur = 6;
@@ -205,20 +250,30 @@
 				total++;
 				if (n.connected) done++;
 			}
+			// Drawn top-centre, not in the corner. The canvas is clipped to a
+			// circle by `border-radius: 50%`, so the old (3,10) origin sat 76px
+			// from a 60px-radius centre — the whole counter was clipped away and
+			// had never actually been on screen. The band between the globe
+			// (r=42) and the canvas edge (r=60) is the usable label space.
 			if (total > 0) {
+				ctx.textAlign = 'center';
 				ctx.font = 'bold 9px monospace';
-				ctx.textAlign = 'left';
-				ctx.fillStyle = done > 0 ? 'rgba(68, 180, 255, 0.95)' : 'rgba(255, 200, 68, 0.8)';
-				ctx.fillText(`${done}/${total}`, 3, 10);
-				ctx.font = '7px monospace';
-				ctx.fillStyle = 'rgba(120, 150, 190, 0.75)';
-				ctx.fillText('NODES', 3, 18);
+				ctx.fillStyle = done > 0 ? 'rgba(68, 180, 255, 0.95)' : 'rgba(255, 200, 68, 0.85)';
+				ctx.fillText(`${done}/${total} NODES`, HALF, 11);
+			}
+
+			// How far to the objective the lead line points at.
+			if (target) {
+				ctx.textAlign = 'center';
+				ctx.font = '8px monospace';
+				ctx.fillStyle = 'rgba(255, 200, 68, 0.8)';
+				ctx.fillText(`NEAREST ${Math.round(targetDist)}`, HALF, SIZE - 14);
 			}
 
 			// Coordinates label
 			const latDeg = ((lat * 180) / Math.PI).toFixed(1);
 			const lonDeg = ((lon * 180) / Math.PI).toFixed(1);
-			ctx.font = '9px monospace';
+			ctx.font = '8px monospace';
 			ctx.fillStyle = 'rgba(100, 160, 220, 0.7)';
 			ctx.textAlign = 'center';
 			ctx.fillText(`${latDeg}° ${lonDeg}°`, HALF, SIZE - 4);
@@ -235,6 +290,15 @@
 
 <div class="minimap">
 	<canvas bind:this={canvas} width={SIZE} height={SIZE}></canvas>
+	<!-- The map had five dot colours and explained none of them, so a blue
+	     "already aligned, nothing to do here" dot looked exactly as actionable
+	     as an amber one. Puzzle states only — hostile/allied red and green are
+	     self-evident from the ships themselves. -->
+	<div class="legend">
+		<span class="key"><i class="swatch todo"></i>ALIGN</span>
+		<span class="key"><i class="swatch here"></i>IN RANGE</span>
+		<span class="key"><i class="swatch done"></i>DONE</span>
+	</div>
 </div>
 
 <style>
@@ -247,7 +311,9 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: 120px;
-		height: 130px;
+		/* 120 canvas + legend. Coupled to `.hint-display`'s `top` in HUD.svelte,
+		   which is positioned to clear the bottom of this block. */
+		height: 146px;
 		pointer-events: none;
 		z-index: 15;
 		display: flex;
@@ -259,5 +325,42 @@
 		border: 1px solid rgba(68, 136, 255, 0.2);
 		border-radius: 50%;
 		background: rgba(0, 8, 24, 0.7);
+	}
+
+	.legend {
+		display: flex;
+		gap: 6px;
+		margin-top: 3px;
+		font-family: var(--hud-font, 'Courier New', monospace);
+		font-size: 0.4rem;
+		letter-spacing: 0.4px;
+		color: rgba(140, 170, 205, 0.85);
+		white-space: nowrap;
+	}
+
+	.key {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.swatch {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		display: inline-block;
+	}
+
+	.swatch.todo {
+		background: rgba(255, 200, 68, 0.9);
+	}
+
+	.swatch.here {
+		background: rgb(0, 255, 204);
+		box-shadow: 0 0 3px rgba(0, 255, 204, 0.9);
+	}
+
+	.swatch.done {
+		background: rgba(68, 160, 255, 0.95);
 	}
 </style>
