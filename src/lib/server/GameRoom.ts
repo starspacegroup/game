@@ -26,7 +26,8 @@ import {
   MAX_PLAYERS,
   ASTEROID_COUNT,
   NODE_ALIGN_RATE,
-  NODE_CONNECT_DIST
+  NODE_CONNECT_DIST,
+  SATELLITE_ALIGN_RATE
 } from '../shared/protocol';
 
 import {
@@ -952,6 +953,17 @@ export class GameRoom implements DurableObject {
       npc.velocity.x = 0;
       npc.velocity.y = 0;
 
+      // Work the node, continuously. This used to be bolted onto the hint
+      // timer — 1% of the gap every 4-7 seconds — so a satellite's contribution
+      // arrived in random jerks and totalled about 1/165th of a player. Aligning
+      // is the job; hinting is chatter, and they should not share a clock.
+      if (!targetNode.connected) {
+        const step = 1 - Math.pow(1 - SATELLITE_ALIGN_RATE, deltaTime);
+        targetNode.position.x += (targetNode.targetPosition.x - targetNode.position.x) * step;
+        targetNode.position.y += (targetNode.targetPosition.y - targetNode.position.y) * step;
+        targetNode.position.z += (targetNode.targetPosition.z - targetNode.position.z) * step;
+      }
+
       // Generate hints while orbiting
       npc.shootCooldown -= deltaTime;
       if (npc.shootCooldown <= 0) {
@@ -964,17 +976,6 @@ export class GameRoom implements DurableObject {
           hint,
           fromNpcId: npc.id
         });
-
-        // Help push node toward target (inside sphere)
-        if (!targetNode.connected) {
-          const tdx = targetNode.targetPosition.x - targetNode.position.x;
-          const tdy = targetNode.targetPosition.y - targetNode.position.y;
-          const tdz = targetNode.targetPosition.z - targetNode.position.z;
-          targetNode.position.x += tdx * 0.01;
-          targetNode.position.y += tdy * 0.01;
-          targetNode.position.z += tdz * 0.01;
-          this.checkPuzzleProgress();
-        }
       }
     }
   }

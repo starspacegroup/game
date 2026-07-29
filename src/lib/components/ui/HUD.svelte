@@ -76,6 +76,14 @@
 			{#if gameState.fragmentCount > 0}
 				<span class="fragment-count">◈ {gameState.fragmentCount}/12</span>
 			{/if}
+			<!-- convertedNpcCount was tracked from the first conversion and rendered
+			     nowhere, so a fleet you had built up was invisible unless you
+			     happened to spot the ships. Each one works a node. -->
+			{#if gameState.convertedNpcCount > 0}
+				<span class="satellite-count" title="Allied satellites aligning nodes">
+					◉ {gameState.convertedNpcCount}
+				</span>
+			{/if}
 		</div>
 	{/if}
 
@@ -231,6 +239,14 @@
 		color: #4488ff;
 		letter-spacing: 1px;
 		text-shadow: 0 0 6px rgba(68, 136, 255, 0.4);
+	}
+
+	/* Allied green, matching the satellites themselves and their node links. */
+	.satellite-count {
+		font-size: var(--font-xs, 0.6rem);
+		color: #00ff88;
+		letter-spacing: 1px;
+		text-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
 	}
 
 	@keyframes glow {

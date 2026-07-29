@@ -25,8 +25,10 @@
 	const _debugPositions = new Float32Array(6);
 	let _debugAttr: THREE.BufferAttribute | null = null;
 
-	// Debug: line from converted NPC to target node
-	let debugLineGeometry: THREE.BufferGeometry | undefined = $state();
+	// Link from a converted satellite to the node it is working. Was labelled
+	// "Debug" and drawn 1px cyan, most of it behind the surface shell, so it read
+	// as nothing — you could not tell a satellite on task from one drifting.
+	let linkGeometry: THREE.BufferGeometry | undefined = $state();
 	let hasTargetLine = $state(false);
 
 	useTask((delta) => {
@@ -54,7 +56,7 @@
 			// Data stream animation
 			dataStreamPhase += delta * 5;
 
-			// Debug: draw line to target node
+			// Draw the link to the node this satellite is working
 			const targetNode = data.targetNodeId ? world.puzzleNodes.find(n => n.id === data.targetNodeId) : null;
 			if (targetNode) {
 				_debugPositions[0] = data.position.x;
@@ -63,10 +65,10 @@
 				_debugPositions[3] = targetNode.position.x;
 				_debugPositions[4] = targetNode.position.y;
 				_debugPositions[5] = targetNode.position.z;
-				if (!debugLineGeometry) {
-					debugLineGeometry = new THREE.BufferGeometry();
+				if (!linkGeometry) {
+					linkGeometry = new THREE.BufferGeometry();
 					_debugAttr = new THREE.BufferAttribute(_debugPositions, 3);
-					debugLineGeometry.setAttribute('position', _debugAttr);
+					linkGeometry.setAttribute('position', _debugAttr);
 				}
 				_debugAttr!.needsUpdate = true;
 				hasTargetLine = true;
@@ -146,9 +148,11 @@
 	{/if}
 </T.Group>
 
-{#if isConverted && hasTargetLine && debugLineGeometry}
+<!-- Allied green, matching the satellite itself, so the eye connects the two.
+     linewidth is not honoured by WebGL, so brightness is the only lever here. -->
+{#if isConverted && hasTargetLine && linkGeometry}
 	<T.Line>
-		<T is={debugLineGeometry} />
-		<T.LineBasicMaterial color="#00ffff" linewidth={2} transparent opacity={0.8} />
+		<T is={linkGeometry} />
+		<T.LineBasicMaterial color="#00ff88" transparent opacity={0.55} />
 	</T.Line>
 {/if}

@@ -23,7 +23,7 @@
 	import { checkCollisions } from '$lib/game/collision';
 	import { checkPuzzleProgress, isPuzzleSolved, isWaveSolved, findNearestPuzzleNode, generateHint } from '$lib/game/puzzle';
 	import { E8_TOTAL_WAVES } from '$lib/game/e8';
-	import { NODE_ALIGN_RATE, NODE_CONNECT_DIST } from '$lib/shared/protocol';
+	import { NODE_ALIGN_RATE, NODE_CONNECT_DIST, SATELLITE_ALIGN_RATE } from '$lib/shared/protocol';
 	import { gameState } from '$lib/stores/gameState.svelte';
 	import { inputState } from '$lib/stores/inputState.svelte';
 	import { sendPosition, setInput, sendFire, isConnected } from '$lib/stores/socketClient';
@@ -613,6 +613,16 @@
 			projectToSphere(npc.position);
 			npc.rotation.z = npc.orbitAngle + Math.PI / 2;
 			
+			// Work the node, continuously — see SATELLITE_ALIGN_RATE. This used to
+			// ride the hint timer, so a satellite nudged its node 1% once every
+			// 4-7 seconds and contributed about 1/165th of a player.
+			if (!targetNode.connected) {
+				targetNode.position.lerp(
+					targetNode.targetPosition,
+					1 - Math.pow(1 - SATELLITE_ALIGN_RATE, dt)
+				);
+			}
+
 			// Generate hints while orbiting
 			npc.hintTimer -= dt;
 			if (npc.hintTimer <= 0) {
@@ -621,11 +631,6 @@
 				npc.hintData = hint;
 				gameState.addHint(targetNode.id, hint);
 				if (gameState.isAlive) gameState.score += 5;
-				
-				// Help push the node toward its target inside the sphere
-				if (!targetNode.connected) {
-					targetNode.position.lerp(targetNode.targetPosition, 0.01);
-				}
 			}
 		}
 	}

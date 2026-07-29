@@ -409,6 +409,23 @@ export const NODE_ALIGN_RATE = 0.015;
 /** Gap at which a node snaps onto its vertex and locks. */
 export const NODE_CONNECT_DIST = 8;
 
+/**
+ * Fraction of the remaining gap a converted satellite closes **per second**
+ * while orbiting its assigned node.
+ *
+ * A player parked on a node closes ~26% of the gap per second
+ * (NODE_ALIGN_RATE, applied ~20×/s), so one satellite is worth about a tenth of
+ * a player: it takes ~8.5s to walk a node from a typical scatter distance down
+ * to the lock radius, against a player's ~0.75s.
+ *
+ * It used to be 1% of the gap per *hint*, and hints fire every 4-7s — about
+ * two minutes per node, or 1/165th of a player. Converting an NPC had no
+ * measurable effect on the puzzle at all.
+ *
+ * Satellites still cannot *lock* a node; only a player can. They soften it.
+ */
+export const SATELLITE_ALIGN_RATE = 0.026;
+
 export const TICK_RATE = 30; // ticks per second
 export const TICK_INTERVAL = 1000 / TICK_RATE; // ~33ms
 export const MAX_PLAYERS = 8;
