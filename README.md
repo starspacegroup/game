@@ -37,7 +37,7 @@ npm run dev
 5. Configure build settings:
    - **Build command:** `npm run build`
    - **Build output directory:** `.svelte-kit/cloudflare`
-   - **Node.js version:** 18+ (set in Environment Variables: `NODE_VERSION` = `18`)
+   - **Node.js version:** 22+ (set in Environment Variables: `NODE_VERSION` = `22`)
 6. Click "Save and Deploy"
 
 ## Multiplayer Server

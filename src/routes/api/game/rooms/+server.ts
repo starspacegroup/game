@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { isSuperAdmin, isSuperAdminId } from '$lib/server/admin';
+import { isSuperAdmin } from '$lib/server/admin';
+import { canDeleteRoom } from '$lib/server/roomAuthorization';
 
 interface RoomInfo {
   id: string;
@@ -163,24 +164,20 @@ export const DELETE: RequestHandler = async ({ platform, request, locals }) => {
   }
 
   try {
-    const body = await request.json() as { roomId?: string; userId?: string; };
-    const { roomId, userId } = body;
+    const body = await request.json() as { roomId?: string; };
+    const { roomId } = body;
 
-    if (!roomId || !userId) {
-      return json({ error: 'Missing roomId or userId' }, { status: 400 });
+    if (!roomId) {
+      return json({ error: 'Missing roomId' }, { status: 400 });
     }
 
-    // Allow super admins OR the room creator to delete. The session check comes
-    // first (it also covers dev virtual admins); the body-userId check is the
-    // long-standing client-supplied path.
-    const admin = isSuperAdmin(locals) || isSuperAdminId(userId);
-    let isCreator = false;
-    if (!admin) {
-      // Check if the user created this room
-      const roomData = await platform.env.GAME_DATA.get(`room:${roomId}`, 'json') as RoomInfo | null;
-      isCreator = !!roomData && roomData.createdById === userId;
-    }
-    if (!admin && !isCreator) {
+    // Authorization is derived exclusively from the authenticated session.
+    // A client-supplied user ID is not proof of identity.
+    const admin = isSuperAdmin(locals);
+    const roomData = admin
+      ? null
+      : await platform.env.GAME_DATA.get(`room:${roomId}`, 'json') as RoomInfo | null;
+    if (!canDeleteRoom(locals.user?.id, roomData?.createdById, admin)) {
       return json({ error: 'Unauthorized — only the room creator or an admin can delete this room' }, { status: 403 });
     }
 

@@ -537,6 +537,8 @@ export class GameRoom implements DurableObject {
       await this.notifyLobbyDelete();
 
       await this.state.storage.deleteAll();
+      // deleteAll() leaves alarms scheduled; cancel this room's wake-up too.
+      try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
 
       return Response.json({ success: true });
     }
