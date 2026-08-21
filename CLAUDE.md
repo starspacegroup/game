@@ -154,7 +154,7 @@ Players and converted NPCs push nodes toward their targets; a node within `NODE_
 
 ## Goals
 
-- **Durable Object storage lifecycle** (goal closed 2026-07-25). Shipped and purged: 22 stale rooms reclaimed, 0.95 MiB → 0.34 MiB. The original "~12.5 GB / $2.30 a month" framing was wrong by ~13,000× — do not cite it. `game-worker` is deployed; the Pages half is committed but unpushed. Details in the workspace `ROADMAP.md` and `planning/DECISIONS.md`.
+- **Durable Object storage lifecycle** (goal closed 2026-07-25). Shipped and purged: 22 stale rooms reclaimed, 0.95 MiB → 0.34 MiB. The original "~12.5 GB / $2.30 a month" framing was wrong by ~13,000× — do not cite it. Both halves are deployed — `game-worker` and the Pages build went to prod 2026-08-21. Details in the workspace `ROADMAP.md` and `planning/DECISIONS.md`.
 
   The rules below still apply — they are why the leaks happened. Keep them in mind when touching `GameRoom.ts`:
   - **Never delete a room's KV pointer without first terminating its DO.** The KV key is the only handle on that DO; drop it first and the storage is orphaned and unfindable. `terminateRoomDO()` in `api/game/rooms` exists for this.
