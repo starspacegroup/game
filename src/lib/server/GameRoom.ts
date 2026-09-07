@@ -595,6 +595,8 @@ export class GameRoom implements DurableObject {
       // wakes makes that permanent rather than self-healing after IDLE_TTL_MS.
       try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
       await this.state.storage.deleteAll();
+      // deleteAll() leaves alarms scheduled; cancel this room's wake-up too.
+      try { await this.state.storage.deleteAlarm(); } catch { /* already gone */ }
 
       return Response.json({ success: true });
     }
