@@ -51,3 +51,9 @@ Multiplayer runs on Cloudflare Workers with Durable Objects for room-based WebSo
 - Chat messages
 
 The game gracefully falls back to solo mode when no server is available.
+
+## Related repositories
+
+Internal planning, design and docs live in a separate private repository,
+`starspacegroup/game-umbrella`, which has this repository checked out at `game/`. Nothing in
+it is needed to build or run this one.
