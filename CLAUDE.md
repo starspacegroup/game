@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Where this sits
+
+This repo is normally checked out at `game/` inside the private umbrella repo
+`starspacegroup/game-umbrella` (planning, design, docs). Workspace-only planning stays there;
+never copy it into this repo.
+
 ## Commands
 
 ```bash
